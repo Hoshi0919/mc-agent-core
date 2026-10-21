@@ -4,12 +4,6 @@ from .context import ContextSnapshot
 from .rules import (
     LocalGameRules,
     NETHER_PORTAL_RULES,
-    ENCHANTMENT_CONFLICT_RULES,
-    VILLAGER_RULES,
-    BEACON_RULES,
-    OMINOUS_AND_TRIAL_RULES,
-    WARDEN_SCULK_RULES,
-    COPPER_AND_WAXING_RULES,
 )
 
 
@@ -175,6 +169,70 @@ class FastPathResolver:
                 "▸ §b雷击奇效§r：附近立引雷针，雷电放电可大面积震落周围铜块的铜锈！"
             )
             return Resolution(text_response=resp, suggested_command="/give @s minecraft:honeycomb 64", category="COPPER_WAXING")
+
+        # 13. Comparator & Container Fill / Item Sorter
+        if any(k in q for k in ("比较器", "分类机", "物品分类", "漏斗分类", "22个", "比较器信号", "测箱子")):
+            resp = (
+                "§c【红石比较器容器信号与分类机数学】§r\n"
+                "▸ §e容器满度公式§r：Signal = floor(1 + (sum(count / max_stack) / slots) * 14)（空容器输出 0）。\n"
+                "▸ §a经典 22 物品分类漏斗 (18-1-1-1-1)§r：\n"
+                "  - 第 1 格放 18 个待分类物品，第 2~5 格各放 1 个重命名杂物（占位符）。\n"
+                "  - 刚好 22 个物品时输出红石信号 1；进入第 23 个物品时升至 2，点亮红石线解锁下层漏斗漏出 1 个物品，随后复位！\n"
+                "▸ §b防串线 41 物品布局§r：若堵塞导致积存 45+ 物品可能冲至 3 格信号串线，可用 3 长度红石线做物理隔离。\n"
+                "▸ §d1.21 自动合成器 (Crafter)§r：比较器输出强度精准等于被禁用或有物品的槽位总数 (0~9)！"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:comparator 1", category="COMPARATOR_SORTING")
+
+        # 14. Anvil Prior Work Penalty & Binary Tree Merge
+        if any(k in q for k in ("铁砧", "过于昂贵", "经验惩罚", "二叉树附魔", "附魔省经验", "修装备太贵")):
+            resp = (
+                "§6【铁砧累积惩罚与二叉树最优附魔】§r\n"
+                "▸ §c累积惩罚公式 (Prior Work)§r：物品每在铁砧操作一次，附加消耗指数暴涨：2^n - 1（0 ➔ 1 ➔ 3 ➔ 7 ➔ 15 ➔ 31 ➔ 63 级）！\n"
+                "▸ §4“过于昂贵”死锁§r：生存模式下单次操作所需经验 >= 40 级，游戏将强制锁死不可操作！\n"
+                "▸ §a二叉树最优合并法 (Binary Tree Merge)§r：\n"
+                "  - 严禁单线串行（先打书1再打书2再打书3...到第6本必爆 40 级）！\n"
+                "  - 正确做法：两两配对合并附魔书（书A+书B ➔ 书AB；书C+书D ➔ 书CD；书AB+书CD ➔ 最终合集书），最后将合集书一次性打在装备上，经验暴省 60%+ 且永不超标！"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:anvil 1", category="ANVIL_OPTIMIZATION")
+
+        # 15. Brewing Stand & Potions
+        if any(k in q for k in ("酿造台", "药水配方", "怎么酿", "隐身药水", "神龟药水", "抗火药水", "粗制药水", "变异药水")):
+            resp = (
+                "§d【酿造台配方与药水学快速推演】§r\n"
+                "▸ §e核心底药§r：水瓶 + 下界疣 ➔ 粗制的药水 (Awkward Potion)。\n"
+                "▸ §b主力效果材料§r：\n"
+                "  - 糖 ➔ 迅捷 | 烈焰粉 ➔ 力量 | 兔子脚 ➔ 跳跃 | 闪烁西瓜 ➔ 治疗 | 蜘蛛眼 ➔ 剧毒\n"
+                "  - 金胡萝卜 ➔ 夜视 | 岩浆膏 ➔ 抗火 | 河豚 ➔ 水下呼吸 | 幻翼膜 ➔ 缓降\n"
+                "  - 海龟壳 ➔ 神龟药水 (缓慢IV + 抗性III) | 旋风棒 ➔ 1.21 蓄风药水\n"
+                "▸ §c发酵蛛眼变异反转§r：夜视 ➔ 隐身；迅捷/跳跃 ➔ 缓慢；治疗/剧毒 ➔ 伤害 (Harming)。\n"
+                "▸ §f调节剂§r：红石粉延长时长；荧石粉升为 II 级；火药制成喷溅药水；龙息制成滞留药水。"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:brewing_stand 1", category="BREWING_RECIPES")
+
+        # 16. Iron Golem Spawning & Iron Farm
+        if any(k in q for k in ("铁傀儡", "刷铁机", "为什么不刷铁", "村民惊吓", "不生成铁傀儡")):
+            resp = (
+                "§a【铁傀儡生成判定与刷铁机力学】§r\n"
+                "▸ §e三大必备前置条件§r：\n"
+                "  ① 至少 3 名有效村民绑定床铺；\n"
+                "  ② 过去 20 分钟内（24000 Tick）村民必须曾睡过觉（哪怕躺下 1 刻即醒）；\n"
+                "  ③ 惊吓恐慌态：村民视线 8 格水平（或 16 格通视）内目击僵尸/灾厄村民。\n"
+                "▸ §b生成空间检测§r：以村民为中心 16×13×16 空间内必须有完整方块表面，且上方有 3 格空气或水流空间。\n"
+                "▸ §c常见不刷怪排查§r：村民长时间无法入睡（视线受阻或恐惧时间过长）、上方空间不足 3 格高、附近 16 格内存在遗留铁傀儡未清除。"
+            )
+            return Resolution(text_response=resp, suggested_command="/summon minecraft:iron_golem", category="IRON_GOLEM_MECHANICS")
+
+        # 17. Nether Portal Linking & Desync
+        if any(k in q for k in ("传送门对齐", "串门", "传送门错位", "下界门跑偏", "双向传送门")):
+            resp = (
+                "§5【下界传送门精准对齐与防串门机制】§r\n"
+                "▸ §c串门根源§r：下界与主界为 8:1 坐标比例，游戏进门搜索半径高达 128 格（对应主界 1024 格！）。若未精确手动校准，多扇门会错误重定向至同一出口。\n"
+                "▸ §a黄金对齐法则§r：\n"
+                "  - 主界记下门底脚坐标：[X, Y, Z]；\n"
+                "  - 进入下界后，敲掉自动生成的门，手动移步至精确对应点：[floor(X/8), Y, floor(Z/8)] 搭建新门并点燃；\n"
+                "  - 垂直高度 Y 尽量保持一致，杜绝任何串门与重定向偏差！"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:obsidian 14", category="PORTAL_LINKING")
 
         return None
 

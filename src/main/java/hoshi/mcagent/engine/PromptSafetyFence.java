@@ -47,7 +47,12 @@ public final class PromptSafetyFence {
         userPrompt.append(LocalGameRules.BEACON_RULES).append("\n\n");
         userPrompt.append(LocalGameRules.OMINOUS_AND_TRIAL_RULES).append("\n\n");
         userPrompt.append(LocalGameRules.WARDEN_SCULK_RULES).append("\n\n");
-        userPrompt.append(LocalGameRules.COPPER_AND_WAXING_RULES).append("\n");
+        userPrompt.append(LocalGameRules.COPPER_AND_WAXING_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.COMPARATOR_CONTAINER_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.ANVIL_PENALTY_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.BREWING_POTION_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.IRON_GOLEM_SPAWN_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.PORTAL_LINKING_RULES).append("\n");
         userPrompt.append("</canonical_rules>\n\n");
 
         userPrompt.append("<player_query>\n");

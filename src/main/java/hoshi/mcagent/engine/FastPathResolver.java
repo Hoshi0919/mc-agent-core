@@ -158,6 +158,51 @@ public final class FastPathResolver {
             return Optional.of(new Resolution(resp, "/give @s minecraft:honeycomb 64", "COPPER_WAXING"));
         }
 
+        // 13. Comparator & Container Fill / Item Sorter
+        if (q.contains("比较器") || q.contains("分类机") || q.contains("物品分类") || q.contains("漏斗分类") || q.contains("22个") || q.contains("22 个") || q.contains("比较器信号") || q.contains("测箱子")) {
+            String resp = "§c【红石比较器容器信号与分类机数学】§r\n" +
+                    "▸ §e容器满度公式§r：Signal = floor(1 + (sum(count / max_stack) / slots) * 14)（空容器输出 0）。\n" +
+                    "▸ §a经典 22 物品分类漏斗 (18-1-1-1-1)§r：第 1 格放 18 个待分类物品，第 2~5 格各放 1 个重命名杂物；刚好 22 个物品时信号强度为 1，进入第 23 个物品时升至 2。\n" +
+                    "▸ §b防串线 41 物品布局§r：避免极端堆积冲至 3 格信号串线。\n" +
+                    "▸ §d1.21 自动合成器 (Crafter)§r：比较器输出强度对应有物品或禁用的槽位数 (0~9)！";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:comparator 1", "COMPARATOR_SORTING"));
+        }
+
+        // 14. Anvil Prior Work Penalty & Binary Tree Merge
+        if (q.contains("铁砧") || q.contains("过于昂贵") || q.contains("经验惩罚") || q.contains("二叉树附魔") || q.contains("附魔省经验") || q.contains("修装备太贵")) {
+            String resp = "§6【铁砧累积惩罚与二叉树最优附魔】§r\n" +
+                    "▸ §c累积惩罚 (Prior Work)§r：附加消耗按 2^n - 1 增长（0 ➔ 1 ➔ 3 ➔ 7 ➔ 15 ➔ 31 级）。\n" +
+                    "▸ §4过于昂贵§r：生存模式单次操作所需经验 >= 40 级时会被拒绝。\n" +
+                    "▸ §a二叉树最优合并法§r：附魔书两两配对合并，最后将合集书一次性打在装备上，避免单线串联导致经验爆炸！";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:anvil 1", "ANVIL_OPTIMIZATION"));
+        }
+
+        // 15. Brewing Stand & Potions
+        if (q.contains("酿造台") || q.contains("药水配方") || q.contains("怎么酿") || q.contains("隐身药水") || q.contains("神龟药水") || q.contains("抗火药水") || q.contains("粗制药水") || q.contains("变异药水")) {
+            String resp = "§d【酿造台配方与药水学快速推演】§r\n" +
+                    "▸ §e核心底药§r：水瓶 + 下界疣 ➔ 粗制的药水。\n" +
+                    "▸ §b主力材料§r：糖➔迅捷；烈焰粉➔力量；金胡萝卜➔夜视；岩浆膏➔抗火；幻翼膜➔缓降；海龟壳➔神龟药水。\n" +
+                    "▸ §c发酵蛛眼§r：夜视➔隐身；迅捷/跳跃➔缓慢；治疗/剧毒➔伤害。红石粉延长时长，荧石粉升 II 级，火药制成喷溅。";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:brewing_stand 1", "BREWING_RECIPES"));
+        }
+
+        // 16. Iron Golem Spawning & Iron Farm
+        if (q.contains("铁傀儡") || q.contains("刷铁机") || q.contains("为什么不刷铁") || q.contains("村民惊吓") || q.contains("不生成铁傀儡")) {
+            String resp = "§a【铁傀儡生成判定与刷铁机力学】§r\n" +
+                    "▸ §e三大前置条件§r：至少 3 名有效村民绑定床铺；过去 20 分钟内村民必须睡过觉；村民需进入惊吓恐慌态。\n" +
+                    "▸ §b生成空间§r：村民中心 16×13×16 空间内需要完整方块表面，上方有 3 格空气或水流。\n" +
+                    "▸ §c排查§r：视线受阻无法入睡、附近残留铁傀儡、生成点空间不足，都可能导致不刷铁。";
+            return Optional.of(new Resolution(resp, "/summon minecraft:iron_golem", "IRON_GOLEM_MECHANICS"));
+        }
+
+        // 17. Nether Portal Linking & Desync
+        if (q.contains("传送门对齐") || q.contains("串门") || q.contains("传送门错位") || q.contains("下界门跑偏") || q.contains("双向传送门")) {
+            String resp = "§5【下界传送门精准对齐与防串门机制】§r\n" +
+                    "▸ §c串门根源§r：下界与主界为 8:1 坐标比例，进门搜索半径高达 128 格，多门会重定向至错误出口。\n" +
+                    "▸ §a黄金对齐法§r：主界 [X,Y,Z] 对应下界 [floor(X/8),Y,floor(Z/8)]，在精确点手动搭门并点燃。";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:obsidian 14", "PORTAL_LINKING"));
+        }
+
         return Optional.empty();
     }
 

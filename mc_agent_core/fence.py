@@ -12,6 +12,11 @@ from .rules import (
     OMINOUS_AND_TRIAL_RULES,
     WARDEN_SCULK_RULES,
     COPPER_AND_WAXING_RULES,
+    COMPARATOR_CONTAINER_RULES,
+    ANVIL_PENALTY_RULES,
+    BREWING_POTION_RULES,
+    IRON_GOLEM_SPAWN_RULES,
+    PORTAL_LINKING_RULES,
 )
 
 INJECTION_PATTERNS = re.compile(
@@ -56,7 +61,12 @@ class PromptSafetyFence:
             f"{BEACON_RULES}\n\n"
             f"{OMINOUS_AND_TRIAL_RULES}\n\n"
             f"{WARDEN_SCULK_RULES}\n\n"
-            f"{COPPER_AND_WAXING_RULES}\n"
+            f"{COPPER_AND_WAXING_RULES}\n\n"
+            f"{COMPARATOR_CONTAINER_RULES}\n\n"
+            f"{ANVIL_PENALTY_RULES}\n\n"
+            f"{BREWING_POTION_RULES}\n\n"
+            f"{IRON_GOLEM_SPAWN_RULES}\n\n"
+            f"{PORTAL_LINKING_RULES}\n"
             "</canonical_rules>"
         )
 
@@ -69,15 +79,16 @@ class PromptSafetyFence:
         )
 
     @staticmethod
-    def sanitize(input_str: str) -> str:
-        if not input_str:
+    def sanitize(raw_input: str) -> str:
+        if not raw_input:
             return ""
-        clean = (
-            input_str.replace("<player_context>", "")
-            .replace("</player_context>", "")
-            .replace("<player_query>", "")
-            .replace("</player_query>", "")
-            .replace("<canonical_rules>", "")
-            .replace("</canonical_rules>", "")
-        )
-        return clean.strip()
+        # Strip potential delimiter breaks and control characters
+        cleaned = raw_input.replace("<canonical_rules>", "")
+        cleaned = cleaned.replace("</canonical_rules>", "")
+        cleaned = cleaned.replace("<player_query>", "")
+        cleaned = cleaned.replace("</player_query>", "")
+        cleaned = cleaned.replace("<context_snapshot>", "")
+        cleaned = cleaned.replace("</context_snapshot>", "")
+        cleaned = cleaned.replace("<player_context>", "")
+        cleaned = cleaned.replace("</player_context>", "")
+        return cleaned.strip()

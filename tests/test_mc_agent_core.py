@@ -250,3 +250,24 @@ def test_async_dispatcher():
     assert not res_llm.is_fast_path
     assert res_llm.category == "LLM_INFERENCE"
     assert "Mock Response" in res_llm.raw_answer
+
+
+def test_fast_path_new_gameplay_rules():
+    cases = [
+        ("漏斗分类机22个物品怎么调", "COMPARATOR_SORTING", "22 个"),
+        ("铁砧附魔怎么省经验", "ANVIL_OPTIMIZATION", "二叉树"),
+        ("隐身药水怎么酿", "BREWING_RECIPES", "金胡萝卜"),
+        ("刷铁机为什么不刷铁", "IRON_GOLEM_MECHANICS", "3 名有效村民"),
+        ("下界传送门串门怎么解决", "PORTAL_LINKING", "8:1"),
+    ]
+    for query, category, marker in cases:
+        result = FastPathResolver.try_resolve(query, None)
+        assert result is not None
+        assert result.category == category
+        assert marker in result.text_response
+
+
+def test_prompt_safety_fence_contains_extended_rules():
+    fenced = PromptSafetyFence.build("比较器和铁砧怎么用？", None)
+    for marker in ("【红石比较器容器信号与分类机数学】", "【铁砧累积惩罚与二叉树最优附魔】", "【酿造台全配方与药水学推演】", "【铁傀儡生成机制与刷铁机力学】", "【下界传送门精准对齐与防串门机制】"):
+        assert marker in fenced.user_prompt
