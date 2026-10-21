@@ -2,9 +2,19 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 from .context import ContextSnapshot
-from .rules import MOB_SPAWNING_RULE, NETHERITE_UPGRADE_RULE, VERSION_1_21_MECHANICS
+from .rules import (
+    MOB_SPAWNING_RULE,
+    NETHERITE_UPGRADE_RULE,
+    VERSION_1_21_MECHANICS,
+    ENCHANTMENT_CONFLICT_RULES,
+    VILLAGER_RULES,
+    BEACON_RULES,
+    OMINOUS_AND_TRIAL_RULES,
+    WARDEN_SCULK_RULES,
+    COPPER_AND_WAXING_RULES,
+)
 
-INJECTION_REGEX = re.compile(
+INJECTION_PATTERNS = re.compile(
     r"(?i)(ignore\s+(all\s+)?(previous|prior|above)\s+instructions|system\s+prompt|give\s+me\s+op|/op\s+|gamemode\s+creative|execute\s+as|discard\s+safety)"
 )
 
@@ -18,23 +28,9 @@ class FencedPrompt:
 
 class PromptSafetyFence:
     @staticmethod
-    def sanitize(text: Optional[str]) -> str:
-        if not text:
-            return ""
-        clean = (
-            text.replace("<player_context>", "")
-            .replace("</player_context>", "")
-            .replace("<player_query>", "")
-            .replace("</player_query>", "")
-            .replace("<canonical_rules>", "")
-            .replace("</canonical_rules>", "")
-        )
-        return clean.strip()
-
-    @staticmethod
     def build(raw_query: str, context: Optional[ContextSnapshot]) -> FencedPrompt:
         sanitized = PromptSafetyFence.sanitize(raw_query)
-        suspicious = bool(INJECTION_REGEX.search(raw_query))
+        suspicious = bool(INJECTION_PATTERNS.search(raw_query))
 
         system_prompt = (
             "You are Hoshi, an intelligent and grounded in-game assistant inside Minecraft (Version 1.21.x).\n\n"
@@ -47,23 +43,41 @@ class PromptSafetyFence:
         )
 
         blocks = []
-        if context:
+        if context is not None:
             blocks.append(context.to_prompt_block())
 
         blocks.append(
             "<canonical_rules>\n"
             f"{MOB_SPAWNING_RULE}\n\n"
             f"{NETHERITE_UPGRADE_RULE}\n\n"
-            f"{VERSION_1_21_MECHANICS}\n"
+            f"{VERSION_1_21_MECHANICS}\n\n"
+            f"{ENCHANTMENT_CONFLICT_RULES}\n\n"
+            f"{VILLAGER_RULES}\n\n"
+            f"{BEACON_RULES}\n\n"
+            f"{OMINOUS_AND_TRIAL_RULES}\n\n"
+            f"{WARDEN_SCULK_RULES}\n\n"
+            f"{COPPER_AND_WAXING_RULES}\n"
             "</canonical_rules>"
         )
 
-        blocks.append(
-            f"<player_query>\n{sanitized}\n</player_query>"
-        )
+        blocks.append(f"<player_query>\n{sanitized}\n</player_query>")
 
         return FencedPrompt(
             system_prompt=system_prompt,
             user_prompt="\n\n".join(blocks),
             flagged_as_suspicious=suspicious,
         )
+
+    @staticmethod
+    def sanitize(input_str: str) -> str:
+        if not input_str:
+            return ""
+        clean = (
+            input_str.replace("<player_context>", "")
+            .replace("</player_context>", "")
+            .replace("<player_query>", "")
+            .replace("</player_query>", "")
+            .replace("<canonical_rules>", "")
+            .replace("</canonical_rules>", "")
+        )
+        return clean.strip()

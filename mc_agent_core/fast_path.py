@@ -1,7 +1,16 @@
 from dataclasses import dataclass
 from typing import Optional
 from .context import ContextSnapshot
-from .rules import LocalGameRules, NETHER_PORTAL_RULES
+from .rules import (
+    LocalGameRules,
+    NETHER_PORTAL_RULES,
+    ENCHANTMENT_CONFLICT_RULES,
+    VILLAGER_RULES,
+    BEACON_RULES,
+    OMINOUS_AND_TRIAL_RULES,
+    WARDEN_SCULK_RULES,
+    COPPER_AND_WAXING_RULES,
+)
 
 
 @dataclass(frozen=True)
@@ -94,36 +103,107 @@ class FastPathResolver:
             )
             return Resolution(text_response=resp, suggested_command=None, category="CRAFTER_1_21")
 
+        # 7. Enchantment conflicts / mutual exclusions
+        if any(k in q for k in ("冲突", "互斥", "不能一起")) or ("附魔" in q and any(k in q for k in ("无限", "经验修补", "锋利", "保护", "时运"))):
+            resp = (
+                "§e【附魔冲突与互斥速查】§r\n"
+                "▸ §c弓箭§r：【经验修补】与【无限】互斥，无法共存！\n"
+                "▸ §c武器伤害§r：【锋利】/【亡灵杀手】/【节肢杀手】互斥；重锤上【致密】与【破甲】互斥。\n"
+                "▸ §c防具防护§r：【保护】/【火焰保护】/【爆炸保护】/【弹射物保护】互斥。\n"
+                "▸ §c工具采集§r：【精准采集】与【时运】互斥。\n"
+                "▸ §c弩箭特殊§r：【多重射击】与【穿透】互斥；靴子【冰霜行者】与【深海漫游者】互斥。"
+            )
+            return Resolution(text_response=resp, suggested_command="/enchant @s minecraft:mending", category="ENCHANTMENT_CONFLICT")
+
+        # 8. Villager trade locking & professions
+        if "村民" in q and any(k in q for k in ("转职", "锁", "刷", "工作台", "职业", "交易", "图书", "经验修补")):
+            resp = (
+                "§a【村民职业与锁交易机制】§r\n"
+                "▸ §e永久锁定原则§r：只要与村民完成【任意 1 次交易】，其职业和附魔项将永久锁定，敲掉工作台也不会改变！\n"
+                "▸ §b无限刷经验修补书技巧§r：在未交易前，放置讲台让无业村民成为图书管理员，检查交易；若不是所需附魔书，空手破坏讲台重放即可无限重置！\n"
+                "▸ §f核心工作台对应§r：\n"
+                "  - 讲台 ➔ 图书管理员 (附魔书/绿宝石)\n"
+                "  - 高炉 ➔ 盔甲匠 | 砂轮 ➔ 武器匠 | 锻造台 ➔ 工具匠\n"
+                "  - 制箭台 ➔ 制箭师 (木棍换绿宝石神器)"
+            )
+            return Resolution(text_response=resp, suggested_command="/locate structure minecraft:village", category="VILLAGER_MECHANICS")
+
+        # 9. Beacon Pyramid structure & layers
+        if "信标" in q or ("金字塔" in q and "层" in q) or ("急迫" in q and any(k in q for k in ("2", "二", "ii"))):
+            resp = (
+                "§b【信标金字塔搭建与效果 (Beacon)】§r\n"
+                "▸ §6基座矿物块规格§r（铁/金/绿宝石/钻石/下界合金均可）：\n"
+                "  - 1 层：3×3 = 9 块 (范围 20 格，速度I / 急迫I)\n"
+                "  - 2 层：5×5+9 = 34 块 (范围 30 格，增加 抗性I / 跳跃I)\n"
+                "  - 3 层：7×7+34 = 83 块 (范围 40 格，增加 力量I)\n"
+                "  - 4 层满级：9×9+83 = 164 块 (共 2 组+36 块，范围 50 格)\n"
+                "▸ §a满级特权§r：解锁【急迫 II】（配合效率V镐实现秒挖深板岩/石头）或副效果【生命恢复 I】！\n"
+                "▸ §c注意§r：信标正上方必须无任何不透明方块阻挡直通天空。"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:beacon 1", category="BEACON_STRUCTURE")
+
+        # 10. Ominous Bottle & Trial Omen (1.21)
+        if ("不祥" in q and any(k in q for k in ("瓶", "兆", "宝库", "钥匙", "密室"))) or "试炼预兆" in q:
+            resp = (
+                "§5【1.21 不祥之瓶与试炼预兆机制】§r\n"
+                "▸ §e不祥之瓶 (Ominous Bottle)§r：击败掠夺者巡逻队旗帜队长掉落瓶子（I~V 级），喝下激活不祥之兆。\n"
+                "▸ §d试炼预兆 (Trial Omen)§r：带着不祥之兆接近试炼密室，自动转为试炼预兆！普通刷怪笼升级为【不祥刷怪笼】。\n"
+                "▸ §6重型核心获取途径§r：击破不祥刷怪笼掉落【不祥试炼钥匙】，用钥匙开启【不祥宝库】，有概率开出【重型核心 (Heavy Core)】合成重锤！"
+            )
+            return Resolution(text_response=resp, suggested_command="/locate structure minecraft:trial_chambers", category="OMINOUS_TRIAL_1_21")
+
+        # 11. Warden & Sculk Shrieker
+        if any(k in q for k in ("循声守卫", "warden", "监守者", "潜声体", "深暗之域")):
+            resp = (
+                "§1【循声守卫 (Warden) 触发与应对】§r\n"
+                "▸ §c召唤条件§r：自然生成的幽匿潜声体 (Sculk Shrieker) 被激活 4 次（潜声警告等级达到 4）时破土而出！\n"
+                "▸ §4极度危险数据§r：生命值高达 500 点 (250心)；近战单击 30 伤害 (15心)；远程声波尖啸穿甲穿墙造成 10 点魔法伤害。\n"
+                "▸ §a克制技巧§r：\n"
+                "  - 【羊毛】和地毯能 100% 阻隔振动波传导；\n"
+                "  - 始终保持潜行 (Shift) 移动；\n"
+                "  - 投掷雪球或箭矢向远处方块发出声音诱敌，切勿硬拼！"
+            )
+            return Resolution(text_response=resp, suggested_command="/locate structure minecraft:ancient_city", category="WARDEN_MECHANICS")
+
+        # 12. Copper Waxing & Scraping
+        if "铜" in q and any(k in q for k in ("蜡", "锈", "氧化", "绿")):
+            resp = (
+                "§6【铜块氧化、打蜡与除锈指南】§r\n"
+                "▸ §e4 阶段氧化§r：未锈蚀 (亮橙) ➔ 斑驳 (暗橙带绿) ➔ 锈蚀 (绿带橙) ➔ 氧化 (青绿)。\n"
+                "▸ §a打蜡保色§r：手持【蜜脾 (Honeycomb)】右键点击铜块，即可锁定当前颜色（涂蜡的铜块），不再继续生锈。\n"
+                "▸ §c刮蜡与除锈§r：手持【任意斧头 (Axe)】右键点击剥除蜡层，再次右键可回退一个生锈等级。\n"
+                "▸ §b雷击奇效§r：附近立引雷针，雷电放电可大面积震落周围铜块的铜锈！"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:honeycomb 64", category="COPPER_WAXING")
+
         return None
 
     @staticmethod
     def _resolve_coordinates(ctx: Optional[ContextSnapshot]) -> Resolution:
-        if not ctx:
-            return Resolution(text_response=NETHER_PORTAL_RULES, suggested_command=None, category="COORDINATES_GENERAL")
-
-        if ctx.is_overworld:
-            nx, ny, nz = ctx.get_nether_equivalent_coords()
-            text = (
-                "§e【主世界 ➔ 下界对应传送门坐标】§r\n"
-                f"▸ 当前主界坐标：[{ctx.block_x}, {ctx.block_y}, {ctx.block_z}]\n"
-                f"▸ 对应下界坐标：§a[{nx}, {ny}, {nz}]§r (X/8, Z/8)\n"
-                "▸ 建议：在下界该精确坐标建门，可避免多门串线干扰！"
+        if ctx is None:
+            return Resolution(
+                text_response=NETHER_PORTAL_RULES,
+                suggested_command=None,
+                category="COORDINATES_GENERAL",
             )
-            cmd = f"/tp {nx} {ny} {nz}"
-            return Resolution(text_response=text, suggested_command=cmd, category="COORDINATES_NETHER")
-        elif ctx.is_nether:
+
+        if ctx.is_nether:
             ox, oy, oz = ctx.get_overworld_equivalent_coords()
             text = (
-                "§e【下界 ➔ 主世界对应传送门坐标】§r\n"
+                f"§6【下界 ➔ 主界对应坐标】§r\n"
                 f"▸ 当前下界坐标：[{ctx.block_x}, {ctx.block_y}, {ctx.block_z}]\n"
-                f"▸ 对应主界坐标：§a[{ox}, {oy}, {oz}]§r (X*8, Z*8)\n"
-                "▸ 建议：在主世界该坐标建造地表传送门完成精准链接！"
+                f"▸ 对应主界坐标：§a[{ox}, {oy}, {oz}]§r\n"
+                f"▸ 计算公式：主界 X = 下界 X × 8, 主界 Z = 下界 Z × 8"
             )
             cmd = f"/tp {ox} {oy} {oz}"
             return Resolution(text_response=text, suggested_command=cmd, category="COORDINATES_OVERWORLD")
         else:
+            nx, ny, nz = ctx.get_nether_equivalent_coords()
             text = (
-                f"▸ 您当前处于末地 (The End) [{ctx.block_x}, {ctx.block_y}, {ctx.block_z}]，"
-                "末地不适用 8:1 下界坐标换算。"
+                f"§c【主界 ➔ 下界对应坐标】§r\n"
+                f"▸ 当前主界坐标：[{ctx.block_x}, {ctx.block_y}, {ctx.block_z}]\n"
+                f"▸ 对应下界坐标：§e[{nx}, {ny}, {nz}]§r\n"
+                f"▸ 计算公式：下界 X = floor(主界 X / 8), 下界 Z = floor(主界 Z / 8)"
             )
-            return Resolution(text_response=text, suggested_command=None, category="COORDINATES_END")
+            cmd = f"/tp {nx} {ny} {nz}"
+            return Resolution(text_response=text, suggested_command=cmd, category="COORDINATES_NETHER")

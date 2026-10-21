@@ -41,7 +41,13 @@ public final class PromptSafetyFence {
         userPrompt.append("<canonical_rules>\n");
         userPrompt.append(LocalGameRules.MOB_SPAWNING_RULE).append("\n\n");
         userPrompt.append(LocalGameRules.NETHERITE_UPGRADE_RULE).append("\n\n");
-        userPrompt.append(LocalGameRules.VERSION_1_21_MECHANICS).append("\n");
+        userPrompt.append(LocalGameRules.VERSION_1_21_MECHANICS).append("\n\n");
+        userPrompt.append(LocalGameRules.ENCHANTMENT_CONFLICT_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.VILLAGER_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.BEACON_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.OMINOUS_AND_TRIAL_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.WARDEN_SCULK_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.COPPER_AND_WAXING_RULES).append("\n");
         userPrompt.append("</canonical_rules>\n\n");
 
         userPrompt.append("<player_query>\n");

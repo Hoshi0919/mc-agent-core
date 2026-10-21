@@ -1,0 +1,54 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+group = 'hoshi.mcagent'
+version = '1.1.0'
+description = 'Grounded, non-blocking in-game AI assistant architecture for Minecraft (Fabric/NeoForge 1.20~1.21)'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+    withSourcesJar()
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            pom {
+                name = 'mc-agent-core'
+                description = project.description
+                url = 'https://github.com/Hoshi0919/mc-agent-core'
+                licenses {
+                    license {
+                        name = 'MIT License'
+                        url = 'https://opensource.org/licenses/MIT'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'Hoshi0919'
+                        name = 'Hoshi'
+                        email = 'hoshi0919@outlook.com'
+                    }
+                }
+            }
+        }
+    }
+}

@@ -31,7 +31,6 @@ public final class LocalGameRules {
 
     public static OreDistribution findOre(String query) {
         String lower = query.toLowerCase();
-        // Priority 1: Multi-char or specific terms to avoid partial substring collisions
         if (lower.contains("远古残骸") || lower.contains("下界合金") || lower.contains("残骸") || lower.contains("debris")) {
             return ORE_TABLE.get("ancient_debris");
         }
@@ -77,6 +76,55 @@ public final class LocalGameRules {
             "1. 水平坐标换算比例为 8:1：主界坐标除以 8 对应下界坐标；下界坐标乘以 8 对应主界坐标。\n" +
             "2. 公式：X_nether = floor(X_overworld / 8), Z_nether = floor(Z_overworld / 8)。高度 Y 不受 8 倍缩放影响。\n" +
             "3. 搜索半径：主界进入下界搜索半径为下界 16 格；下界进入主界搜索半径为主界 128 格。多门串门时需手动在精确对应坐标立门！";
+
+    public static final String ENCHANTMENT_CONFLICT_RULES =
+            "【附魔互斥与冲突权威规则】\n" +
+            "1. 弓箭类：【经验修补 (Mending)】与【无限 (Infinity)】绝对互斥！不可在同一把弓上共存。\n" +
+            "2. 近战伤害类：【锋利 (Sharpness)】、【亡灵杀手 (Smite)】、【节肢杀手 (Bane of Arthropods)】互斥（只能选其一）。重锤上【致密 (Density)】与【破甲 (Breach)】亦互斥。\n" +
+            "3. 护甲减伤类：【保护 (Protection)】、【火焰保护 (Fire Protection)】、【爆炸保护 (Blast Protection)】、【弹射物保护 (Projectile Protection)】互斥。\n" +
+            "4. 工具采集类：【精准采集 (Silk Touch)】与【时运 (Fortune)】互斥。\n" +
+            "5. 弩箭类：【多重射击 (Multishot)】与【穿透 (Piercing)】互斥。\n" +
+            "6. 靴子特殊：【冰霜行者 (Frost Walker)】与【深海漫游者 (Depth Strider)】互斥。";
+
+    public static final String VILLAGER_RULES =
+            "【村民职业、交易与锁交易机制】\n" +
+            "1. 永久锁定机制：只要与村民完成【任意一次交易】，该村民的职业与所有交易项将永久锁定！即使敲掉工作台也不会转职或洗掉。\n" +
+            "2. 刷新附魔书（核心技巧）：未交易前，放置【讲台 (Lectern)】让无业村民成为图书管理员；若第一层未刷出心仪的附魔书（如经验修补、锋利V），直接空手破坏讲台并重新放置，村民会瞬间重置并刷新全新交易表！\n" +
+            "3. 常见工作台对应：\n" +
+            "   - 讲台 (Lectern) ➔ 图书管理员（附魔书）\n" +
+            "   - 高炉 (Blast Furnace) ➔ 盔甲匠（钻石防具）\n" +
+            "   - 砂轮 (Grindstone) ➔ 武器匠（钻石武器）\n" +
+            "   - 锻造台 (Smithing Table) ➔ 工具匠（钻石工具）\n" +
+            "   - 制箭台 (Fletching Table) ➔ 制箭师（木棍换绿宝石）\n" +
+            "   - 堆肥桶 (Composter) ➔ 农夫（作物换绿宝石）\n" +
+            "4. 补货时间：村民每天在工作时间段（Tick 2000~9000）前往工作台补货至多 2 次。";
+
+    public static final String BEACON_RULES =
+            "【信标金字塔搭建与效果计算】\n" +
+            "1. 基座金字塔层级与消耗（矿物块可用铁/金/绿宝石/钻石/下界合金混搭）：\n" +
+            "   - 1 层 (3×3 = 9 块)：范围 20 格，可选 速度 I 或 急迫 I\n" +
+            "   - 2 层 (5×5 + 9 = 34 块)：范围 30 格，增加可选 抗性提升 I 或 跳跃提升 I\n" +
+            "   - 3 层 (7×7 + 34 = 83 块)：范围 40 格，增加可选 力量 I\n" +
+            "   - 4 层满级 (9×9 + 83 = 164 块，共 2 组多 36 块)：范围 50 格，可解锁【急迫 II】（配合效率V镐实现秒挖深板岩与石头）或额外【生命恢复 I】！\n" +
+            "2. 露天要求：信标正上方至天空建筑上限高度内不能有任何不透明完整方块阻挡（玻璃等透明方块允许）。";
+
+    public static final String OMINOUS_AND_TRIAL_RULES =
+            "【1.21 不祥之兆与试炼密室不祥事件】\n" +
+            "1. 不祥之瓶 (Ominous Bottle)：击败带旗帜的袭击队长后掉落瓶子（I~V 级），不再自动给玩家上 buff。玩家可自由选择何时饮用获得不祥之兆。\n" +
+            "2. 试炼预兆 (Trial Omen)：带着不祥之兆接近试炼密室，效果自动转化为试炼预兆，密室内的普通刷怪笼升级为【不祥刷怪笼】（生成穿戴附魔装备的强力怪并从头顶掉落喷溅药水与弹射物）。\n" +
+            "3. 不祥宝库 (Ominous Vault)：击败不祥刷怪笼掉落【不祥试炼钥匙】，用于开启不祥宝库，是获取【重型核心 (Heavy Core)】合成重锤的唯一途径！";
+
+    public static final String WARDEN_SCULK_RULES =
+            "【循声守卫 (Warden) 与幽匿潜声体机制】\n" +
+            "1. 召唤条件：自然生成的幽匿潜声体 (Sculk Shrieker) 累计触发 4 次（潜声警告等级达到 4），循声守卫会从地下钻出。人工放置的潜声体不会召唤循声守卫。\n" +
+            "2. 属性威慑：500 点生命值（250 颗心）；近战攻击力高达 30 点（15 颗心）；远程声波尖啸穿透护甲与方块掩体造成 10 点魔法伤害。\n" +
+            "3. 潜行与隔音：潜行移动（Shift）、羊毛 (Wool) 和地毯能 100% 阻隔声音振动波向潜声感测体传播。若无新激活，警告等级每 10 分钟衰减 1 级。建议投掷雪球/箭矢声东击西，避免正面冲突。";
+
+    public static final String COPPER_AND_WAXING_RULES =
+            "【铜块氧化、打蜡与除锈指南】\n" +
+            "1. 4 阶段氧化状态：未锈蚀 (亮橙) ➔ 斑驳 (暗橙带绿) ➔ 锈蚀 (绿带橙) ➔ 氧化 (完全青绿)。\n" +
+            "2. 打蜡锁定：手持【蜜脾 (Honeycomb)】右键点击铜块，即可锁定当前氧化外观（涂蜡铜块），永久不再继续生锈。\n" +
+            "3. 刮蜡与除锈：手持【任意斧头 (Axe)】右键点击可剥除蜡层，再次右键可将氧化状态削减一个等级（恢复亮橙色）。雷雨天在附近立引雷针，雷击放电可一次性震落大范围铜块的铜锈！";
 
     private LocalGameRules() {}
 }
