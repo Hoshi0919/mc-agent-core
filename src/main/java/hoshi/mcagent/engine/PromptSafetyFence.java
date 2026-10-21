@@ -29,8 +29,7 @@ public final class PromptSafetyFence {
                 Rules:
                 1. Always prioritize factual accuracy for Minecraft 1.18~1.21. Never hallucinate outdated mechanics (e.g. 1.20+ requires Smithing Template for netherite, 1.18+ diamond optimal at Y=-58, monster spawning requires block light 0).
                 2. Keep responses concise, clear, and direct. The player is reading this in a Minecraft chatbox or small HUD overlay. Maximum 3 to 4 compact sentences.
-                3. Do NOT execute destructive server commands or claim you have OP privileges.
-                4. When suggesting in-game coordinates or commands, place them cleanly so the player can copy or click them.
+                3. Do NOT execute destructive server commands or claim you have OP privileges.\n                4. When suggesting in-game coordinates or commands, place them cleanly so the player can copy or click them.
                 """;
 
         StringBuilder userPrompt = new StringBuilder();
@@ -52,7 +51,13 @@ public final class PromptSafetyFence {
         userPrompt.append(LocalGameRules.ANVIL_PENALTY_RULES).append("\n\n");
         userPrompt.append(LocalGameRules.BREWING_POTION_RULES).append("\n\n");
         userPrompt.append(LocalGameRules.IRON_GOLEM_SPAWN_RULES).append("\n\n");
-        userPrompt.append(LocalGameRules.PORTAL_LINKING_RULES).append("\n");
+        userPrompt.append(LocalGameRules.PORTAL_LINKING_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.END_DRAGON_AND_GATEWAY_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.CONDUIT_STRUCTURE_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.RAID_AND_VILLAGE_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.PIGLIN_BARTERING_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.ENCHANTING_TABLE_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.JAVA_BEDROCK_DIFFERENCES_RULES).append("\n");
         userPrompt.append("</canonical_rules>\n\n");
 
         userPrompt.append("<player_query>\n");

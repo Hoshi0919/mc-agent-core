@@ -271,3 +271,34 @@ def test_prompt_safety_fence_contains_extended_rules():
     fenced = PromptSafetyFence.build("比较器和铁砧怎么用？", None)
     for marker in ("【红石比较器容器信号与分类机数学】", "【铁砧累积惩罚与二叉树最优附魔】", "【酿造台全配方与药水学推演】", "【铁傀儡生成机制与刷铁机力学】", "【下界传送门精准对齐与防串门机制】"):
         assert marker in fenced.user_prompt
+
+
+def test_fast_path_v1_3_advanced_mechanics():
+    cases = [
+        ("末影龙怎么复活", "END_DRAGON_GATEWAY", "末影水晶", "/locate structure minecraft:end_city"),
+        ("潮涌核心怎么摆", "CONDUIT_STRUCTURE", "42 块方块", "/give @s minecraft:conduit 1"),
+        ("村庄突袭怎么触发", "RAID_VILLAGE", "不死图腾", "/effect give @s minecraft:hero_of_the_village 300 1"),
+        ("为什么猪灵打我", "PIGLIN_BARTER", "猪灵蛮兵", "/give @s minecraft:gold_ingot 64"),
+        ("附魔台摆放需要几个书架", "ENCHANTING_TABLE", "15 个书架", "/give @s minecraft:enchanting_table 1"),
+        ("基岩版和java版红石有什么区别", "JAVA_BEDROCK_DIFF", "准连接性", None),
+    ]
+    for query, category, marker, expected_cmd in cases:
+        res = FastPathResolver.try_resolve(query, None)
+        assert res is not None
+        assert res.category == category
+        assert marker in res.text_response
+        assert res.suggested_command == expected_cmd
+
+
+def test_prompt_safety_fence_contains_v1_3_rules():
+    fenced = PromptSafetyFence.build("综合游戏力学规则", None)
+    v1_3_markers = [
+        "【末影龙复活、折跃门与鞘翅探索】",
+        "【潮涌核心搭建与水下主宰力学】",
+        "【村庄袭击 (Raid) 与村庄英雄力学】",
+        "【猪灵以物易物与猪灵蛮兵权威力学】",
+        "【30级附魔台几何摆放与经验洗炼】",
+        "【Java 版 vs 基岩版 (Bedrock) 核心机制差异】",
+    ]
+    for marker in v1_3_markers:
+        assert marker in fenced.user_prompt

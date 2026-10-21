@@ -203,6 +203,61 @@ public final class FastPathResolver {
             return Optional.of(new Resolution(resp, "/give @s minecraft:obsidian 14", "PORTAL_LINKING"));
         }
 
+        // 18. Ender Dragon Resummoning & End Gateway / Elytra
+        if (q.contains("末影龙") || q.contains("复活龙") || q.contains("折跃门") || q.contains("末地折跃门") || q.contains("末地外岛") || q.contains("鞘翅怎么飞") || q.contains("潜影盒怎么合") || q.contains("龙蛋")) {
+            String resp = "§5【末影龙复活、末地折跃门与鞘翅探索】§r\n" +
+                    "▸ §e复活末影龙§r：在返回传送门 4 个方向中心各放置 1 个【末影水晶】（共 4 个），水晶光束将重生顶端水晶并孵化末影龙（复活掉落 500 经验，无新龙蛋）。\n" +
+                    "▸ §a末地折跃门§r：击杀末影龙后生成 1x1 基岩折跃门，投掷末影珍珠穿透瞬间传送至 1000 格外末地外岛！\n" +
+                    "▸ §b鞘翅与火箭§r：末地船物品框获取鞘翅；副手持纯火药+纸合成的烟花火箭推进加速；潜影盒由 2 潜影壳 + 1 木箱合成。";
+            return Optional.of(new Resolution(resp, "/locate structure minecraft:end_city", "END_DRAGON_GATEWAY"));
+        }
+
+        // 19. Conduit Structure & Power
+        if (q.contains("潮涌核心") || q.contains("潮涌能量") || q.contains("导管怎么激活") || q.contains("潮涌核心怎么摆") || q.contains("海洋之心") || q.contains("鹦鹉螺壳") || q.contains("海晶石框架")) {
+            String resp = "§3【潮涌核心搭建与水下主宰力学】§r\n" +
+                    "▸ §e核心合成§r：1 个海洋之心（藏宝箱）+ 8 个鹦鹉螺壳（钓鱼或溺尸掉落）。\n" +
+                    "▸ §a框架搭建§r：核心置于水中心，用海晶石搭建 5×5 正交环。16 块启动基础范围 32 格，42 块满级范围达 96 格！\n" +
+                    "▸ §d主宰效果§r：水下无限呼吸、夜视、挖掘不减速；满级对 8 格内溺尸与守卫者持续造成每 2 秒 4 点伤害！";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:conduit 1", "CONDUIT_STRUCTURE"));
+        }
+
+        // 20. Raid & Hero of the Village
+        if (q.contains("突袭怎么触发") || q.contains("村庄袭击") || q.contains("村庄英雄") || q.contains("唤魔者") || q.contains("不死图腾") || q.contains("破坏兽") || q.contains("袭村") || q.contains("袭击波次")) {
+            String resp = "§4【村庄突袭 (Raid) 机制与村庄英雄】§r\n" +
+                    "▸ §c触发机制 (1.21)§r：击败巡逻队长掉落不祥之瓶，饮用后进村转化为突袭预兆，30 秒倒计时后爆发袭击！\n" +
+                    "▸ §e波次规格§r：简单 3 波、普通 5 波、困难 7 波。卫道士斧头高伤，唤魔者掉落不死图腾，女巫丢药水。\n" +
+                    "▸ §a胜利奖赏§r：赋予【村庄英雄】Buff，村民全线打折（最低 1 绿宝石换神装）并投掷礼物！";
+            return Optional.of(new Resolution(resp, "/effect give @s minecraft:hero_of_the_village 300 1", "RAID_VILLAGE"));
+        }
+
+        // 21. Piglin Bartering & Piglin Brute
+        if (q.contains("猪灵交易") || q.contains("以物易物") || q.contains("猪灵蛮兵") || q.contains("为什么猪灵打我") || q.contains("猪灵开箱") || q.contains("猪灵金装") || q.contains("猪灵换末影珍珠")) {
+            String resp = "§6【猪灵以物易物与猪灵蛮兵权威力学】§r\n" +
+                    "▸ §a穿金防身§r：穿戴至少 1 件黄金装备防普通猪灵敌对。\n" +
+                    "▸ §4绝对禁忌§r：破坏金矿/金块，或打开/破坏任何箱子、潜影盒、末影箱、木桶，周围 16 格猪灵全员激怒！\n" +
+                    "▸ §e以物易物§r：金锭投掷给成年猪灵，掉落末影珍珠、抗火药水、哭泣的黑曜石、灵魂沙等。\n" +
+                    "▸ §c猪灵蛮兵§r：堡垒遗迹专属！免疫金装伪装、绝不交易、不可安抚，必须垫高或熔岩优先击杀！";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:gold_ingot 64", "PIGLIN_BARTER"));
+        }
+
+        // 22. Enchanting Table Geometry & Bookshelves
+        if (q.contains("附魔台摆放") || q.contains("15个书架") || q.contains("30级附魔") || q.contains("附魔台被挡") || q.contains("附魔台怎么摆") || q.contains("砂轮洗附魔") || q.contains("附魔台有效距离")) {
+            String resp = "§5【30 级附魔台几何摆放与经验洗炼】§r\n" +
+                    "▸ §e书架配置§r：需要恰好 15 个书架，围在附魔台周围水平 2 格距离（留出 1 格空气）。\n" +
+                    "▸ §c遮挡禁忌§r：附魔台与书架中间 1 格空气严禁有火把、地毯、雪片等任何方块阻挡，否则附魔等级骤降！\n" +
+                    "▸ §b附魔技巧§r：消耗 3 级经验 + 3 青金石；词条不满意用砂轮洗掉非诅咒附魔返还经验并刷新种子。";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:enchanting_table 1", "ENCHANTING_TABLE"));
+        }
+
+        // 23. Java Edition vs Bedrock Edition differences
+        if (q.contains("基岩版和java版") || q.contains("java版和基岩版") || q.contains("准连接性") || q.contains("qc") || q.contains("活塞吐方块") || q.contains("基岩版能横扫吗") || q.contains("基岩版副手") || q.contains("基岩版红石区别")) {
+            String resp = "§e【Minecraft Java 版 vs 基岩版 (Bedrock) 核心机制差异】§r\n" +
+                    "▸ §c战斗机制§r：Java 版武器有攻击冷却 CD，满蓄力横扫之刃 AOE，斧头破盾；基岩版无 CD 可高速连点，无横扫附魔。\n" +
+                    "▸ §b副手机制§r：Java 版副手可持几乎任意物品；基岩版副手仅限盾牌、箭矢、图腾、焰火、地图等少数物品。\n" +
+                    "▸ §a准连接性 (QC)§r：Java 版支持 QC 且 1-tick 脉冲可使粘性活塞吐出方块；基岩版无 QC，粘性活塞永远黏住方块！";
+            return Optional.of(new Resolution(resp, null, "JAVA_BEDROCK_DIFF"));
+        }
+
         return Optional.empty();
     }
 

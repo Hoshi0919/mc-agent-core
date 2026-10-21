@@ -234,6 +234,84 @@ class FastPathResolver:
             )
             return Resolution(text_response=resp, suggested_command="/give @s minecraft:obsidian 14", category="PORTAL_LINKING")
 
+        # 18. Ender Dragon Resummoning & End Gateway / Elytra
+        if any(k in q for k in ("末影龙", "复活龙", "折跃门", "末地折跃门", "末地外岛", "鞘翅怎么飞", "潜影盒怎么合", "龙蛋")):
+            resp = (
+                "§5【末影龙复活、末地折跃门与鞘翅探索】§r\n"
+                "▸ §e复活末影龙§r：在末地中央返回传送门基岩池边缘的 4 个方向中心各放置 1 个【末影水晶】（共 4 个），水晶光束将重生黑曜石柱顶水晶并孵化末影龙（复活击杀奖励 500 经验，无新龙蛋）。\n"
+                "▸ §a末地折跃门 (End Gateway)§r：击杀末影龙后生成的浮空 1x1 基岩折跃门，投掷末影珍珠穿透即可瞬间跨越 1000 格到达末地外岛！\n"
+                "▸ §b鞘翅与动力火箭§r：\n"
+                "  - 鞘翅位于外岛末地船船头物品展示框内；\n"
+                "  - 滑翔时副手手持【纯纸+火药合成的烟花火箭】（无爆炸星，飞行时间 1~3）右键提供喷射加速；\n"
+                "  - 潜影盒：2 个潜影壳 + 1 个木箱合成，打破保留内部物品的便携神包！"
+            )
+            return Resolution(text_response=resp, suggested_command="/locate structure minecraft:end_city", category="END_DRAGON_GATEWAY")
+
+        # 19. Conduit Structure & Power
+        if any(k in q for k in ("潮涌核心", "潮涌能量", "导管怎么激活", "潮涌核心怎么摆", "海洋之心", "鹦鹉螺壳", "海晶石框架")):
+            resp = (
+                "§3【潮涌核心搭建与水下主宰力学】§r\n"
+                "▸ §e核心合成§r：1 个【海洋之心】（埋藏的宝藏箱）+ 8 个【鹦鹉螺壳】（钓鱼或溺尸掉落）。\n"
+                "▸ §a海晶石环形框架搭建§r：\n"
+                "  - 核心置于水中心（5×5×5 水域中）；\n"
+                "  - 外围用海晶石/海晶石砖/暗海晶石/海晶灯搭建 5×5 的正交环；\n"
+                "  - §b16 块方块 (单环)§r：启动基础潮涌能量，作用半径 32 格；\n"
+                "  - §642 块方块 (三环满级)§r：作用半径满载至 §a96 格§r！\n"
+                "▸ §d主宰效果§r：水下无限呼吸、水下高清晰夜视、挖掘不减速；满级框架对 8 格内溺尸与守卫者持续造成每 2 秒 4 点穿透伤害！"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:conduit 1", category="CONDUIT_STRUCTURE")
+
+        # 20. Raid & Hero of the Village
+        if any(k in q for k in ("突袭怎么触发", "村庄袭击", "村庄英雄", "唤魔者", "不死图腾", "破坏兽", "袭村", "袭击波次")):
+            resp = (
+                "§4【村庄突袭 (Raid) 机制与村庄英雄】§r\n"
+                "▸ §c触发机制 (1.21)§r：击败巡逻队长掉落【不祥之瓶】，饮用后进村转化为【突袭预兆 (Raid Omen)】，30 秒倒计时后爆发袭击！\n"
+                "▸ §e波次规格§r：简单难度 3 波、普通难度 5 波、困难难度 7 波。\n"
+                "▸ §b高危怪物威胁§r：\n"
+                "  - 卫道士：高移速铁斧重劈，近战爆发极高；\n"
+                "  - 唤魔者：地刺与穿墙恼鬼 (Vex)，击杀掉落神级保命物【不死图腾 (Totem of Undying)】；\n"
+                "  - 女巫：远程丢剧毒与迟缓药水，治疗友军；破坏兽冲撞击退。\n"
+                "▸ §a胜利奖赏§r：全村欢呼赋予【村庄英雄 (Hero of the Village)】，村民全线打折（最低 1 绿宝石换神装）并向你抛洒礼物！"
+            )
+            return Resolution(text_response=resp, suggested_command="/effect give @s minecraft:hero_of_the_village 300 1", category="RAID_VILLAGE")
+
+        # 21. Piglin Bartering & Piglin Brute
+        if any(k in q for k in ("猪灵交易", "以物易物", "猪灵蛮兵", "为什么猪灵打我", "猪灵开箱", "猪灵金装", "猪灵换末影珍珠")):
+            resp = (
+                "§6【猪灵以物易物与猪灵蛮兵权威力学】§r\n"
+                "▸ §a穿金防身§r：身上穿戴至少 1 件黄金装备（金头盔/金靴等），普通成年猪灵便不会主动攻击。\n"
+                "▸ §4绝对禁忌（瞬间激怒）§r：\n"
+                "  - 破坏任何金块或金矿；\n"
+                "  - 打开或破坏任何【箱子、潜影盒、末影箱、木桶、陷阱箱】，周围 16 格所有猪灵立刻全员敌对追杀！\n"
+                "▸ §e以物易物 (Bartering)§r：右键或丢给猪灵金锭，掉落末影珍珠 (大量获取主途径)、抗火药水、哭泣的黑曜石、黑曜石、灵魂沙、魂疾铁靴等。\n"
+                "▸ §c猪灵蛮兵 (Piglin Brute)§r：堡垒遗迹专属！【免疫金装伪装、绝不交易、不可安抚】，伤害极高，必须用垫高或熔岩优先铲除！"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:gold_ingot 64", category="PIGLIN_BARTER")
+
+        # 22. Enchanting Table Geometry & Bookshelves
+        if any(k in q for k in ("附魔台摆放", "15个书架", "30级附魔", "附魔台被挡", "附魔台怎么摆", "砂轮洗附魔", "附魔台有效距离")):
+            resp = (
+                "§5【30 级附魔台几何摆放与经验洗炼】§r\n"
+                "▸ §e书架配置规格§r：需要恰好 §a15 个书架§r，围在附魔台周围水平 2 格距离（与附魔台相隔 1 格空气）。常见为 5×5 外圈留 1 格缺口进出。\n"
+                "▸ §c致命遮挡禁忌§r：附魔台与书架中间的 1 格空气空间必须【完全洁净】！不能有任何火把、地毯、雪片、红石、花草等阻碍视线，否则直接阻断吸收符文，导致附魔等级骤跌！\n"
+                "▸ §b附魔与重置技巧§r：\n"
+                "  - 3 级最高附魔消耗 3 级经验 + 3 个青金石（要求角色达 30 级）；\n"
+                "  - 若词条不满意，可在【砂轮 (Grindstone)】上洗掉所有非诅咒附魔并返还部分经验，或附魔 1 级木棒/废书刷新词条种子。"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:enchanting_table 1", category="ENCHANTING_TABLE")
+
+        # 23. Java Edition vs Bedrock Edition differences
+        if any(k in q for k in ("基岩版和java版", "java版和基岩版", "准连接性", "qc", "活塞吐方块", "基岩版能横扫吗", "基岩版副手", "基岩版红石区别")):
+            resp = (
+                "§e【Minecraft Java 版 vs 基岩版 (Bedrock) 核心机制差异】§r\n"
+                "▸ §c战斗机制§r：Java 版武器具有攻击冷却 CD，满蓄力挥剑触发【横扫之刃】AOE，斧头破盾 5 秒；基岩版无冷却槽可高速连点输出，无横扫附魔。\n"
+                "▸ §b副手机制§r：Java 版副手可放置火把、食物、方块、工具、烟花等任意物品；基岩版副手仅限盾牌、箭矢、图腾、焰火、地图等少数物品。\n"
+                "▸ §a红石准连接性 (QC)§r：\n"
+                "  - Java 版活塞/发射器可被上方或斜上方红石间接激发（需 BUD 方块更新），1-tick 脉冲可使粘性活塞吐出或吸回方块；\n"
+                "  - 基岩版完全不支持准连接性 (No QC)，活塞运动更严格，粘性活塞永远黏住方块不吐出！"
+            )
+            return Resolution(text_response=resp, suggested_command=None, category="JAVA_BEDROCK_DIFF")
+
         return None
 
     @staticmethod

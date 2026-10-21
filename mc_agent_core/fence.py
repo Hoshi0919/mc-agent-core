@@ -17,6 +17,12 @@ from .rules import (
     BREWING_POTION_RULES,
     IRON_GOLEM_SPAWN_RULES,
     PORTAL_LINKING_RULES,
+    END_DRAGON_AND_GATEWAY_RULES,
+    CONDUIT_STRUCTURE_RULES,
+    RAID_AND_VILLAGE_RULES,
+    PIGLIN_BARTERING_RULES,
+    ENCHANTING_TABLE_RULES,
+    JAVA_BEDROCK_DIFFERENCES_RULES,
 )
 
 INJECTION_PATTERNS = re.compile(
@@ -66,7 +72,13 @@ class PromptSafetyFence:
             f"{ANVIL_PENALTY_RULES}\n\n"
             f"{BREWING_POTION_RULES}\n\n"
             f"{IRON_GOLEM_SPAWN_RULES}\n\n"
-            f"{PORTAL_LINKING_RULES}\n"
+            f"{PORTAL_LINKING_RULES}\n\n"
+            f"{END_DRAGON_AND_GATEWAY_RULES}\n\n"
+            f"{CONDUIT_STRUCTURE_RULES}\n\n"
+            f"{RAID_AND_VILLAGE_RULES}\n\n"
+            f"{PIGLIN_BARTERING_RULES}\n\n"
+            f"{ENCHANTING_TABLE_RULES}\n\n"
+            f"{JAVA_BEDROCK_DIFFERENCES_RULES}\n"
             "</canonical_rules>"
         )
 
