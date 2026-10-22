@@ -18,11 +18,31 @@ public final class ChatPaginator {
             List<String> pageLines,
             String fullPageText,
             List<MinecraftTextFormatter.ChatComponent> components,
-            String tellrawJson
-    ) {}
+            String tellrawJson,
+            String originalText,
+            String commandPrefix
+    ) {
+        public PagedResult(int currentPage, int totalPages, int pageSize, int totalLines,
+                           List<String> pageLines, String fullPageText,
+                           List<MinecraftTextFormatter.ChatComponent> components, String tellrawJson) {
+            this(currentPage, totalPages, pageSize, totalLines, pageLines, fullPageText, components, tellrawJson, fullPageText, DEFAULT_PAGE_CMD_PREFIX);
+        }
+
+        public String getFormattedContent() {
+            return fullPageText;
+        }
+    }
 
     public static final int DEFAULT_PAGE_SIZE = 5;
-    public static final String DEFAULT_PAGE_CMD_PREFIX = "/mcagent page";
+    public static final String DEFAULT_PAGE_CMD_PREFIX = "/hoshi page";
+
+    public static PagedResult paginate(String rawText, int targetPage, int pageSize) {
+        return paginate(rawText, targetPage, pageSize, DEFAULT_PAGE_CMD_PREFIX);
+    }
+
+    public static PagedResult paginate(String rawText, int targetPage) {
+        return paginate(rawText, targetPage, DEFAULT_PAGE_SIZE, DEFAULT_PAGE_CMD_PREFIX);
+    }
 
     /**
      * Paginates a multiline text into the requested page.
@@ -136,7 +156,7 @@ public final class ChatPaginator {
         }
 
         String tellraw = TellrawJsonBuilder.toJson(components);
-        return new PagedResult(page, totalPages, pageSize, totalLines, currentLines, pageText.toString(), components, tellraw);
+        return new PagedResult(page, totalPages, pageSize, totalLines, currentLines, pageText.toString(), components, tellraw, rawText, prefix);
     }
 
     private ChatPaginator() {}

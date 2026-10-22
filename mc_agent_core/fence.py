@@ -27,6 +27,9 @@ from .rules import (
     STONE_GENERATOR_RULES,
     REDSTONE_CLOCK_RULES,
     PUMPKIN_MELON_FARM_RULES,
+    VILLAGER_BREEDING_RULES,
+    VILLAGER_CROP_FARM_RULES,
+    SMELTING_FUEL_EFFICIENCY_RULES,
 )
 
 INJECTION_PATTERNS = re.compile(
@@ -86,7 +89,10 @@ class PromptSafetyFence:
             f"{SUGAR_CANE_FARM_RULES}\n\n"
             f"{STONE_GENERATOR_RULES}\n\n"
             f"{REDSTONE_CLOCK_RULES}\n\n"
-            f"{PUMPKIN_MELON_FARM_RULES}\n" 
+            f"{PUMPKIN_MELON_FARM_RULES}\n\n"
+            f"{VILLAGER_BREEDING_RULES}\n\n"
+            f"{VILLAGER_CROP_FARM_RULES}\n\n"
+            f"{SMELTING_FUEL_EFFICIENCY_RULES}\n"
             "</canonical_rules>"
         )
 

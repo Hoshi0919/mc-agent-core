@@ -294,6 +294,33 @@ public final class FastPathResolver {
             return Optional.of(new Resolution(resp, "/give @s minecraft:pumpkin_seeds 64", "PUMPKIN_MELON_FARM"));
         }
 
+        // 28. Villager Breeding Dynamics
+        if (q.contains("村民繁殖") || q.contains("村民生小村民") || q.contains("村民生孩子") || q.contains("村民不生") || q.contains("村民生小人") || q.contains("村民怎么繁殖") || q.contains("村民床位")) {
+            String resp = "§6【村民繁殖与有效床位动力学】§r\n" +
+                    "▸ §a有效床位§r：村内有效床位必须多于村民总数；且床头正上方必须留出至少 2 格完整透明/空气高度（供幼年村民跳床寻路判定）！\n" +
+                    "▸ §e食物意愿§r：每只村民需消耗 3 面包，或 12 胡萝卜，或 12 马铃薯，或 12 甜菜根。\n" +
+                    "▸ §b生长周期§r：幼年村民 20 分钟（24000 ticks）成年，双亲繁育后冷却 5 分钟。";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:bread 64", "VILLAGER_BREEDING"));
+        }
+
+        // 29. Automatic Villager Crop Farm
+        if (q.contains("村民农场") || q.contains("村民农田") || q.contains("全自动农田") || q.contains("农民自动收菜") || q.contains("自动收小麦") || q.contains("自动收胡萝卜") || q.contains("自动收马铃薯")) {
+            String resp = "§6【全自动村民农田机制】§r\n" +
+                    "▸ §a农民特征§r：只有棕袍农民拥有自动耕作与补种 AI；背包拥有 8 个独立物品槽。\n" +
+                    "▸ §e背包防堵§r：入场前主动投喂 8 组单一作物（如胡萝卜）将背包填满，杜绝拾取杂物卡死。\n" +
+                    "▸ §b收集方案§r：隔着栅栏向饥饿村民投喂拦截（中间漏斗截取），或耕地下方漏斗矿车穿透吸物。";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:carrot 64", "VILLAGER_CROP_FARM"));
+        }
+
+        // 30. Smelting & High-Efficiency Fuels
+        if (q.contains("熔炼燃料") || q.contains("熔炉燃料") || q.contains("烧矿燃料") || q.contains("最划算的燃料") || q.contains("岩浆桶能烧几个") || q.contains("干海带块能烧几个") || q.contains("熔炼时间") || q.contains("燃料效率")) {
+            String resp = "§6【高能自动化燃料与熔炼动力学】§r\n" +
+                    "▸ §e标准耗时§r：单件物品熔炼需 200 ticks (10.0 秒)；高炉/烟熏炉减半至 100 ticks。\n" +
+                    "▸ §c顶尖热值§r：岩浆桶烧 100 个（返还空桶，最高单体）；煤炭块烧 80 个；干海带块烧 20 个（可再生首选）；烈焰棒 12 个；煤炭 8 个。\n" +
+                    "▸ §b熔炉阵列§r：顶端输入原料，侧面输入燃料，底端漏斗抽取成品。";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:dried_kelp_block 64", "SMELTING_FUEL_EFFICIENCY"));
+        }
+
         return Optional.empty();
     }
 

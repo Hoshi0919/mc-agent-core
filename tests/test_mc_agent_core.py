@@ -11,6 +11,14 @@ from mc_agent_core import (
     PromptSafetyFence,
     MinecraftTextFormatter,
     AsyncQueryDispatcher,
+    ItemStack,
+    BlueprintBOM,
+    MaterialCalculator,
+    Turn,
+    PlayerSession,
+    PlayerSessionManager,
+    CommandResult,
+    CommandRouter,
 )
 
 
@@ -457,3 +465,154 @@ def test_dispatcher_with_cache_and_rate_limiting():
     res_spam = dispatcher.dispatch("全自动甘蔗机怎么做", None, player_id="PlayerP1")
     assert res_spam.category == "RATE_LIMITED"
     assert "提问过快" in res_spam.raw_answer
+
+
+def test_fast_path_v1_5_rules():
+    # 28. Villager Breeding
+    res_b = FastPathResolver.try_resolve("村民繁殖需要什么条件", None)
+    assert res_b is not None
+    assert res_b.category == "VILLAGER_BREEDING"
+    assert "有效床位" in res_b.text_response
+    assert "bread" in res_b.suggested_command
+
+    # 29. Villager Crop Farm
+    res_c = FastPathResolver.try_resolve("全自动村民农田怎么做", None)
+    assert res_c is not None
+    assert res_c.category == "VILLAGER_CROP_FARM"
+    assert "棕袍农民" in res_c.text_response
+    assert "carrot" in res_c.suggested_command
+
+    # 30. Smelting Fuels
+    res_f = FastPathResolver.try_resolve("熔炼燃料哪个最划算", None)
+    assert res_f is not None
+    assert res_f.category == "SMELTING_FUEL_EFFICIENCY"
+    assert "岩浆桶" in res_f.text_response
+    assert "干海带块" in res_f.text_response
+    assert "dried_kelp_block" in res_f.suggested_command
+
+
+def test_prompt_safety_fence_contains_v1_5_rules():
+    fenced = PromptSafetyFence.build("测试提问", None)
+    assert "有效床位硬性条件" in fenced.user_prompt
+    assert "全自动村民农田机制" in fenced.user_prompt
+    assert "高能自动化燃料与熔炼动力学" in fenced.user_prompt
+
+
+def test_item_stack_and_formatting():
+    item1 = ItemStack("minecraft:iron_block", "铁块", 164)
+    assert item1.count == 164
+    assert item1.stacks == 2
+    assert item1.remainder == 36
+    assert "2 组 + 36 个" in item1.format_stacks()
+
+    item2 = ItemStack("minecraft:piston", "活塞", 64)
+    assert "1 组整" in item2.format_stacks()
+
+    item3 = ItemStack("minecraft:hopper", "漏斗", 5)
+    assert "5 个" in item3.format_stacks()
+
+    with pytest.raises(ValueError):
+        ItemStack("minecraft:dirt", "泥土", -1)
+
+
+def test_blueprint_bom_and_calculator():
+    # Sugar cane 8
+    sc_bom = MaterialCalculator.get_sugar_cane_farm_bom(8)
+    assert sc_bom.scale == 8
+    assert any(i.item_id == "minecraft:piston" and i.count == 8 for i in sc_bom.components)
+    assert any(i.item_id == "minecraft:observer" and i.count == 8 for i in sc_bom.components)
+    assert len(sc_bom.raw_materials) > 0
+    assert "全自动甘蔗/竹子机" in sc_bom.to_formatted_text()
+    assert "minecraft:piston" in sc_bom.to_tellraw_json()
+
+    # Beacon 1 and 4
+    b1 = MaterialCalculator.get_beacon_bom(1)
+    assert any(i.item_id == "minecraft:iron_block" and i.count == 9 for i in b1.components)
+    b4 = MaterialCalculator.get_beacon_bom(4)
+    assert any(i.item_id == "minecraft:iron_block" and i.count == 164 for i in b4.components)
+    assert any(i.item_id == "minecraft:iron_ingot" and i.count == 1476 for i in b4.raw_materials)
+
+    # Match BOM natural queries
+    match_sc = MaterialCalculator.match_bom("造甘蔗机需要什么材料？")
+    assert match_sc is not None
+    assert match_sc.blueprint_id == MaterialCalculator.ID_SUGAR_CANE_FARM
+
+    match_beacon = MaterialCalculator.match_bom("4级信标底座需要多少铁？")
+    assert match_beacon is not None
+    assert match_beacon.blueprint_id == MaterialCalculator.ID_BEACON_STRUCTURE
+
+
+def test_player_session_and_manager():
+    manager = PlayerSessionManager(max_history_turns=3, session_ttl_ms=5000)
+    session = manager.get_or_create_session("Steve")
+    assert session.player_id == "Steve"
+
+    paged1 = ChatPaginator.paginate("第1行\n第2行", target_page=1, page_size=1, command_prefix="/hoshi page")
+    session.record_turn("问题1", "回答1", "TOPIC_1", paged1)
+    session.record_turn("问题2", "回答2", "TOPIC_2", None)
+    session.record_turn("问题3", "回答3", "TOPIC_3", None)
+    session.record_turn("问题4", "回答4", "TOPIC_4", None)
+
+    assert len(session.get_history()) == 3
+    assert session.get_history()[0].prompt == "问题2"
+    assert session.last_active_topic == "TOPIC_4"
+
+    # Active page retrieval
+    p2 = session.get_page(2)
+    assert p2 is not None
+    assert p2.current_page == 2
+
+    assert manager.active_session_count == 1
+    manager.clear_session("Steve")
+    assert manager.active_session_count == 0
+
+
+def test_command_router_end_to_end():
+    dispatcher = AsyncQueryDispatcher()
+    router = CommandRouter(dispatcher)
+
+    # 1. Chat triggers
+    assert router.is_chat_trigger("!钻石在几层")
+    assert router.is_chat_trigger("？地狱传送门怎么对齐")
+    assert router.is_chat_trigger("@ai 帮我看下这个方块")
+    assert router.extract_chat_query("!钻石在几层") == "钻石在几层"
+
+    # 2. /hoshi ask
+    r_ask = router.execute("Steve", "/hoshi ask 怎么合成下界合金", None)
+    assert r_ask.is_success
+    assert r_ask.action == "ASK"
+    assert "锻造模板" in r_ask.message
+    assert r_ask.paged_result is not None
+    assert "下界合金" in r_ask.tellraw_json
+
+    # 3. /hoshi bom
+    r_bom = router.execute("Steve", "/hoshi bom sugar_cane 8", None)
+    assert r_bom.is_success
+    assert r_bom.action == "BOM"
+    assert "全自动甘蔗/竹子机" in r_bom.message
+
+    # 4. /hoshi page
+    r_page = router.execute("Steve", "/hoshi page 1", None)
+    assert r_page.is_success
+    assert r_page.action == "PAGE"
+
+    # 5. /hoshi nether
+    r_nether = router.execute("Steve", "/hoshi nether 800 64 -1600", None)
+    assert r_nether.is_success
+    assert r_nether.action == "NETHER"
+    assert r_nether.command_suggestion == "/tp 100 64 -200"
+
+    # 6. /hoshi stats
+    r_stats = router.execute("Steve", "/hoshi stats", None)
+    assert r_stats.is_success
+    assert "运行时度量" in r_stats.message
+
+    # 7. /hoshi help
+    r_help = router.execute("Steve", "/hoshi help", None)
+    assert r_help.is_success
+    assert "指令帮助" in r_help.message
+
+    # 8. /hoshi clear
+    r_clear = router.execute("Steve", "/hoshi clear", None)
+    assert r_clear.is_success
+    assert router.session_manager.active_session_count == 0

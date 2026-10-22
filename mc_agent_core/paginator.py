@@ -15,6 +15,8 @@ class PagedResult:
     full_page_text: str
     components: List[ChatComponent]
     tellraw_json: str
+    raw_text: str = ""
+    command_prefix: str = "/hoshi page"
 
 
 class ChatPaginator:
@@ -129,4 +131,6 @@ class ChatPaginator:
             full_page_text=full_page_text,
             components=components,
             tellraw_json=tellraw_json,
+            raw_text=raw_text or "",
+            command_prefix=prefix,
         )

@@ -11,6 +11,13 @@ import hoshi.mcagent.cache.QueryCache;
 import hoshi.mcagent.security.PlayerRateLimiter;
 import hoshi.mcagent.format.TellrawJsonBuilder;
 import hoshi.mcagent.format.ChatPaginator;
+import hoshi.mcagent.bom.BlueprintBOM;
+import hoshi.mcagent.bom.ItemStack;
+import hoshi.mcagent.bom.MaterialCalculator;
+import hoshi.mcagent.command.CommandResult;
+import hoshi.mcagent.command.CommandRouter;
+import hoshi.mcagent.session.PlayerSession;
+import hoshi.mcagent.session.PlayerSessionManager;
 
 import java.util.List;
 import java.util.Map;
@@ -58,6 +65,12 @@ public class McAgentCoreTest {
         testQueryCacheLRUAndTTL();
         testPlayerRateLimiterTokenBucket();
         testMcAgentCoreFacadeWithCacheAndLimiting();
+        testFastPathV15Rules();
+        testPromptSafetyFenceV15();
+        testItemStackAndFormatting();
+        testBlueprintBOMAndMaterialCalculator();
+        testPlayerSessionAndSessionManager();
+        testCommandRouterEndToEnd();
         testTextFormatterAndClickableComponents();
         testAsyncDispatcherEndToEnd();
 
@@ -491,6 +504,165 @@ public class McAgentCoreTest {
         var res2 = future2.get(2, TimeUnit.SECONDS);
         assertTrue("SUGAR_CANE_FARM".equals(res2.category()), "Core query 2 from cache");
         assertTrue(core.getCache().getStats().hits() >= 1, "Core cache recorded hit");
+    }
+
+
+    private static void testFastPathV15Rules() {
+        // 28. Villager Breeding
+        var optBreeding = FastPathResolver.tryResolve("村民繁殖需要什么条件", null);
+        assertTrue(optBreeding.isPresent(), "Resolved villager breeding query");
+        assertTrue("VILLAGER_BREEDING".equals(optBreeding.get().category()), "Category is VILLAGER_BREEDING");
+        assertTrue(optBreeding.get().textResponse().contains("有效床位"), "Mentions valid bed height");
+        assertTrue(optBreeding.get().suggestedCommand().contains("bread"), "Bread command");
+
+        // 29. Villager Crop Farm
+        var optCrop = FastPathResolver.tryResolve("全自动村民农田怎么做", null);
+        assertTrue(optCrop.isPresent(), "Resolved villager crop farm query");
+        assertTrue("VILLAGER_CROP_FARM".equals(optCrop.get().category()), "Category is VILLAGER_CROP_FARM");
+        assertTrue(optCrop.get().textResponse().contains("棕袍农民"), "Mentions farmer AI");
+        assertTrue(optCrop.get().suggestedCommand().contains("carrot"), "Carrot command");
+
+        // 30. Smelting Fuels
+        var optFuel = FastPathResolver.tryResolve("熔炼燃料哪个最划算", null);
+        assertTrue(optFuel.isPresent(), "Resolved smelting fuel query");
+        assertTrue("SMELTING_FUEL_EFFICIENCY".equals(optFuel.get().category()), "Category is SMELTING_FUEL_EFFICIENCY");
+        assertTrue(optFuel.get().textResponse().contains("岩浆桶"), "Mentions lava bucket");
+        assertTrue(optFuel.get().textResponse().contains("干海带块"), "Mentions dried kelp block");
+        assertTrue(optFuel.get().suggestedCommand().contains("dried_kelp_block"), "Kelp block command");
+    }
+
+    private static void testPromptSafetyFenceV15() {
+        var fenced = PromptSafetyFence.build("测试提问", null);
+        assertTrue(fenced.userPrompt().contains("有效床位硬性条件"), "Injected villager breeding rules");
+        assertTrue(fenced.userPrompt().contains("全自动村民农田机制"), "Injected villager crop farm rules");
+        assertTrue(fenced.userPrompt().contains("高能自动化燃料与熔炼动力学"), "Injected smelting fuel rules");
+    }
+
+    private static void testItemStackAndFormatting() {
+        ItemStack item1 = new ItemStack("minecraft:iron_block", "铁块", 164);
+        assertTrue(item1.getCount() == 164, "Item count is 164");
+        assertTrue(item1.getStacks() == 2, "164 has 2 stacks");
+        assertTrue(item1.getRemainder() == 36, "164 has 36 remainder");
+        assertTrue(item1.formatStacks().contains("2 组 + 36 个"), "Formatted stack text");
+
+        ItemStack item2 = new ItemStack("minecraft:piston", "活塞", 64);
+        assertTrue(item2.formatStacks().contains("1 组整"), "64 is 1 full stack");
+
+        ItemStack item3 = new ItemStack("minecraft:hopper", "漏斗", 5);
+        assertTrue(item3.formatStacks().contains("5 个"), "5 is 5 individual items");
+
+        boolean threwNegative = false;
+        try {
+            new ItemStack("minecraft:dirt", "泥土", -1);
+        } catch (IllegalArgumentException e) {
+            threwNegative = true;
+        }
+        assertTrue(threwNegative, "Negative item count rejected");
+    }
+
+    private static void testBlueprintBOMAndMaterialCalculator() {
+        // Sugar Cane 8 modules
+        BlueprintBOM scBOM = MaterialCalculator.getSugarCaneFarmBOM(8);
+        assertTrue(scBOM.getScale() == 8, "Sugar cane scale is 8");
+        assertTrue(scBOM.getComponents().stream().anyMatch(i -> i.getItemId().equals("minecraft:piston") && i.getCount() == 8), "8 pistons required");
+        assertTrue(scBOM.getComponents().stream().anyMatch(i -> i.getItemId().equals("minecraft:observer") && i.getCount() == 8), "8 observers required");
+        assertTrue(!scBOM.getRawMaterials().isEmpty(), "Raw materials breakdown populated");
+        assertTrue(scBOM.toFormattedText().contains("全自动甘蔗/竹子机"), "Formatted text title");
+        assertTrue(scBOM.toTellrawJson().contains("minecraft:piston"), "Tellraw JSON includes piston item ID");
+
+        // Beacon Pyramids Tier 1 and 4
+        BlueprintBOM b1 = MaterialCalculator.getBeaconBOM(1);
+        assertTrue(b1.getComponents().stream().anyMatch(i -> i.getItemId().equals("minecraft:iron_block") && i.getCount() == 9), "Tier 1 beacon needs 9 blocks");
+        BlueprintBOM b4 = MaterialCalculator.getBeaconBOM(4);
+        assertTrue(b4.getComponents().stream().anyMatch(i -> i.getItemId().equals("minecraft:iron_block") && i.getCount() == 164), "Tier 4 beacon needs 164 blocks");
+        assertTrue(b4.getRawMaterials().stream().anyMatch(i -> i.getItemId().equals("minecraft:iron_ingot") && i.getCount() == 1476), "Tier 4 beacon needs 1476 raw ingots");
+
+        // Natural Language Match
+        var matchSugar = MaterialCalculator.matchBOM("造甘蔗机需要什么材料？");
+        assertTrue(matchSugar.isPresent(), "Matched sugar cane material query");
+        assertTrue(matchSugar.get().getBlueprintId().equals(MaterialCalculator.ID_SUGAR_CANE_FARM), "Blueprint ID is SUGAR_CANE_FARM");
+
+        var matchBeacon = MaterialCalculator.matchBOM("4级信标底座需要多少铁？");
+        assertTrue(matchBeacon.isPresent(), "Matched beacon material query");
+        assertTrue(matchBeacon.get().getBlueprintId().equals(MaterialCalculator.ID_BEACON_STRUCTURE), "Blueprint ID is BEACON_STRUCTURE");
+    }
+
+    private static void testPlayerSessionAndSessionManager() {
+        PlayerSessionManager manager = new PlayerSessionManager(3, 5000L); // 3 turns max, 5s TTL
+        PlayerSession session = manager.getOrCreateSession("Steve");
+        assertTrue("Steve".equals(session.getPlayerId()), "Session player ID matches");
+
+        // Record 4 turns to verify bounded sliding window of 3
+        var paged1 = ChatPaginator.paginate("第1行\n第2行", 1, 1, "/hoshi page");
+        session.recordTurn("问题1", "回答1", "TOPIC_1", paged1);
+        session.recordTurn("问题2", "回答2", "TOPIC_2", null);
+        session.recordTurn("问题3", "回答3", "TOPIC_3", null);
+        session.recordTurn("问题4", "回答4", "TOPIC_4", null);
+
+        assertTrue(session.getHistory().size() == 3, "Sliding window kept 3 turns");
+        assertTrue("问题2".equals(session.getHistory().get(0).getPrompt()), "Oldest turn 1 evicted, turn 2 is head");
+        assertTrue("TOPIC_4".equals(session.getLastActiveTopic()), "Last active topic is TOPIC_4");
+
+        // Verify active page retrieval
+        var pageOpt = session.getPage(2);
+        assertTrue(pageOpt.isPresent(), "Retrieved page 2");
+        assertTrue(pageOpt.get().currentPage() == 2, "Current page is 2");
+
+        // Cleanup expired sessions
+        assertTrue(manager.getActiveSessionCount() == 1, "1 active session");
+        manager.clearSession("Steve");
+        assertTrue(manager.getActiveSessionCount() == 0, "0 sessions after clear");
+    }
+
+    private static void testCommandRouterEndToEnd() {
+        McAgentCore core = new McAgentCore();
+        CommandRouter router = core.getCommandRouter();
+
+        // 1. Chat triggers detection
+        assertTrue(router.isChatTrigger("!钻石在几层"), "Exclamation trigger detected");
+        assertTrue(router.isChatTrigger("？地狱传送门怎么对齐"), "Question mark trigger detected");
+        assertTrue(router.isChatTrigger("@ai 帮我看下这个方块"), "@ai trigger detected");
+        assertTrue("钻石在几层".equals(router.extractChatQuery("!钻石在几层")), "Extracted query clean");
+
+        // 2. /hoshi ask fast path
+        CommandResult rAsk = router.execute("Steve", "/hoshi ask 怎么合成下界合金", null);
+        assertTrue(rAsk.isSuccess(), "Ask command succeeded");
+        assertTrue("ASK".equals(rAsk.getAction()), "Action is ASK");
+        assertTrue(rAsk.getMessage().contains("锻造模板"), "Ask message contains smithing template");
+        assertTrue(rAsk.getPagedResult() != null, "Paged result attached");
+        assertTrue(rAsk.getTellrawJson().contains("下界合金"), "Tellraw JSON generated");
+
+        // 3. /hoshi bom natural command
+        CommandResult rBOM = router.execute("Steve", "/hoshi bom sugar_cane 8", null);
+        assertTrue(rBOM.isSuccess(), "BOM command succeeded");
+        assertTrue("BOM".equals(rBOM.getAction()), "Action is BOM");
+        assertTrue(rBOM.getMessage().contains("全自动甘蔗/竹子机"), "BOM message contains machine name");
+
+        // 4. /hoshi page retrieval from active session
+        CommandResult rPage = router.execute("Steve", "/hoshi page 1", null);
+        assertTrue(rPage.isSuccess(), "Page 1 command succeeded");
+        assertTrue("PAGE".equals(rPage.getAction()), "Action is PAGE");
+
+        // 5. /hoshi nether calculation
+        CommandResult rNether = router.execute("Steve", "/hoshi nether 800 64 -1600", null);
+        assertTrue(rNether.isSuccess(), "Nether command succeeded");
+        assertTrue("NETHER".equals(rNether.getAction()), "Action is NETHER");
+        assertTrue(rNether.getCommandSuggestion().equals("/tp 100 64 -200"), "Nether tp command is /tp 100 64 -200");
+
+        // 6. /hoshi stats
+        CommandResult rStats = router.execute("Steve", "/hoshi stats", null);
+        assertTrue(rStats.isSuccess(), "Stats command succeeded");
+        assertTrue(rStats.getMessage().contains("运行时度量"), "Stats message contains metrics");
+
+        // 7. /hoshi help
+        CommandResult rHelp = router.execute("Steve", "/hoshi help", null);
+        assertTrue(rHelp.isSuccess(), "Help command succeeded");
+        assertTrue(rHelp.getMessage().contains("指令帮助"), "Help message contains usage");
+
+        // 8. /hoshi clear
+        CommandResult rClear = router.execute("Steve", "/hoshi clear", null);
+        assertTrue(rClear.isSuccess(), "Clear command succeeded");
+        assertTrue(router.getSessionManager().getActiveSessionCount() == 0, "Active session count is 0 after clear");
     }
 
 }
