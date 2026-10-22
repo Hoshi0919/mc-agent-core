@@ -19,6 +19,11 @@ import hoshi.mcagent.command.CommandRouter;
 import hoshi.mcagent.session.PlayerSession;
 import hoshi.mcagent.session.PlayerSessionManager;
 
+import hoshi.mcagent.context.InventorySnapshot;
+import hoshi.mcagent.context.ItemInstance;
+import hoshi.mcagent.context.TargetEntity;
+import hoshi.mcagent.crafting.CraftingReadinessChecker;
+import hoshi.mcagent.crafting.CraftingRecipe;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -73,6 +78,12 @@ public class McAgentCoreTest {
         testCommandRouterEndToEnd();
         testTextFormatterAndClickableComponents();
         testAsyncDispatcherEndToEnd();
+        testInventorySnapshotAndItemInstance();
+        testTargetBlockHarvestEvaluation();
+        testTargetEntityPerception();
+        testCraftingReadinessChecker();
+        testFastPathV16Rules();
+        testCommandRouterV16InspectAndCraft();
 
         System.out.println(String.format("\n🎉 All %d/%d Java tests passed successfully!", testsPassed, testsRun));
     }
@@ -665,4 +676,189 @@ public class McAgentCoreTest {
         assertTrue(router.getSessionManager().getActiveSessionCount() == 0, "Active session count is 0 after clear");
     }
 
+
+    private static void testInventorySnapshotAndItemInstance() {
+        ItemInstance pick = ItemInstance.tool("minecraft:diamond_pickaxe", 1200, 1561);
+        assertTrue(pick.isPickaxe(), "Diamond pickaxe is pickaxe");
+        assertTrue(pick.getHarvestTier() == 4, "Diamond pickaxe is tier 4");
+        assertTrue(!pick.isEmpty(), "Pickaxe is not empty");
+
+        ItemInstance goldBoots = ItemInstance.of("minecraft:golden_boots", 1);
+        ItemInstance ironChest = ItemInstance.of("minecraft:iron_chestplate", 1);
+        ItemInstance ironIngots = ItemInstance.of("minecraft:iron_ingot", 42);
+
+        Map<Integer, ItemInstance> hotbar = Map.of(
+                0, ItemInstance.of("minecraft:netherite_sword", 1),
+                1, ItemInstance.tool("minecraft:iron_pickaxe", 200, 250),
+                2, ItemInstance.tool("minecraft:diamond_pickaxe", 1500, 1561),
+                3, goldBoots
+        );
+
+        Map<Integer, ItemInstance> main = Map.of(
+                9, ironIngots,
+                10, ItemInstance.of("minecraft:chest", 2)
+        );
+
+        InventorySnapshot inv = new InventorySnapshot(
+                hotbar.get(1), // mainHand = iron pickaxe
+                null,
+                null,
+                ironChest,
+                null,
+                null,
+                hotbar,
+                main
+        );
+
+        assertTrue(inv.countItem("iron_ingot") == 42, "Counted 42 iron ingots");
+        assertTrue(inv.hasItem("iron_ingot", 40), "Has at least 40 iron ingots");
+        assertTrue(!inv.hasItem("iron_ingot", 50), "Does not have 50 iron ingots");
+        assertTrue(inv.findHotbarSlot("golden_boots").isPresent() && inv.findHotbarSlot("golden_boots").get() == 3, "Golden boots in slot 3");
+        assertTrue(inv.findHotbarTool("pickaxe", 4).isPresent() && inv.findHotbarTool("pickaxe", 4).get() == 2, "Diamond pick in slot 2");
+        assertTrue(inv.totalArmorPoints() == 6, "Total armor points is 6 (iron chest)");
+        assertTrue(!inv.isWearingGoldArmor(), "Not currently wearing gold armor");
+    }
+
+    private static void testTargetBlockHarvestEvaluation() {
+        TargetBlock air = TargetBlock.air();
+        assertTrue(air.isAir(), "Air is air");
+        assertTrue(air.evaluateHarvest(null).canHarvestWithDrops(), "Air drops by default");
+
+        TargetBlock debris = new TargetBlock("minecraft:ancient_debris", 100, 15, -200, 0, 0, 30.0f, "pickaxe", null);
+        assertTrue(debris.getMinMiningTier() == 4, "Ancient debris requires tier 4");
+
+        // Player holds Iron Pickaxe (tier 3) with Diamond Pickaxe in hotbar slot 2
+        Map<Integer, ItemInstance> hotbar = Map.of(
+                1, ItemInstance.tool("minecraft:iron_pickaxe", 200, 250),
+                2, ItemInstance.tool("minecraft:diamond_pickaxe", 1500, 1561)
+        );
+        InventorySnapshot inv = new InventorySnapshot(hotbar.get(1), null, null, null, null, null, hotbar, Map.of());
+
+        var report = debris.evaluateHarvest(inv);
+        assertTrue(!report.canHarvestWithDrops(), "Iron pick cannot drop ancient debris");
+        assertTrue(report.hotbarAlternativeSlot().isPresent() && report.hotbarAlternativeSlot().get() == 2, "Suggests switching to slot 2");
+        assertTrue(report.advice().contains("切换至快捷栏第 3 格"), "Advice mentions switching to hotbar slot 3");
+
+        // Player switches to Diamond Pickaxe
+        InventorySnapshot invWithDiamond = new InventorySnapshot(hotbar.get(2), null, null, null, null, null, hotbar, Map.of());
+        var reportOk = debris.evaluateHarvest(invWithDiamond);
+        assertTrue(reportOk.canHarvestWithDrops(), "Diamond pickaxe harvests ancient debris safely");
+    }
+
+    private static void testTargetEntityPerception() {
+        TargetEntity zombieVillager = TargetEntity.of("minecraft:zombie_villager", 20.0f, 20.0f, true);
+        assertTrue(zombieVillager.isZombieVillager(), "Entity is zombie villager");
+        assertTrue(zombieVillager.isHostile(), "Zombie villager is hostile");
+
+        TargetEntity piglin = TargetEntity.of("minecraft:piglin", 16.0f, 16.0f, false);
+        assertTrue(piglin.isPiglin(), "Entity is piglin");
+
+        TargetEntity armadillo = TargetEntity.of("minecraft:armadillo", 12.0f, 12.0f, false);
+        assertTrue(armadillo.isArmadillo(), "Entity is armadillo");
+
+        TargetEntity golem = TargetEntity.of("minecraft:iron_golem", 45.0f, 100.0f, false);
+        assertTrue(golem.isIronGolem(), "Entity is iron golem");
+    }
+
+    private static void testCraftingReadinessChecker() {
+        assertTrue(CraftingReadinessChecker.getKnownRecipes().containsKey("hopper"), "Known recipe includes hopper");
+        assertTrue(CraftingReadinessChecker.getKnownRecipes().containsKey("beacon"), "Known recipe includes beacon");
+
+        // Inventory with 5 iron ingots and 1 chest
+        Map<Integer, ItemInstance> main = Map.of(
+                0, ItemInstance.of("minecraft:iron_ingot", 5),
+                1, ItemInstance.of("minecraft:chest", 1)
+        );
+        InventorySnapshot readyInv = new InventorySnapshot(null, null, null, null, null, null, Map.of(), main);
+
+        var report = CraftingReadinessChecker.evaluate("hopper", readyInv);
+        assertTrue(report.isKnownRecipe(), "Hopper is known recipe");
+        assertTrue(report.isReady(), "Hopper is ready to craft");
+        assertTrue(report.maxCraftable() == 1, "Can craft 1 hopper");
+        assertTrue(report.formattedMessage().contains("材料齐全"), "Formatted message reports ready");
+
+        // Inventory with only 3 iron ingots
+        Map<Integer, ItemInstance> shortMain = Map.of(
+                0, ItemInstance.of("minecraft:iron_ingot", 3),
+                1, ItemInstance.of("minecraft:chest", 1)
+        );
+        InventorySnapshot shortInv = new InventorySnapshot(null, null, null, null, null, null, Map.of(), shortMain);
+
+        var shortReport = CraftingReadinessChecker.evaluate("hopper", shortInv);
+        assertTrue(!shortReport.isReady(), "Hopper is not ready to craft");
+        assertTrue(shortReport.maxCraftable() == 0, "Max craftable is 0");
+        assertTrue(shortReport.formattedMessage().contains("缺少 2 个"), "Reports missing 2 iron ingots");
+    }
+
+    private static void testFastPathV16Rules() {
+        // 1. Zombie Villager Cure
+        var res1 = FastPathResolver.tryResolve("僵尸村民怎么治愈？", null);
+        assertTrue(res1.isPresent(), "Resolved zombie villager query");
+        assertTrue(res1.get().category().equals("ZOMBIE_VILLAGER_CURE"), "Category is ZOMBIE_VILLAGER_CURE");
+        assertTrue(res1.get().textResponse().contains("虚弱药水"), "Mentions weakness potion");
+        assertTrue(res1.get().textResponse().contains("金苹果"), "Mentions golden apple");
+
+        // 2. Iron Golem Repair
+        var res2 = FastPathResolver.tryResolve("铁傀儡怎么修？", null);
+        assertTrue(res2.isPresent(), "Resolved iron golem repair query");
+        assertTrue(res2.get().category().equals("IRON_GOLEM_REPAIR"), "Category is IRON_GOLEM_REPAIR");
+        assertTrue(res2.get().textResponse().contains("铁锭"), "Mentions iron ingot");
+        assertTrue(res2.get().textResponse().contains("25 点生命"), "Mentions 25 HP heal");
+
+        // 3. Armadillo Wolf Armor
+        var res3 = FastPathResolver.tryResolve("犰狳怎么刷狼铠？", null);
+        assertTrue(res3.isPresent(), "Resolved armadillo wolf armor query");
+        assertTrue(res3.get().category().equals("ARMADILLO_WOLF_ARMOR"), "Category is ARMADILLO_WOLF_ARMOR");
+        assertTrue(res3.get().textResponse().contains("刷子"), "Mentions brush");
+        assertTrue(res3.get().textResponse().contains("狼铠"), "Mentions wolf armor");
+
+        // 4. Trial Spawner & Breeze
+        var res4 = FastPathResolver.tryResolve("旋风人怎么打？", null);
+        assertTrue(res4.isPresent(), "Resolved trial spawner breeze query");
+        assertTrue(res4.get().category().equals("TRIAL_SPAWNER_BREEZE"), "Category is TRIAL_SPAWNER_BREEZE");
+        assertTrue(res4.get().textResponse().contains("完全反弹"), "Mentions projectile reflect");
+        assertTrue(res4.get().textResponse().contains("盾牌"), "Mentions shield parry");
+
+        // 5. Crafting query with inventory context
+        Map<Integer, ItemInstance> items = Map.of(
+                0, ItemInstance.of("minecraft:iron_ingot", 10),
+                1, ItemInstance.of("minecraft:chest", 2)
+        );
+        InventorySnapshot inv = new InventorySnapshot(null, null, null, null, null, null, Map.of(), items);
+        ContextSnapshot ctx = ContextSnapshot.builder().inventory(inv).build();
+        var resCraft = FastPathResolver.tryResolve("我包里的材料够做漏斗吗？", ctx);
+        assertTrue(resCraft.isPresent(), "Resolved crafting query");
+        assertTrue(resCraft.get().category().equals("CRAFTING_READINESS"), "Category is CRAFTING_READINESS");
+        assertTrue(resCraft.get().textResponse().contains("材料齐全"), "Reports craft ready");
+    }
+
+    private static void testCommandRouterV16InspectAndCraft() {
+        McAgentCore core = new McAgentCore();
+        CommandRouter router = core.getCommandRouter();
+
+        TargetBlock tb = new TargetBlock("minecraft:ancient_debris", 50, 14, 80, 0, 0, 30.0f, "pickaxe", null);
+        TargetEntity te = TargetEntity.of("minecraft:piglin", 16.0f, 16.0f, false);
+        Map<Integer, ItemInstance> hotbar = Map.of(0, ItemInstance.tool("minecraft:diamond_pickaxe", 1000, 1561));
+        InventorySnapshot inv = new InventorySnapshot(hotbar.get(0), null, null, null, null, null, hotbar, Map.of());
+        ContextSnapshot ctx = ContextSnapshot.builder()
+                .targetBlock(tb)
+                .targetEntity(te)
+                .inventory(inv)
+                .mainHand("minecraft:diamond_pickaxe")
+                .build();
+
+        // 1. /hoshi inspect
+        CommandResult rInspect = router.execute("Steve", "/hoshi inspect", ctx);
+        assertTrue(rInspect.isSuccess(), "Inspect command succeeded");
+        assertTrue(rInspect.getAction().equals("INSPECT"), "Action is INSPECT");
+        assertTrue(rInspect.getMessage().contains("ancient_debris"), "Inspect contains block ID");
+        assertTrue(rInspect.getMessage().contains("piglin"), "Inspect contains entity ID");
+        assertTrue(rInspect.getMessage().contains("掉落要求"), "Inspect validates diamond pickaxe");
+
+        // 2. /hoshi craft
+        CommandResult rCraft = router.execute("Steve", "/hoshi craft hopper", ctx);
+        assertTrue(rCraft.isSuccess(), "Craft command succeeded");
+        assertTrue(rCraft.getAction().equals("CRAFT"), "Action is CRAFT");
+        assertTrue(rCraft.getMessage().contains("缺少"), "Craft reports missing items");
+    }
 }

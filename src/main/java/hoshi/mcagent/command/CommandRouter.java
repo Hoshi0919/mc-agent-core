@@ -5,6 +5,9 @@ import hoshi.mcagent.async.AsyncQueryDispatcher;
 import hoshi.mcagent.bom.BlueprintBOM;
 import hoshi.mcagent.bom.MaterialCalculator;
 import hoshi.mcagent.context.ContextSnapshot;
+import hoshi.mcagent.context.TargetBlock;
+import hoshi.mcagent.context.TargetEntity;
+import hoshi.mcagent.crafting.CraftingReadinessChecker;
 import hoshi.mcagent.format.ChatPaginator;
 import hoshi.mcagent.format.MinecraftTextFormatter;
 import hoshi.mcagent.format.TellrawJsonBuilder;
@@ -114,6 +117,22 @@ public class CommandRouter {
                 }
                 return handleAsk(playerId, q.toString(), snapshot);
             }
+            case "inspect":
+            case "scan": {
+                return handleInspect(playerId, snapshot);
+            }
+            case "craft":
+            case "recipe": {
+                if (argStart + 1 >= tokens.length) {
+                    return CommandResult.error("CRAFT", "§c请提供待合成的物品名称，例如: /hoshi craft hopper");
+                }
+                StringBuilder q = new StringBuilder();
+                for (int i = argStart + 1; i < tokens.length; i++) {
+                    if (q.length() > 0) q.append(" ");
+                    q.append(tokens[i]);
+                }
+                return handleCraft(playerId, q.toString(), snapshot);
+            }
             case "page":
             case "p": {
                 if (argStart + 1 >= tokens.length) {
@@ -164,6 +183,54 @@ public class CommandRouter {
                 return handleAsk(playerId, q.toString(), snapshot);
             }
         }
+    }
+
+    private CommandResult handleInspect(String playerId, ContextSnapshot snapshot) {
+        if (snapshot == null) {
+            return CommandResult.error("INSPECT", "§c[Hoshi] 无法获取当前玩家上下文快照。");
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("§b【Hoshi 准星全维环境感知扫描】§r\n");
+
+        boolean hasData = false;
+        TargetBlock tb = snapshot.targetBlock();
+        if (tb != null && !tb.isAir()) {
+            hasData = true;
+            TargetBlock.HarvestReport harvest = tb.evaluateHarvest(snapshot.inventory());
+            sb.append(String.format("▸ §6注视方块§r：%s at [%d, %d, %d]\n", tb.blockId(), tb.x(), tb.y(), tb.z()));
+            sb.append(String.format("  光照：方块=%d, 天空=%d | 硬度: %.1f | 需求工具: %s\n",
+                    tb.blockLight(), tb.skyLight(), tb.hardness(), harvest.toolRequirementName()));
+            sb.append(String.format("  手持匹配：%s\n", harvest.advice()));
+        }
+
+        TargetEntity te = snapshot.targetEntity();
+        if (te != null) {
+            hasData = true;
+            sb.append(String.format("▸ §d注视实体§r：%s\n", te.toSummary()));
+        }
+
+        if (snapshot.inventory() != null) {
+            sb.append(String.format("▸ §e玩家护甲/手持§r：主手=%s | 护甲防御=%d/20 (金装=%b)\n",
+                    snapshot.mainHandItem(), snapshot.inventory().totalArmorPoints(), snapshot.inventory().isWearingGoldArmor()));
+        }
+
+        if (!hasData) {
+            sb.append("▸ §7准星未对准任何方块或实体 (Raycast Miss)。\n");
+        }
+
+        String text = sb.toString().trim();
+        ChatPaginator.PagedResult paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page");
+        sessionManager.recordInteraction(playerId, "/hoshi inspect", text, "INSPECT", paged);
+        return CommandResult.success("INSPECT", text, null, paged.tellrawJson(), paged);
+    }
+
+    private CommandResult handleCraft(String playerId, String itemName, ContextSnapshot snapshot) {
+        var report = CraftingReadinessChecker.evaluate(itemName, snapshot != null ? snapshot.inventory() : null);
+        String text = report.formattedMessage();
+        ChatPaginator.PagedResult paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page");
+        sessionManager.recordInteraction(playerId, "/hoshi craft " + itemName, text, "CRAFT", paged);
+        return CommandResult.success("CRAFT", text, report.suggestedCommand(), paged.tellrawJson(), paged);
     }
 
     private CommandResult handleAsk(String playerId, String question, ContextSnapshot snapshot) {
@@ -262,6 +329,8 @@ public class CommandRouter {
     private CommandResult handleHelp() {
         String text = "§6【Hoshi 智能问答指令帮助】§r\n" +
                 "▸ §e/hoshi ask <问题>§r - 咨询游戏机制与攻略\n" +
+                "▸ §e/hoshi inspect§r - 扫描准星方块与实体，评估挖掘工具与掉落安全性\n" +
+                "▸ §e/hoshi craft <物品>§r - 评估背包原料是否满足合成条件及缺失数量\n" +
                 "▸ §e/hoshi bom <方案> [数量]§r - 生成材料清单 (BOM)\n" +
                 "▸ §e/hoshi page <页码>§r - 翻页长篇内容\n" +
                 "▸ §e/hoshi nether [x y z]§r - 换算地狱传送门坐标\n" +

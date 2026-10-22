@@ -1,7 +1,10 @@
 package hoshi.mcagent.engine;
 
 import hoshi.mcagent.context.ContextSnapshot;
+import hoshi.mcagent.context.InventorySnapshot;
 import hoshi.mcagent.context.TargetBlock;
+import hoshi.mcagent.context.TargetEntity;
+import hoshi.mcagent.crafting.CraftingReadinessChecker;
 
 import java.util.Optional;
 
@@ -23,13 +26,101 @@ public final class FastPathResolver {
         }
         String q = rawQuery.trim().toLowerCase();
 
+        // 0. Context-Aware Crosshair Target Block Mining & Tool Compatibility
+        if (context != null && context.targetBlock() != null && !context.targetBlock().isAir()) {
+            if (q.contains("这怎么挖") || q.contains("怎么挖眼前") || q.contains("需要什么工具") ||
+                    q.contains("用什么工具") || q.contains("手里的工具能挖吗") || q.contains("能掉落吗") ||
+                    q.contains("眼前方块") || q.contains("准星方块") || q.contains("挖掘要求")) {
+                TargetBlock tb = context.targetBlock();
+                TargetBlock.HarvestReport harvest = tb.evaluateHarvest(context.inventory());
+                StringBuilder sb = new StringBuilder();
+                sb.append(String.format("§6【准星方块挖掘与掉落检测】§r\n"));
+                sb.append(String.format("▸ 目标方块：%s at [%d, %d, %d]\n", tb.blockId(), tb.x(), tb.y(), tb.z()));
+                sb.append(String.format("▸ 挖掘工具要求：%s (硬度: %.1f)\n", harvest.toolRequirementName(), tb.hardness()));
+                sb.append(String.format("▸ 当前手持装备：%s\n", harvest.currentToolStatus()));
+                if (harvest.canHarvestWithDrops()) {
+                    sb.append(String.format("▸ §a✔ 掉落安全检测通过：符合要求，正常破坏将百分之百产生掉落物！§r\n"));
+                } else {
+                    sb.append(String.format("▸ §c✖ %s§r\n", harvest.advice()));
+                }
+                String cmd = harvest.hotbarAlternativeSlot().map(slot ->
+                        String.format("/item replace entity @s weapon.mainhand from entity @s hotbar.%d", slot)
+                ).orElse(null);
+                return Optional.of(new Resolution(sb.toString(), cmd, "TARGET_BLOCK_HARVEST"));
+            }
+        }
+
+        // 0.1 Context-Aware Crosshair Target Entity Guidance
+        if (context != null && context.targetEntity() != null) {
+            if (q.contains("眼前生物") || q.contains("准星生物") || q.contains("这个生物") ||
+                    q.contains("怎么治愈") || q.contains("怎么救") || q.contains("怎么驯服") ||
+                    q.contains("怎么刷狼铠") || q.contains("为什么打我") || q.contains("打不打我")) {
+                TargetEntity te = context.targetEntity();
+                InventorySnapshot inv = context.inventory();
+                StringBuilder sb = new StringBuilder();
+
+                if (te.isZombieVillager()) {
+                    sb.append("§d【准星实体：僵尸村民治愈方案】§r\n");
+                    sb.append(String.format("▸ 实体生命值：%.1f / %.1f\n", te.health(), te.maxHealth()));
+                    boolean hasWeakness = inv != null && (inv.countItem("splash_potion") > 0 || inv.countItem("potion") > 0);
+                    boolean hasApple = inv != null && inv.countItem("golden_apple") > 0;
+                    if (hasApple) {
+                        sb.append("▸ §a背包材料就绪：持有金苹果！向其投掷喷溅虚弱药水后手持金苹果右键投喂即可开始转化。§r\n");
+                    } else {
+                        sb.append("▸ §e缺少治愈材料：治愈需要【喷溅型虚弱药水】+【普通金苹果】。§r\n");
+                    }
+                    sb.append("▸ 治愈后将化身为正常村民并提供终生永久交易超低折扣！");
+                    return Optional.of(new Resolution(sb.toString(), "/give @s minecraft:golden_apple 1", "TARGET_ENTITY_ZOMBIE_VILLAGER"));
+                }
+
+                if (te.isPiglin()) {
+                    sb.append("§6【准星实体：下界猪灵中立性感知】§r\n");
+                    boolean gold = inv != null && inv.isWearingGoldArmor();
+                    if (gold) {
+                        sb.append("▸ §a✔ 安全：您当前已穿戴黄金装备，周围猪灵对您保持中立。§r\n");
+                        sb.append("▸ 向其丢出金锭即可开始以物易物；切勿在其周围 16 格内开箱或破坏金矿！");
+                    } else {
+                        sb.append("▸ §c✖ 极度危险：您当前未穿戴任何黄金护甲！猪灵对您处于敌对状态！§r\n");
+                        if (inv != null && inv.findHotbarSlot("golden_boots").isPresent()) {
+                            sb.append("▸ 提示：快捷栏中检测到金靴子，请立即穿戴！");
+                        } else {
+                            sb.append("▸ 请尽快穿戴任意 1 件黄金装备平息敌意。");
+                        }
+                    }
+                    return Optional.of(new Resolution(sb.toString(), "/give @s minecraft:golden_boots 1", "TARGET_ENTITY_PIGLIN"));
+                }
+
+                if (te.isArmadillo()) {
+                    sb.append("§b【准星实体：犰狳刷鳞与狼铠】§r\n");
+                    sb.append("▸ 机制：手持刷子 (Brush) 对犰狳右键点击即可无损刷落 1 枚犰狳鳞甲！\n");
+                    sb.append("▸ 6 枚犰狳鳞甲可合成狼铠 (Wolf Armor)，吸收驯服狼受到的所有直接伤害。");
+                    return Optional.of(new Resolution(sb.toString(), "/give @s minecraft:brush 1", "TARGET_ENTITY_ARMADILLO"));
+                }
+
+                if (te.isIronGolem()) {
+                    sb.append("§e【准星实体：铁傀儡生命与修复】§r\n");
+                    sb.append(String.format("▸ 当前生命值：%.1f / 100.0 (50 颗心)\n", te.health()));
+                    sb.append("▸ 维护指南：手持铁锭右键每个可恢复 25 点生命并消除裂纹！切勿攻击它防反杀。");
+                    return Optional.of(new Resolution(sb.toString(), "/give @s minecraft:iron_ingot 4", "TARGET_ENTITY_IRON_GOLEM"));
+                }
+            }
+        }
+
+        // 0.2 Inventory Crafting Readiness Checker
+        if (q.contains("够做") || q.contains("能做") || q.contains("能合成") || q.contains("够合") || q.contains("材料够") || q.contains("背包够")) {
+            var report = CraftingReadinessChecker.evaluate(rawQuery, context != null ? context.inventory() : null);
+            if (report.isKnownRecipe()) {
+                return Optional.of(new Resolution(report.formattedMessage(), report.suggestedCommand(), "CRAFTING_READINESS"));
+            }
+        }
+
         // 1. Nether Portal / Coordinate math
         if (q.contains("地狱坐标") || q.contains("下界坐标") || q.contains("传送门坐标") || q.contains("对应坐标") || q.contains("换算坐标")) {
             return Optional.of(resolveCoordinates(context));
         }
 
         // 2. Ore depth distribution lookup
-        if (q.contains("在几层") || q.contains("在第几层") || q.contains("层数") || q.contains("在哪挖") || q.contains("矿石分布") || q.contains("高度") || q.contains("怎么挖")) {
+        if (q.contains("在几层") || q.contains("在第几层") || q.contains("层数") || q.contains("在哪挖") || q.contains("矿石分布") || q.contains("高度") || (q.contains("怎么挖") && !q.contains("眼前"))) {
             LocalGameRules.OreDistribution ore = LocalGameRules.findOre(q);
             if (ore != null) {
                 String resp = String.format("§6【%s 生成高度指南 (1.18+)】§r\n" +
@@ -172,7 +263,7 @@ public final class FastPathResolver {
         if (q.contains("铁砧") || q.contains("过于昂贵") || q.contains("经验惩罚") || q.contains("二叉树附魔") || q.contains("附魔省经验") || q.contains("修装备太贵")) {
             String resp = "§6【铁砧累积惩罚与二叉树最优附魔】§r\n" +
                     "▸ §c累积惩罚 (Prior Work)§r：附加消耗按 2^n - 1 增长（0 ➔ 1 ➔ 3 ➔ 7 ➔ 15 ➔ 31 级）。\n" +
-                    "▸ §4过于昂贵§r：生存模式单次操作所需经验 >= 40 级时会被拒绝。\n" +
+                    "▸ §4过于昂贵§r：生存模式单次操作所需经验 >= 40 级时会被拒绝。\\n\" +\n" +
                     "▸ §a二叉树最优合并法§r：附魔书两两配对合并，最后将合集书一次性打在装备上，避免单线串联导致经验爆炸！";
             return Optional.of(new Resolution(resp, "/give @s minecraft:anvil 1", "ANVIL_OPTIMIZATION"));
         }
@@ -180,17 +271,27 @@ public final class FastPathResolver {
         // 15. Brewing Stand & Potions
         if (q.contains("酿造台") || q.contains("药水配方") || q.contains("怎么酿") || q.contains("隐身药水") || q.contains("神龟药水") || q.contains("抗火药水") || q.contains("粗制药水") || q.contains("变异药水")) {
             String resp = "§d【酿造台配方与药水学快速推演】§r\n" +
-                    "▸ §e核心底药§r：水瓶 + 下界疣 ➔ 粗制的药水。\n" +
-                    "▸ §b主力材料§r：糖➔迅捷；烈焰粉➔力量；金胡萝卜➔夜视；岩浆膏➔抗火；幻翼膜➔缓降；海龟壳➔神龟药水。\n" +
+                    "▸ §e核心底药§r：水瓶 + 下界疣 ➔ 粗制的药水。\\n\" +\n" +
+                    "▸ §b主力材料§r：糖➔迅捷；烈焰粉➔力量；金胡萝卜➔夜视；岩浆膏➔抗火；幻翼膜➔缓降；海龟壳➔神龟药水。\\n\" +\n" +
                     "▸ §c发酵蛛眼§r：夜视➔隐身；迅捷/跳跃➔缓慢；治疗/剧毒➔伤害。红石粉延长时长，荧石粉升 II 级，火药制成喷溅。";
             return Optional.of(new Resolution(resp, "/give @s minecraft:brewing_stand 1", "BREWING_RECIPES"));
         }
 
+        // 32. Iron Golem Repair
+        if (q.contains("铁傀儡") && (q.contains("修") || q.contains("加血") || q.contains("裂纹") || q.contains("回血") || q.contains("铁锭"))) {
+            String resp = "§e【铁傀儡修复维护与村庄防卫】§r\n" +
+                    "▸ §e生命值与裂纹§r：拥有 100 点生命值 (50 颗心)；随生命降低呈现 4 阶段肉眼可见裂纹。\n" +
+                    "▸ §a铁锭右键修复§r：手持【铁锭】右键铁傀儡，每个铁锭消耗立即恢复 25 点生命值并修复裂纹！\n" +
+                    "▸ §c反击戒律§r：单次攻击 7~21 点高额击退伤害；声望低于 -15 或主动攻击会招致致命围攻。";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:iron_ingot 4", "IRON_GOLEM_REPAIR"));
+        }
+
+
         // 16. Iron Golem Spawning & Iron Farm
         if (q.contains("铁傀儡") || q.contains("刷铁机") || q.contains("为什么不刷铁") || q.contains("村民惊吓") || q.contains("不生成铁傀儡")) {
             String resp = "§a【铁傀儡生成判定与刷铁机力学】§r\n" +
-                    "▸ §e三大前置条件§r：至少 3 名有效村民绑定床铺；过去 20 分钟内村民必须睡过觉；村民需进入惊吓恐慌态。\n" +
-                    "▸ §b生成空间§r：村民中心 16×13×16 空间内需要完整方块表面，上方有 3 格空气或水流。\n" +
+                    "▸ §e三大前置条件§r：至少 3 名有效村民绑定床铺；过去 20 分钟内村民必须睡过觉；村民需进入惊吓恐慌态。\\n\" +\n" +
+                    "▸ §b生成空间§r：村民中心 16×13×16 空间内需要完整方块表面，上方有 3 格空气或水流。\\n\" +\n" +
                     "▸ §c排查§r：视线受阻无法入睡、附近残留铁傀儡、生成点空间不足，都可能导致不刷铁。";
             return Optional.of(new Resolution(resp, "/summon minecraft:iron_golem", "IRON_GOLEM_MECHANICS"));
         }
@@ -198,7 +299,7 @@ public final class FastPathResolver {
         // 17. Nether Portal Linking & Desync
         if (q.contains("传送门对齐") || q.contains("串门") || q.contains("传送门错位") || q.contains("下界门跑偏") || q.contains("双向传送门")) {
             String resp = "§5【下界传送门精准对齐与防串门机制】§r\n" +
-                    "▸ §c串门根源§r：下界与主界为 8:1 坐标比例，进门搜索半径高达 128 格，多门会重定向至错误出口。\n" +
+                    "▸ §c串门根源§r：下界与主界为 8:1 坐标比例，进门搜索半径高达 128 格，多门会重定向至错误出口。\\n\" +\n" +
                     "▸ §a黄金对齐法§r：主界 [X,Y,Z] 对应下界 [floor(X/8),Y,floor(Z/8)]，在精确点手动搭门并点燃。";
             return Optional.of(new Resolution(resp, "/give @s minecraft:obsidian 14", "PORTAL_LINKING"));
         }
@@ -206,8 +307,8 @@ public final class FastPathResolver {
         // 18. Ender Dragon Resummoning & End Gateway / Elytra
         if (q.contains("末影龙") || q.contains("复活龙") || q.contains("折跃门") || q.contains("末地折跃门") || q.contains("末地外岛") || q.contains("鞘翅怎么飞") || q.contains("潜影盒怎么合") || q.contains("龙蛋")) {
             String resp = "§5【末影龙复活、末地折跃门与鞘翅探索】§r\n" +
-                    "▸ §e复活末影龙§r：在返回传送门 4 个方向中心各放置 1 个【末影水晶】（共 4 个），水晶光束将重生顶端水晶并孵化末影龙（复活掉落 500 经验，无新龙蛋）。\n" +
-                    "▸ §a末地折跃门§r：击杀末影龙后生成 1x1 基岩折跃门，投掷末影珍珠穿透瞬间传送至 1000 格外末地外岛！\n" +
+                    "▸ §e复活末影龙§r：在返回传送门 4 个方向中心各放置 1 个【末影水晶】（共 4 个），水晶光束将重生顶端水晶并孵化末影龙（复活掉落 500 经验，无新龙蛋）。\\n\" +\n" +
+                    "▸ §a末地折跃门§r：击杀末影龙后生成 1x1 基岩折跃门，投掷末影珍珠穿透瞬间传送至 1000 格外末地外岛！\\n\" +\n" +
                     "▸ §b鞘翅与火箭§r：末地船物品框获取鞘翅；副手持纯火药+纸合成的烟花火箭推进加速；潜影盒由 2 潜影壳 + 1 木箱合成。";
             return Optional.of(new Resolution(resp, "/locate structure minecraft:end_city", "END_DRAGON_GATEWAY"));
         }
@@ -215,8 +316,8 @@ public final class FastPathResolver {
         // 19. Conduit Structure & Power
         if (q.contains("潮涌核心") || q.contains("潮涌能量") || q.contains("导管怎么激活") || q.contains("潮涌核心怎么摆") || q.contains("海洋之心") || q.contains("鹦鹉螺壳") || q.contains("海晶石框架")) {
             String resp = "§3【潮涌核心搭建与水下主宰力学】§r\n" +
-                    "▸ §e核心合成§r：1 个海洋之心（藏宝箱）+ 8 个鹦鹉螺壳（钓鱼或溺尸掉落）。\n" +
-                    "▸ §a框架搭建§r：核心置于水中心，用海晶石搭建 5×5 正交环。16 块启动基础范围 32 格，42 块满级范围达 96 格！\n" +
+                    "▸ §e核心合成§r：1 个海洋之心（藏宝箱）+ 8 个鹦鹉螺壳（钓鱼或溺尸掉落）。\\n\" +\n" +
+                    "▸ §a框架搭建§r：核心置于水中心，用海晶石搭建 5×5 正交环。16 块启动基础范围 32 格，42 块满级范围达 96 格！\\n\" +\n" +
                     "▸ §d主宰效果§r：水下无限呼吸、夜视、挖掘不减速；满级对 8 格内溺尸与守卫者持续造成每 2 秒 4 点伤害！";
             return Optional.of(new Resolution(resp, "/give @s minecraft:conduit 1", "CONDUIT_STRUCTURE"));
         }
@@ -224,8 +325,8 @@ public final class FastPathResolver {
         // 20. Raid & Hero of the Village
         if (q.contains("突袭怎么触发") || q.contains("村庄袭击") || q.contains("村庄英雄") || q.contains("唤魔者") || q.contains("不死图腾") || q.contains("破坏兽") || q.contains("袭村") || q.contains("袭击波次")) {
             String resp = "§4【村庄突袭 (Raid) 机制与村庄英雄】§r\n" +
-                    "▸ §c触发机制 (1.21)§r：击败巡逻队长掉落不祥之瓶，饮用后进村转化为突袭预兆，30 秒倒计时后爆发袭击！\n" +
-                    "▸ §e波次规格§r：简单 3 波、普通 5 波、困难 7 波。卫道士斧头高伤，唤魔者掉落不死图腾，女巫丢药水。\n" +
+                    "▸ §c触发机制 (1.21)§r：击败巡逻队长掉落不祥之瓶，饮用后进村转化为突袭预兆，30 秒倒计时后爆发袭击！\\n\" +\n" +
+                    "▸ §e波次规格§r：简单 3 波、普通 5 波、困难 7 波。卫道士斧头高伤，唤魔者掉落不死图腾，女巫丢药水。\\n\" +\n" +
                     "▸ §a胜利奖赏§r：赋予【村庄英雄】Buff，村民全线打折（最低 1 绿宝石换神装）并投掷礼物！";
             return Optional.of(new Resolution(resp, "/effect give @s minecraft:hero_of_the_village 300 1", "RAID_VILLAGE"));
         }
@@ -233,9 +334,9 @@ public final class FastPathResolver {
         // 21. Piglin Bartering & Piglin Brute
         if (q.contains("猪灵交易") || q.contains("以物易物") || q.contains("猪灵蛮兵") || q.contains("为什么猪灵打我") || q.contains("猪灵开箱") || q.contains("猪灵金装") || q.contains("猪灵换末影珍珠")) {
             String resp = "§6【猪灵以物易物与猪灵蛮兵权威力学】§r\n" +
-                    "▸ §a穿金防身§r：穿戴至少 1 件黄金装备防普通猪灵敌对。\n" +
-                    "▸ §4绝对禁忌§r：破坏金矿/金块，或打开/破坏任何箱子、潜影盒、末影箱、木桶，周围 16 格猪灵全员激怒！\n" +
-                    "▸ §e以物易物§r：金锭投掷给成年猪灵，掉落末影珍珠、抗火药水、哭泣的黑曜石、灵魂沙等。\n" +
+                    "▸ §a穿金防身§r：穿戴至少 1 件黄金装备防普通猪灵敌对。\\n\" +\n" +
+                    "▸ §4绝对禁忌§r：破坏金矿/金块，或打开/破坏任何箱子、潜影盒、末影箱、木桶，周围 16 格猪灵全员激怒！\\n\" +\n" +
+                    "▸ §e以物易物§r：金锭投掷给成年猪灵，掉落末影珍珠、抗火药水、哭泣的黑曜石、灵魂沙等。\\n\" +\n" +
                     "▸ §c猪灵蛮兵§r：堡垒遗迹专属！免疫金装伪装、绝不交易、不可安抚，必须垫高或熔岩优先击杀！";
             return Optional.of(new Resolution(resp, "/give @s minecraft:gold_ingot 64", "PIGLIN_BARTER"));
         }
@@ -243,8 +344,8 @@ public final class FastPathResolver {
         // 22. Enchanting Table Geometry & Bookshelves
         if (q.contains("附魔台摆放") || q.contains("15个书架") || q.contains("30级附魔") || q.contains("附魔台被挡") || q.contains("附魔台怎么摆") || q.contains("砂轮洗附魔") || q.contains("附魔台有效距离")) {
             String resp = "§5【30 级附魔台几何摆放与经验洗炼】§r\n" +
-                    "▸ §e书架配置§r：需要恰好 15 个书架，围在附魔台周围水平 2 格距离（留出 1 格空气）。\n" +
-                    "▸ §c遮挡禁忌§r：附魔台与书架中间 1 格空气严禁有火把、地毯、雪片等任何方块阻挡，否则附魔等级骤降！\n" +
+                    "▸ §e书架配置§r：需要恰好 15 个书架，围在附魔台周围水平 2 格距离（留出 1 格空气）。\\n\" +\n" +
+                    "▸ §c遮挡禁忌§r：附魔台与书架中间 1 格空气严禁有火把、地毯、雪片等任何方块阻挡，否则附魔等级骤降！\\n\" +\n" +
                     "▸ §b附魔技巧§r：消耗 3 级经验 + 3 青金石；词条不满意用砂轮洗掉非诅咒附魔返还经验并刷新种子。";
             return Optional.of(new Resolution(resp, "/give @s minecraft:enchanting_table 1", "ENCHANTING_TABLE"));
         }
@@ -252,18 +353,17 @@ public final class FastPathResolver {
         // 23. Java Edition vs Bedrock Edition differences
         if (q.contains("基岩版和java版") || q.contains("java版和基岩版") || q.contains("准连接性") || q.contains("qc") || q.contains("活塞吐方块") || q.contains("基岩版能横扫吗") || q.contains("基岩版副手") || q.contains("基岩版红石区别")) {
             String resp = "§e【Minecraft Java 版 vs 基岩版 (Bedrock) 核心机制差异】§r\n" +
-                    "▸ §c战斗机制§r：Java 版武器有攻击冷却 CD，满蓄力横扫之刃 AOE，斧头破盾；基岩版无 CD 可高速连点，无横扫附魔。\n" +
-                    "▸ §b副手机制§r：Java 版副手可持几乎任意物品；基岩版副手仅限盾牌、箭矢、图腾、焰火、地图等少数物品。\n" +
+                    "▸ §c战斗机制§r：Java 版武器有攻击冷却 CD，满蓄力横扫之刃 AOE，斧头破盾；基岩版无 CD 可高速连点，无横扫附魔。\\n\" +\n" +
+                    "▸ §b副手机制§r：Java 版副手可持几乎任意物品；基岩版副手仅限盾牌、箭矢、图腾、焰火、地图等少数物品。\\n\" +\n" +
                     "▸ §a准连接性 (QC)§r：Java 版支持 QC 且 1-tick 脉冲可使粘性活塞吐出方块；基岩版无 QC，粘性活塞永远黏住方块！";
             return Optional.of(new Resolution(resp, null, "JAVA_BEDROCK_DIFF"));
         }
 
-        
         // 24. Sugar Cane / Bamboo Farm Blueprint
         if (q.contains("甘蔗机") || q.contains("竹子机") || q.contains("全自动甘蔗") || q.contains("甘蔗农场") || q.contains("甘蔗怎么做") || q.contains("侦测器甘蔗")) {
             String resp = "§a【全自动甘蔗/竹子机搭建指南】§r\n" +
-                    "▸ §e切片结构§r：底层水槽+泥土，中层活塞，顶层侦测器（观察脸朝前看甘蔗第 3 格）。\n" +
-                    "▸ §b传导电路§r：活塞背后垫实心方块，上面撒红石粉连接侦测器输出。\n" +
+                    "▸ §e切片结构§r：底层水槽+泥土，中层活塞，顶层侦测器（观察脸朝前看甘蔗第 3 格）。\\n\" +\n" +
+                    "▸ §b传导电路§r：活塞背后垫实心方块，上面撒红石粉连接侦测器输出。\\n\" +\n" +
                     "▸ §c避坑提示§r：沙子和泥土种植生长速度完全相同；侦测器切勿装在第 2 格防止频繁空推。";
             return Optional.of(new Resolution(resp, "/give @s minecraft:sugar_cane 64", "SUGAR_CANE_FARM"));
         }
@@ -271,16 +371,16 @@ public final class FastPathResolver {
         // 25. Stone / Cobblestone Generator Blueprint
         if (q.contains("刷石机") || q.contains("造石机") || q.contains("刷圆石") || q.contains("刷石头") || q.contains("安全刷石") || q.contains("造石头")) {
             String resp = "§6【高效安全造石机与刷石力学】§r\n" +
-                    "▸ §a圆石生成§r：流动水与流动岩浆在同一水平高度对撞。\n" +
-                    "▸ §e石头生成§r：岩浆流自上而下注入流动水上方瞬间冷凝（出平滑石）。\n" +
+                    "▸ §a圆石生成§r：流动水与流动岩浆在同一水平高度对撞。\\n\" +\n" +
+                    "▸ §e石头生成§r：岩浆流自上而下注入流动水上方瞬间冷凝（出平滑石）。\\n\" +\n" +
                     "▸ §c防灭大忌§r：水流流速远快于岩浆，水流一侧必须下挖 2 格深坑阻断水势，严禁水流直接冲入岩浆源块！";
             return Optional.of(new Resolution(resp, "/give @s minecraft:lava_bucket 1", "STONE_GENERATOR"));
         }
 
         // 26. Redstone Clocks & Oscillators
-        if (q.contains("红石时钟") || q.contains("漏斗时钟") || q.contains("比较器时钟") || q.contains("脉冲发生器") || q.contains("高频红石") || q.contains("红石脉冲")) {
+        if (q.contains("红石时钟") || q.contains("漏斗时钟") || q.contains("比较器时钟") || q.contains("脉冲发生器") || q.contains("高频红石") || q.contains("红石脉冲") || q.contains("极速时钟")) {
             String resp = "§c【经典红石时钟与高频脉冲器】§r\n" +
-                    "▸ §e极速脉冲§r：比较器打至减法模式（前置火把点亮），后方通电，输出红石线回环引至侧面，输出 1~2 tick 超高频脉冲。\n" +
+                    "▸ §e极速脉冲§r：比较器打至减法模式（前置火把点亮），后方通电，输出红石线回环引至侧面，输出 1~2 tick 超高频脉冲。\\n\" +\n" +
                     "▸ §b长周期时钟§r：Etho 双漏斗对吸时钟，两端接比较器+粘性活塞推移红石块，放入物品数 × 0.4 秒精确控制周期。";
             return Optional.of(new Resolution(resp, "/give @s minecraft:comparator 1", "REDSTONE_CLOCKS"));
         }
@@ -288,17 +388,17 @@ public final class FastPathResolver {
         // 27. Pumpkin / Melon Farm Blueprint
         if (q.contains("南瓜机") || q.contains("西瓜机") || q.contains("全自动南瓜") || q.contains("全自动西瓜") || q.contains("结瓜农场") || q.contains("南瓜农场")) {
             String resp = "§6【全自动南瓜/西瓜机搭建指南】§r\n" +
-                    "▸ §e生长原理§r：成熟瓜梗向相邻泥土/草方块结瓜，结瓜瞬间触发方块状态更新。\n" +
-                    "▸ §a自动化构型§r：侦测器感应结瓜更新，驱动活塞推碎瓜果（南瓜掉落整瓜，西瓜掉落西瓜片）。\n" +
+                    "▸ §e生长原理§r：成熟瓜梗向相邻泥土/草方块结瓜，结瓜瞬间触发方块状态更新。\\n\" +\n" +
+                    "▸ §a自动化构型§r：侦测器感应结瓜更新，驱动活塞推碎瓜果（南瓜掉落整瓜，西瓜掉落西瓜片）。\\n\" +\n" +
                     "▸ §b无损收集§r：底层使用漏斗矿车穿透泥土隔空吸物，损耗最低。";
             return Optional.of(new Resolution(resp, "/give @s minecraft:pumpkin_seeds 64", "PUMPKIN_MELON_FARM"));
         }
 
         // 28. Villager Breeding Dynamics
-        if (q.contains("村民繁殖") || q.contains("村民生小村民") || q.contains("村民生孩子") || q.contains("村民不生") || q.contains("村民生小人") || q.contains("村民怎么繁殖") || q.contains("村民床位")) {
+        if (q.contains("村民繁殖") || q.contains("村民生小村民") || q.contains("村民生孩子") || q.contains("村民不生") || q.contains("村民生小人") || q.contains("村民怎么繁殖") || q.contains("村民床位") || q.contains("村民繁育")) {
             String resp = "§6【村民繁殖与有效床位动力学】§r\n" +
-                    "▸ §a有效床位§r：村内有效床位必须多于村民总数；且床头正上方必须留出至少 2 格完整透明/空气高度（供幼年村民跳床寻路判定）！\n" +
-                    "▸ §e食物意愿§r：每只村民需消耗 3 面包，或 12 胡萝卜，或 12 马铃薯，或 12 甜菜根。\n" +
+                    "▸ §a有效床位§r：村内有效床位必须多于村民总数；且床头正上方必须留出至少 2 格完整透明/空气高度（供幼年村民跳床寻路判定）！\\n\" +\n" +
+                    "▸ §e食物意愿§r：每只村民需消耗 3 面包，或 12 胡萝卜，或 12 马铃薯，或 12 甜菜根。\\n\" +\n" +
                     "▸ §b生长周期§r：幼年村民 20 分钟（24000 ticks）成年，双亲繁育后冷却 5 分钟。";
             return Optional.of(new Resolution(resp, "/give @s minecraft:bread 64", "VILLAGER_BREEDING"));
         }
@@ -306,8 +406,8 @@ public final class FastPathResolver {
         // 29. Automatic Villager Crop Farm
         if (q.contains("村民农场") || q.contains("村民农田") || q.contains("全自动农田") || q.contains("农民自动收菜") || q.contains("自动收小麦") || q.contains("自动收胡萝卜") || q.contains("自动收马铃薯")) {
             String resp = "§6【全自动村民农田机制】§r\n" +
-                    "▸ §a农民特征§r：只有棕袍农民拥有自动耕作与补种 AI；背包拥有 8 个独立物品槽。\n" +
-                    "▸ §e背包防堵§r：入场前主动投喂 8 组单一作物（如胡萝卜）将背包填满，杜绝拾取杂物卡死。\n" +
+                    "▸ §a农民特征§r：只有棕袍农民拥有自动耕作与补种 AI；背包拥有 8 个独立物品槽。\\n\" +\n" +
+                    "▸ §e背包防堵§r：入场前主动投喂 8 组单一作物（如胡萝卜）将背包填满，杜绝拾取杂物卡死。\\n\" +\n" +
                     "▸ §b收集方案§r：隔着栅栏向饥饿村民投喂拦截（中间漏斗截取），或耕地下方漏斗矿车穿透吸物。";
             return Optional.of(new Resolution(resp, "/give @s minecraft:carrot 64", "VILLAGER_CROP_FARM"));
         }
@@ -315,10 +415,38 @@ public final class FastPathResolver {
         // 30. Smelting & High-Efficiency Fuels
         if (q.contains("熔炼燃料") || q.contains("熔炉燃料") || q.contains("烧矿燃料") || q.contains("最划算的燃料") || q.contains("岩浆桶能烧几个") || q.contains("干海带块能烧几个") || q.contains("熔炼时间") || q.contains("燃料效率")) {
             String resp = "§6【高能自动化燃料与熔炼动力学】§r\n" +
-                    "▸ §e标准耗时§r：单件物品熔炼需 200 ticks (10.0 秒)；高炉/烟熏炉减半至 100 ticks。\n" +
-                    "▸ §c顶尖热值§r：岩浆桶烧 100 个（返还空桶，最高单体）；煤炭块烧 80 个；干海带块烧 20 个（可再生首选）；烈焰棒 12 个；煤炭 8 个。\n" +
+                    "▸ §e标准耗时§r：单件物品熔炼需 200 ticks (10.0 秒)；高炉/烟熏炉减半至 100 ticks。\\n\" +\n" +
+                    "▸ §c顶尖热值§r：岩浆桶烧 100 个（返还空桶，最高单体）；煤炭块烧 80 个；干海带块烧 20 个（可再生首选）；烈焰棒 12 个；煤炭 8 个。\\n\" +\n" +
                     "▸ §b熔炉阵列§r：顶端输入原料，侧面输入燃料，底端漏斗抽取成品。";
             return Optional.of(new Resolution(resp, "/give @s minecraft:dried_kelp_block 64", "SMELTING_FUEL_EFFICIENCY"));
+        }
+
+        // 31. Zombie Villager Curing
+        if (q.contains("僵尸村民") && (q.contains("治愈") || q.contains("变回") || q.contains("怎么救") || q.contains("金苹果") || q.contains("虚弱药水") || q.contains("打折"))) {
+            String resp = "§d【僵尸村民治愈机制与永久交易折扣】§r\n" +
+                    "▸ §e两大核心道具§r：喷溅型虚弱药水 (Splash Potion of Weakness) + 普通金苹果 (Golden Apple)。\n" +
+                    "▸ §a治愈流程§r：先向僵尸村民投掷喷溅虚弱药水，随后手持金苹果右键投喂，伴随剧烈红色粒子抖动；耗时 3~5 分钟 (3600~6000 ticks) 转化完成。\n" +
+                    "▸ §b转化加速与保护§r：周围放置铁栏杆与床可微幅加速转化；转化期间其具有力量I且仍会反击，需严密隔离！\n" +
+                    "▸ §6永久福利§r：治愈后成为村民并给予永久超低折扣！";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:golden_apple 1", "ZOMBIE_VILLAGER_CURE"));
+        }
+
+        // 33. Armadillo & Wolf Armor (1.21+)
+        if (q.contains("犰狳") || q.contains("狼铠") || q.contains("狼装甲") || q.contains("犰狳鳞甲") || q.contains("刷子")) {
+            String resp = "§b【犰狳刷鳞与狼铠防御系统 (1.21+)】§r\n" +
+                    "▸ §e犰狳与刷子§r：生成于热带草原与恶地；手持【刷子 (Brush)】右键无损刷取【犰狳鳞甲】，每次耗 16 点刷子耐久。\n" +
+                    "▸ §a狼铠制作与染色§r：6 枚犰狳鳞甲合成狼铠，支持染料定制颜色；穿戴于驯服狼身上吸收 100% 直接伤害。\n" +
+                    "▸ §b耐久维护§r：狼铠产生裂纹后，手持犰狳鳞甲右键即可原位修复耐久；剪刀右键无损脱下。";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:brush 1", "ARMADILLO_WOLF_ARMOR"));
+        }
+
+        // 34. Trial Spawner & Breeze (1.21+)
+        if (q.contains("旋风人") || q.contains("breeze") || q.contains("试炼刷怪笼") || q.contains("trial spawner") || q.contains("试炼钥匙")) {
+            String resp = "§3【试炼刷怪笼与旋风人攻防动力学 (1.21+)】§r\n" +
+                    "▸ §e试炼刷怪笼§r：按玩家人数动态调整怪量；清除后喷出试炼钥匙并进入 30 分钟冷却；带灾厄兆头触发重装不祥试炼。\n" +
+                    "▸ §c旋风人投射物绝对免疫§r：覆盖风暴气流，【完全反弹弓箭、弩箭、三叉戟等所有远程投射物】！\n" +
+                    "▸ §a克制策略§r：盾牌可 100% 弹反风弹；使用重锤/钻石剑等近战武器贴脸速杀。";
+            return Optional.of(new Resolution(resp, "/locate structure minecraft:trial_chambers", "TRIAL_SPAWNER_BREEZE"));
         }
 
         return Optional.empty();

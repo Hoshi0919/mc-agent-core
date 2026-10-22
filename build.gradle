@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'hoshi.mcagent'
-version = '1.5.0'
+version = '1.6.0'
 description = 'Grounded, non-blocking in-game AI assistant architecture for Minecraft (Fabric/NeoForge 1.20~1.21)'
 
 java {

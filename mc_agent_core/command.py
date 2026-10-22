@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Optional
 from .bom import BlueprintBOM, MaterialCalculator
 from .context import ContextSnapshot
+from .crafting import CraftingReadinessChecker
 from .dispatcher import AsyncQueryDispatcher, QueryResult
 from .formatter import MinecraftTextFormatter
 from .paginator import ChatPaginator, PagedResult
@@ -82,7 +83,16 @@ class CommandRouter:
 
         sub = tokens[arg_start].lower()
 
-        if sub in ("ask", "q", "query"):
+        if sub in ("inspect", "scan"):
+            return self._handle_inspect(player_id, snapshot)
+
+        elif sub in ("craft", "recipe"):
+            if arg_start + 1 >= len(tokens):
+                return CommandResult(status="ERROR", action="CRAFT", message="§c请提供待合成的物品名称，例如: /hoshi craft hopper")
+            item_name = " ".join(tokens[arg_start + 1:])
+            return self._handle_craft(player_id, item_name, snapshot)
+
+        elif sub in ("ask", "q", "query"):
             if arg_start + 1 >= len(tokens):
                 return CommandResult(status="ERROR", action="ASK", message="§c请提供提问内容，例如: /hoshi ask 钻石在几层？")
             question = " ".join(tokens[arg_start + 1 :])
@@ -124,6 +134,37 @@ class CommandRouter:
             # Fallback treat as ask
             question = " ".join(tokens[arg_start:])
             return self._handle_ask(player_id, question, snapshot)
+
+    def _handle_inspect(self, player_id: Optional[str], snapshot: Optional[ContextSnapshot]) -> CommandResult:
+        if not snapshot:
+            return CommandResult(status="ERROR", action="INSPECT", message="§c[Hoshi] 无法获取当前玩家上下文快照。")
+        lines = ["§b【Hoshi 准星全维环境感知扫描】§r"]
+        has_data = False
+        if snapshot.target_block and not snapshot.target_block.is_air:
+            has_data = True
+            tb = snapshot.target_block
+            harvest = tb.evaluate_harvest(snapshot.inventory)
+            lines.append(f"▸ §6注视方块§r：{tb.block_id} at [{tb.x}, {tb.y}, {tb.z}]")
+            lines.append(f"  光照：方块={tb.block_light}, 天空={tb.sky_light} | 硬度: {tb.hardness:.1f} | 需求工具: {harvest.tool_requirement_name}")
+            lines.append(f"  手持匹配：{harvest.advice}")
+        if snapshot.target_entity:
+            has_data = True
+            lines.append(f"▸ §d注视实体§r：{snapshot.target_entity.to_summary()}")
+        if snapshot.inventory:
+            lines.append(f"▸ §e玩家护甲/手持§r：主手={snapshot.main_hand_item} | 护甲防御={snapshot.inventory.total_armor_points}/20 (金装={snapshot.inventory.is_wearing_gold_armor})")
+        if not has_data:
+            lines.append("▸ §7准星未对准任何方块或实体 (Raycast Miss)。")
+        text = "\n".join(lines)
+        paged = ChatPaginator.paginate(text, target_page=1, page_size=6, command_prefix="/hoshi page")
+        self.session_manager.record_interaction(player_id, "/hoshi inspect", text, "INSPECT", paged)
+        return CommandResult(status="SUCCESS", action="INSPECT", message=text, tellraw_json=paged.tellraw_json, paged_result=paged)
+
+    def _handle_craft(self, player_id: Optional[str], item_name: str, snapshot: Optional[ContextSnapshot]) -> CommandResult:
+        report = CraftingReadinessChecker.evaluate(item_name, snapshot.inventory if snapshot else None)
+        text = report.formatted_message
+        paged = ChatPaginator.paginate(text, target_page=1, page_size=6, command_prefix="/hoshi page")
+        self.session_manager.record_interaction(player_id, "/hoshi craft " + item_name, text, "CRAFT", paged)
+        return CommandResult(status="SUCCESS", action="CRAFT", message=text, command_suggestion=report.suggested_command, tellraw_json=paged.tellraw_json, paged_result=paged)
 
     def _handle_ask(self, player_id: Optional[str], question: str, snapshot: Optional[ContextSnapshot]) -> CommandResult:
         # Check BOM fast match

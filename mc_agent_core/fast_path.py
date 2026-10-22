@@ -16,10 +16,74 @@ class Resolution:
 
 class FastPathResolver:
     @staticmethod
-    def try_resolve(raw_query: str, context: Optional[ContextSnapshot]) -> Optional[Resolution]:
+    def try_resolve(raw_query: str, context: Optional[ContextSnapshot] = None) -> Optional[Resolution]:
         if not raw_query or not raw_query.strip():
             return None
         q = raw_query.strip().lower()
+
+        # 0. Context-Aware Crosshair Target Block Mining
+        if context and context.target_block and not context.target_block.is_air:
+            if any(k in q for k in ("这怎么挖", "怎么挖眼前", "需要什么工具", "用什么工具", "手里的工具能挖吗", "能掉落吗", "眼前方块", "准星方块", "挖掘要求")):
+                tb = context.target_block
+                harvest = tb.evaluate_harvest(context.inventory)
+                lines = [
+                    "§6【准星方块挖掘与掉落检测】§r",
+                    f"▸ 目标方块：{tb.block_id} at [{tb.x}, {tb.y}, {tb.z}]",
+                    f"▸ 挖掘工具要求：{harvest.tool_requirement_name} (硬度: {tb.hardness:.1f})",
+                    f"▸ 当前手持装备：{harvest.current_tool_status}"
+                ]
+                if harvest.can_harvest_with_drops:
+                    lines.append("▸ §a✔ 掉落安全检测通过：符合要求，正常破坏将百分之百产生掉落物！§r")
+                else:
+                    lines.append(f"▸ §c✖ {harvest.advice}§r")
+                cmd = f"/item replace entity @s weapon.mainhand from entity @s hotbar.{harvest.hotbar_alternative_slot}" if harvest.hotbar_alternative_slot is not None else None
+                return Resolution(text_response="\n".join(lines), suggested_command=cmd, category="TARGET_BLOCK_HARVEST")
+
+        # 0.1 Context-Aware Crosshair Target Entity Guidance
+        if context and context.target_entity:
+            if any(k in q for k in ("眼前生物", "准星生物", "这个生物", "怎么治愈", "怎么救", "怎么驯服", "怎么刷狼铠", "为什么打我", "打不打我")):
+                te = context.target_entity
+                inv = context.inventory
+                if te.is_zombie_villager:
+                    lines = [
+                        "§d【准星实体：僵尸村民治愈方案】§r",
+                        f"▸ 实体生命值：{te.health:.1f} / {te.max_health:.1f}"
+                    ]
+                    has_apple = inv.has_item("golden_apple", 1) if inv else False
+                    if has_apple:
+                        lines.append("▸ §a背包材料就绪：持有金苹果！向其投掷喷溅虚弱药水后手持金苹果右键投喂即可开始转化。§r")
+                    else:
+                        lines.append("▸ §e缺少治愈材料：治愈需要【喷溅型虚弱药水】+【普通金苹果】。§r")
+                    lines.append("▸ 治愈后将化身为正常村民并提供终生永久交易超低折扣！")
+                    return Resolution(text_response="\n".join(lines), suggested_command="/give @s minecraft:golden_apple 1", category="TARGET_ENTITY_ZOMBIE_VILLAGER")
+                elif te.is_piglin:
+                    lines = ["§6【准星实体：下界猪灵中立性感知】§r"]
+                    if inv and inv.is_wearing_gold_armor:
+                        lines.append("▸ §a✔ 安全：您当前已穿戴黄金装备，周围猪灵对您保持中立。§r")
+                        lines.append("▸ 向其丢出金锭即可开始以物易物；切勿在其周围 16 格内开箱或破坏金矿！")
+                    else:
+                        lines.append("▸ §c✖ 极度危险：您当前未穿戴任何黄金护甲！猪灵对您处于敌对状态！§r")
+                    return Resolution(text_response="\n".join(lines), suggested_command="/give @s minecraft:golden_boots 1", category="TARGET_ENTITY_PIGLIN")
+                elif te.is_armadillo:
+                    lines = [
+                        "§b【准星实体：犰狳刷鳞与狼铠】§r",
+                        "▸ 机制：手持刷子 (Brush) 对犰狳右键点击即可无损刷落 1 枚犰狳鳞甲！",
+                        "▸ 6 枚犰狳鳞甲可合成狼铠 (Wolf Armor)，吸收驯服狼受到的所有直接伤害。"
+                    ]
+                    return Resolution(text_response="\n".join(lines), suggested_command="/give @s minecraft:brush 1", category="TARGET_ENTITY_ARMADILLO")
+                elif te.is_iron_golem:
+                    lines = [
+                        "§e【准星实体：铁傀儡生命与修复】§r",
+                        f"▸ 当前生命值：{te.health:.1f} / 100.0 (50 颗心)",
+                        "▸ 维护指南：手持铁锭右键每个可恢复 25 点生命并消除裂纹！切勿攻击它防反杀。"
+                    ]
+                    return Resolution(text_response="\n".join(lines), suggested_command="/give @s minecraft:iron_ingot 4", category="TARGET_ENTITY_IRON_GOLEM")
+
+        # 0.2 Inventory Crafting Readiness
+        if any(k in q for k in ("够做", "能做", "能合成", "够合", "材料够", "背包够")):
+            report = CraftingReadinessChecker.evaluate(raw_query, context.inventory if context else None)
+            if report.is_known_recipe:
+                return Resolution(text_response=report.formatted_message, suggested_command=report.suggested_command, category="CRAFTING_READINESS")
 
         # 1. Nether Portal / Coordinate math
         if any(k in q for k in ("地狱坐标", "下界坐标", "传送门坐标", "对应坐标", "换算坐标")):
@@ -209,6 +273,16 @@ class FastPathResolver:
             )
             return Resolution(text_response=resp, suggested_command="/give @s minecraft:brewing_stand 1", category="BREWING_RECIPES")
 
+        # 32. Iron Golem Repair
+        if "铁傀儡" in q and any(k in q for k in ("修", "加血", "裂纹", "回血", "铁锭")):
+            resp = (
+                "§e【铁傀儡修复维护与村庄防卫】§r\n"
+                "▸ §e生命值与裂纹§r：拥有 100 点生命值 (50 颗心)；随生命降低呈现 4 阶段肉眼可见裂纹。\n"
+                "▸ §a铁锭右键修复§r：手持【铁锭】右键铁傀儡，每个铁锭消耗立即恢复 25 点生命值并修复裂纹！\n"
+                "▸ §c反击戒律§r：单次攻击 7~21 点高额击退伤害；声望低于 -15 或主动攻击会招致致命围攻。"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:iron_ingot 4", category="IRON_GOLEM_REPAIR")
+
         # 16. Iron Golem Spawning & Iron Farm
         if any(k in q for k in ("铁傀儡", "刷铁机", "为什么不刷铁", "村民惊吓", "不生成铁傀儡")):
             resp = (
@@ -381,6 +455,39 @@ class FastPathResolver:
                 "▸ §b熔炉阵列§r：顶端输入原料，侧面输入燃料，底端漏斗抽取成品。"
             )
             return Resolution(text_response=resp, suggested_command="/give @s minecraft:dried_kelp_block 64", category="SMELTING_FUEL_EFFICIENCY")
+
+        # 31. Zombie Villager Curing
+        if "僵尸村民" in q and any(k in q for k in ("治愈", "变回", "怎么救", "金苹果", "虚弱药水", "打折")):
+            resp = (
+                "§d【僵尸村民治愈机制与永久交易折扣】§r\n"
+                "▸ §e两大核心道具§r：喷溅型虚弱药水 (Splash Potion of Weakness) + 普通金苹果 (Golden Apple)。\n"
+                "▸ §a治愈流程§r：先向僵尸村民投掷喷溅虚弱药水，随后手持金苹果右键投喂，伴随剧烈红色粒子抖动；耗时 3~5 分钟 (3600~6000 ticks) 转化完成。\n"
+                "▸ §b转化加速与保护§r：周围放置铁栏杆与床可微幅加速转化；转化期间其具有力量I且仍会反击，需严密隔离！\n"
+                "▸ §6永久福利§r：治愈后成为村民并给予永久超低折扣！"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:golden_apple 1", category="ZOMBIE_VILLAGER_CURE")
+
+
+
+        # 33. Armadillo & Wolf Armor (1.21+)
+        if any(k in q for k in ("犰狳", "狼铠", "狼装甲", "犰狳鳞甲", "刷子")):
+            resp = (
+                "§b【犰狳刷鳞与狼铠防御系统 (1.21+)】§r\n"
+                "▸ §e犰狳与刷子§r：生成于热带草原与恶地；手持【刷子 (Brush)】右键无损刷取【犰狳鳞甲】，每次耗 16 点刷子耐久。\n"
+                "▸ §a狼铠制作与染色§r：6 枚犰狳鳞甲合成狼铠，支持染料定制颜色；穿戴于驯服狼身上吸收 100% 直接伤害。\n"
+                "▸ §b耐久维护§r：狼铠产生裂纹后，手持犰狳鳞甲右键即可原位修复耐久；剪刀右键无损脱下。"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:brush 1", category="ARMADILLO_WOLF_ARMOR")
+
+        # 34. Trial Spawner & Breeze (1.21+)
+        if any(k in q for k in ("旋风人", "breeze", "试炼刷怪笼", "trial spawner", "试炼钥匙")):
+            resp = (
+                "§3【试炼刷怪笼与旋风人攻防动力学 (1.21+)】§r\n"
+                "▸ §e试炼刷怪笼§r：按玩家人数动态调整怪量；清除后喷出试炼钥匙并进入 30 分钟冷却；带灾厄兆头触发重装不祥试炼。\n"
+                "▸ §c旋风人投射物绝对免疫§r：覆盖风暴气流，【完全反弹弓箭、弩箭、三叉戟等所有远程投射物】！\n"
+                "▸ §a克制策略§r：盾牌可 100% 弹反风弹；使用重锤/钻石剑等近战武器贴脸速杀。"
+            )
+            return Resolution(text_response=resp, suggested_command="/locate structure minecraft:trial_chambers", category="TRIAL_SPAWNER_BREEZE")
 
         return None
 

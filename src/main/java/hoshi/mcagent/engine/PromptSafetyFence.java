@@ -64,7 +64,11 @@ public final class PromptSafetyFence {
         userPrompt.append(LocalGameRules.PUMPKIN_MELON_FARM_RULES + "\n\n" +
             LocalGameRules.VILLAGER_BREEDING_RULES + "\n\n" +
             LocalGameRules.VILLAGER_CROP_FARM_RULES + "\n\n" +
-            LocalGameRules.SMELTING_FUEL_EFFICIENCY_RULES).append("\n");
+            LocalGameRules.SMELTING_FUEL_EFFICIENCY_RULES + "\n\n" +
+            LocalGameRules.ZOMBIE_VILLAGER_CURE_RULES + "\n\n" +
+            LocalGameRules.IRON_GOLEM_REPAIR_RULES + "\n\n" +
+            LocalGameRules.ARMADILLO_WOLF_ARMOR_RULES + "\n\n" +
+            LocalGameRules.TRIAL_SPAWNER_BREEZE_RULES).append("\n");
         userPrompt.append("</canonical_rules>\n\n");
 
         userPrompt.append("<player_query>\n");

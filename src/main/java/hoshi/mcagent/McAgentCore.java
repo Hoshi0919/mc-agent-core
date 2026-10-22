@@ -15,9 +15,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.function.Function;
 
 /**
- * Main entry point and facade for the McAgentCore subsystem (v1.5.0).
+ * Main entry point and facade for the McAgentCore subsystem (v1.6.0).
  * Exposes non-blocking asynchronous dispatch, caching, rate limiting, session memory,
- * BOM material calculator, and in-game command routing.
+ * full game-state context awareness, recipe crafting checker, and in-game command routing.
  */
 public class McAgentCore {
 
@@ -64,6 +64,10 @@ public class McAgentCore {
 
     public CommandResult handleCommand(String playerId, String rawCommand, ContextSnapshot snapshot) {
         return commandRouter.execute(playerId, rawCommand, snapshot);
+    }
+
+    public AsyncQueryDispatcher getDispatcher() {
+        return dispatcher;
     }
 
     public CommandRouter getCommandRouter() {

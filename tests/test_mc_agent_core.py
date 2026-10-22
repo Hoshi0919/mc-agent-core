@@ -19,6 +19,10 @@ from mc_agent_core import (
     PlayerSessionManager,
     CommandResult,
     CommandRouter,
+    ItemInstance,
+    InventorySnapshot,
+    TargetEntity,
+    CraftingReadinessChecker,
 )
 
 
@@ -616,3 +620,149 @@ def test_command_router_end_to_end():
     r_clear = router.execute("Steve", "/hoshi clear", None)
     assert r_clear.is_success
     assert router.session_manager.active_session_count == 0
+
+
+def test_inventory_snapshot_and_item_instance():
+    pick = ItemInstance(item_id="minecraft:diamond_pickaxe", count=1, durability=1000, max_durability=1561)
+    assert pick.is_pickaxe
+    assert pick.harvest_tier == 4
+    assert not pick.is_empty
+
+    gold_boots = ItemInstance(item_id="minecraft:golden_boots", count=1)
+    iron_chest = ItemInstance(item_id="minecraft:iron_chestplate", count=1)
+    iron_ingots = ItemInstance(item_id="minecraft:iron_ingot", count=42)
+
+    hotbar = {
+        0: ItemInstance(item_id="minecraft:netherite_sword", count=1),
+        1: ItemInstance(item_id="minecraft:iron_pickaxe", count=1),
+        2: pick,
+        3: gold_boots
+    }
+    main = {9: iron_ingots, 10: ItemInstance(item_id="minecraft:chest", count=2)}
+
+    inv = InventorySnapshot(
+        main_hand=hotbar[1],
+        chestplate=iron_chest,
+        hotbar=hotbar,
+        main_inventory=main
+    )
+
+    assert inv.count_item("iron_ingot") == 42
+    assert inv.has_item("iron_ingot", 40)
+    assert not inv.has_item("iron_ingot", 50)
+    assert inv.find_hotbar_slot("golden_boots") == 3
+    assert inv.find_hotbar_tool("pickaxe", 4) == 2
+    assert inv.total_armor_points == 6
+    assert not inv.is_wearing_gold_armor
+
+
+def test_target_block_harvest_evaluation():
+    air = TargetBlock(block_id="minecraft:air", x=0, y=0, z=0)
+    assert air.is_air
+    assert air.evaluate_harvest(None).can_harvest_with_drops
+
+    debris = TargetBlock(block_id="minecraft:ancient_debris", x=100, y=15, z=-200, hardness=30.0, required_tool="pickaxe")
+    assert debris.min_mining_tier == 4
+
+    hotbar = {
+        1: ItemInstance(item_id="minecraft:iron_pickaxe", count=1),
+        2: ItemInstance(item_id="minecraft:diamond_pickaxe", count=1)
+    }
+    inv = InventorySnapshot(main_hand=hotbar[1], hotbar=hotbar)
+    report = debris.evaluate_harvest(inv)
+    assert not report.can_harvest_with_drops
+    assert report.hotbar_alternative_slot == 2
+    assert "快捷栏第 3 格" in report.advice
+
+    inv_diamond = InventorySnapshot(main_hand=hotbar[2], hotbar=hotbar)
+    report_ok = debris.evaluate_harvest(inv_diamond)
+    assert report_ok.can_harvest_with_drops
+
+
+def test_target_entity_perception():
+    zombie_villager = TargetEntity(entity_id="minecraft:zombie_villager", is_hostile=True)
+    assert zombie_villager.is_zombie_villager
+    assert zombie_villager.is_hostile
+
+    piglin = TargetEntity(entity_id="minecraft:piglin")
+    assert piglin.is_piglin
+
+    armadillo = TargetEntity(entity_id="minecraft:armadillo")
+    assert armadillo.is_armadillo
+
+    golem = TargetEntity(entity_id="minecraft:iron_golem", health=45.0, max_health=100.0)
+    assert golem.is_iron_golem
+
+
+def test_crafting_readiness_checker():
+    inv_ready = InventorySnapshot(main_inventory={
+        0: ItemInstance(item_id="minecraft:iron_ingot", count=5),
+        1: ItemInstance(item_id="minecraft:chest", count=1)
+    })
+    report = CraftingReadinessChecker.evaluate("hopper", inv_ready)
+    assert report.is_known_recipe
+    assert report.is_ready
+    assert report.max_craftable == 1
+    assert "材料齐全" in report.formatted_message
+
+    inv_short = InventorySnapshot(main_inventory={
+        0: ItemInstance(item_id="minecraft:iron_ingot", count=3),
+        1: ItemInstance(item_id="minecraft:chest", count=1)
+    })
+    short_report = CraftingReadinessChecker.evaluate("hopper", inv_short)
+    assert not short_report.is_ready
+    assert short_report.max_craftable == 0
+    assert "缺少 2" in short_report.formatted_message
+
+
+def test_fast_path_v16_rules():
+    res1 = FastPathResolver.try_resolve("僵尸村民怎么治愈？")
+    assert res1 is not None
+    assert res1.category == "ZOMBIE_VILLAGER_CURE"
+    assert "虚弱药水" in res1.text_response
+    assert "金苹果" in res1.text_response
+
+    res2 = FastPathResolver.try_resolve("铁傀儡怎么修？")
+    assert res2 is not None
+    assert res2.category == "IRON_GOLEM_REPAIR"
+    assert "铁锭" in res2.text_response
+
+    res3 = FastPathResolver.try_resolve("犰狳怎么刷狼铠？")
+    assert res3 is not None
+    assert res3.category == "ARMADILLO_WOLF_ARMOR"
+    assert "刷子" in res3.text_response
+
+    res4 = FastPathResolver.try_resolve("旋风人怎么打？")
+    assert res4 is not None
+    assert res4.category == "TRIAL_SPAWNER_BREEZE"
+    assert "完全反弹" in res4.text_response
+
+
+def test_command_router_v16_inspect_and_craft():
+    dispatcher = AsyncQueryDispatcher()
+    router = CommandRouter(dispatcher)
+
+    tb = TargetBlock(block_id="minecraft:ancient_debris", x=50, y=14, z=80, hardness=30.0, required_tool="pickaxe")
+    te = TargetEntity(entity_id="minecraft:piglin")
+    hotbar = {0: ItemInstance(item_id="minecraft:diamond_pickaxe", count=1)}
+    inv = InventorySnapshot(main_hand=hotbar[0], hotbar=hotbar)
+    ctx = ContextSnapshot(
+        player_name="Steve",
+        dimension="minecraft:the_nether",
+        x=50.0, y=14.0, z=80.0,
+        target_block=tb,
+        target_entity=te,
+        inventory=inv,
+        main_hand_item="minecraft:diamond_pickaxe"
+    )
+
+    r_inspect = router.execute("Steve", "/hoshi inspect", ctx)
+    assert r_inspect.is_success
+    assert r_inspect.action == "INSPECT"
+    assert "ancient_debris" in r_inspect.message
+    assert "piglin" in r_inspect.message
+
+    r_craft = router.execute("Steve", "/hoshi craft hopper", ctx)
+    assert r_craft.is_success
+    assert r_craft.action == "CRAFT"
+    assert "缺少" in r_craft.message
