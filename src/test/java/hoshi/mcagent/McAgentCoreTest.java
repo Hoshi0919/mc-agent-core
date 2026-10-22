@@ -7,6 +7,10 @@ import hoshi.mcagent.engine.FastPathResolver;
 import hoshi.mcagent.engine.LocalGameRules;
 import hoshi.mcagent.engine.PromptSafetyFence;
 import hoshi.mcagent.format.MinecraftTextFormatter;
+import hoshi.mcagent.cache.QueryCache;
+import hoshi.mcagent.security.PlayerRateLimiter;
+import hoshi.mcagent.format.TellrawJsonBuilder;
+import hoshi.mcagent.format.ChatPaginator;
 
 import java.util.List;
 import java.util.Map;
@@ -47,6 +51,13 @@ public class McAgentCoreTest {
         testFastPathNewGameplayRules();
         testFastPathV13AdvancedRules();
         testPromptSafetyFence();
+                testFastPathV14Blueprints();
+        testPromptSafetyFenceV14();
+        testTellrawJsonBuilder();
+        testChatPaginator();
+        testQueryCacheLRUAndTTL();
+        testPlayerRateLimiterTokenBucket();
+        testMcAgentCoreFacadeWithCacheAndLimiting();
         testTextFormatterAndClickableComponents();
         testAsyncDispatcherEndToEnd();
 
@@ -318,4 +329,168 @@ public class McAgentCoreTest {
         assertTrue(llmResult.category().equals("LLM_INFERENCE"), "Category is LLM_INFERENCE");
         assertTrue(llmResult.rawAnswer().contains("Mock AI answer"), "Mock LLM executed properly");
     }
+
+    private static void testFastPathV14Blueprints() {
+        // 1. Sugar cane
+        var sc = FastPathResolver.tryResolve("全自动甘蔗机怎么做", null);
+        assertTrue(sc.isPresent(), "Resolved sugar cane farm query");
+        assertTrue("SUGAR_CANE_FARM".equals(sc.get().category()), "Category is SUGAR_CANE_FARM");
+        assertTrue(sc.get().textResponse().contains("切片结构"), "Contains slice structure");
+        assertTrue(sc.get().suggestedCommand().contains("sugar_cane"), "Sugar cane command");
+
+        // 2. Stone generator
+        var stone = FastPathResolver.tryResolve("刷石机怎么建", null);
+        assertTrue(stone.isPresent(), "Resolved stone generator query");
+        assertTrue("STONE_GENERATOR".equals(stone.get().category()), "Category is STONE_GENERATOR");
+        assertTrue(stone.get().textResponse().contains("圆石生成"), "Contains cobblestone formation");
+        assertTrue(stone.get().suggestedCommand().contains("lava_bucket"), "Lava bucket command");
+
+        // 3. Redstone clocks
+        var clock = FastPathResolver.tryResolve("红石时钟怎么做", null);
+        assertTrue(clock.isPresent(), "Resolved redstone clocks query");
+        assertTrue("REDSTONE_CLOCKS".equals(clock.get().category()), "Category is REDSTONE_CLOCKS");
+        assertTrue(clock.get().textResponse().contains("极速脉冲"), "Contains high-frequency pulse");
+        assertTrue(clock.get().suggestedCommand().contains("comparator"), "Comparator command");
+
+        // 4. Pumpkin & melon farm
+        var melon = FastPathResolver.tryResolve("全自动南瓜机", null);
+        assertTrue(melon.isPresent(), "Resolved pumpkin/melon farm query");
+        assertTrue("PUMPKIN_MELON_FARM".equals(melon.get().category()), "Category is PUMPKIN_MELON_FARM");
+        assertTrue(melon.get().textResponse().contains("生长原理"), "Contains growth dynamics");
+        assertTrue(melon.get().suggestedCommand().contains("pumpkin_seeds"), "Pumpkin seeds command");
+    }
+
+    private static void testPromptSafetyFenceV14() {
+        ContextSnapshot ctx = new ContextSnapshot(
+                "Player", "minecraft:overworld", 0.0, 64.0, 0.0,
+                0f, 0f, "plains", null, "air", "air", 20f, 20, List.of(), 1000L, false, false
+        );
+        var prompt = PromptSafetyFence.build("测试自动化蓝图围栏", ctx);
+        assertTrue(prompt.userPrompt().contains("【全自动甘蔗/竹子机搭建指南】"), "Injected sugar cane rules");
+        assertTrue(prompt.userPrompt().contains("【高效安全造石机与刷石力学】"), "Injected stone generator rules");
+        assertTrue(prompt.userPrompt().contains("【经典红石时钟与高频脉冲器】"), "Injected redstone clock rules");
+        assertTrue(prompt.userPrompt().contains("【全自动南瓜/西瓜机搭建指南】"), "Injected pumpkin melon rules");
+    }
+
+    private static void testTellrawJsonBuilder() {
+        var components = List.of(
+                new MinecraftTextFormatter.ChatComponent("[Hoshi] ", "aqua", true, false, null, null, "AI Assistant"),
+                new MinecraftTextFormatter.ChatComponent("[100, 64, -200]", "gold", true, false, "SUGGEST_COMMAND", "/tp 100 64 -200", "点击传送"),
+                new MinecraftTextFormatter.ChatComponent(" 特殊引号: \"测试\"", "white", false, false, null, null, null)
+        );
+
+        String json = TellrawJsonBuilder.toJson(components);
+        assertTrue(json.startsWith("{\"text\":\"\",\"extra\":["), "Tellraw valid json header");
+        assertTrue(json.contains("\"color\":\"aqua\""), "Tellraw color property");
+        assertTrue(json.contains("\"bold\":true"), "Tellraw bold flag");
+        assertTrue(json.contains("\"clickEvent\":{\"action\":\"suggest_command\",\"value\":\"/tp 100 64 -200\"}"), "Tellraw clickEvent");
+        assertTrue(json.contains("\"hoverEvent\":{\"action\":\"show_text\",\"contents\":\"点击传送\"}"), "Tellraw hoverEvent");
+        assertTrue(json.contains("\\\"测试\\\""), "Escaped JSON quotes");
+
+        String cmd = TellrawJsonBuilder.toTellrawCommand("@a", components);
+        assertTrue(cmd.startsWith("/tellraw @a {\"text\":\"\",\"extra\":["), "Full runnable tellraw command");
+
+        String emptyJson = TellrawJsonBuilder.toJson(List.of());
+        assertTrue("{\"text\":\"\"}".equals(emptyJson), "Empty components json fallback");
+    }
+
+    private static void testChatPaginator() {
+        String multiline = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\nLine 9\nLine 10\nLine 11\nLine 12";
+
+        // Page 1 of 3 (lines 1..5)
+        var p1 = ChatPaginator.paginate(multiline, 1, 5, "/mcagent page");
+        assertTrue(p1.currentPage() == 1, "Paginator page 1 index");
+        assertTrue(p1.totalPages() == 3, "Paginator total pages is 3");
+        assertTrue(p1.totalLines() == 12, "Paginator total lines is 12");
+        assertTrue(p1.pageLines().size() == 5, "Paginator page 1 has 5 lines");
+        assertTrue(p1.pageLines().get(0).equals("Line 1"), "Paginator line 1 content");
+        assertTrue(p1.tellrawJson().contains("下一页 ▶"), "Paginator has next page button");
+        assertTrue(p1.tellrawJson().contains("/mcagent page 2"), "Paginator next page command");
+
+        // Page 2 of 3 (lines 6..10)
+        var p2 = ChatPaginator.paginate(multiline, 2, 5, "/mcagent page");
+        assertTrue(p2.currentPage() == 2, "Paginator page 2 index");
+        assertTrue(p2.pageLines().size() == 5, "Paginator page 2 has 5 lines");
+        assertTrue(p2.pageLines().get(0).equals("Line 6"), "Paginator line 6 content");
+
+        // Page 3 of 3 (lines 11..12)
+        var p3 = ChatPaginator.paginate(multiline, 3, 5, "/mcagent page");
+        assertTrue(p3.currentPage() == 3, "Paginator page 3 index");
+        assertTrue(p3.pageLines().size() == 2, "Paginator page 3 has 2 lines");
+        assertTrue(p3.pageLines().get(1).equals("Line 12"), "Paginator line 12 content");
+
+        // Clamping check
+        var pClampHigh = ChatPaginator.paginate(multiline, 999, 5, "/mcagent page");
+        assertTrue(pClampHigh.currentPage() == 3, "Clamped high page to 3");
+        var pClampLow = ChatPaginator.paginate(multiline, -10, 5, "/mcagent page");
+        assertTrue(pClampLow.currentPage() == 1, "Clamped low page to 1");
+    }
+
+    private static void testQueryCacheLRUAndTTL() {
+        QueryCache cache = new QueryCache(2, 5000L);
+        var r1 = new AsyncQueryDispatcher.QueryResult("Ans1", "/cmd1", "CAT1", true, List.of(), 10L);
+        var r2 = new AsyncQueryDispatcher.QueryResult("Ans2", "/cmd2", "CAT2", true, List.of(), 15L);
+        var r3 = new AsyncQueryDispatcher.QueryResult("Ans3", "/cmd3", "CAT3", true, List.of(), 20L);
+
+        cache.put("q1", r1);
+        cache.put("q2", r2);
+        assertTrue(cache.get("q1").isPresent(), "Cache hit for q1");
+        assertTrue("Ans1".equals(cache.get("q1").get().rawAnswer()), "Cached payload matches");
+
+        // Adding q3 should evict q2 because q1 was recently accessed
+        cache.put("q3", r3);
+        assertTrue(cache.get("q2").isEmpty(), "Evicted least-recently used q2");
+        assertTrue(cache.get("q1").isPresent(), "q1 still retained");
+        assertTrue(cache.get("q3").isPresent(), "q3 stored");
+
+        var stats = cache.getStats();
+        assertTrue(stats.hits() >= 3, "Cache hits recorded");
+        assertTrue(stats.misses() >= 1, "Cache misses recorded");
+        assertTrue(stats.hitRatio() > 0.5, "Hit ratio calculated");
+
+        cache.clear();
+        assertTrue(cache.getStats().size() == 0, "Cleared cache size is 0");
+    }
+
+    private static void testPlayerRateLimiterTokenBucket() {
+        PlayerRateLimiter limiter = new PlayerRateLimiter(2000L, 2, 5);
+
+        // First 2 requests succeed (burst capacity = 2)
+        var r1 = limiter.checkAndConsume("PlayerSteve");
+        assertTrue(r1.isAllowed(), "Request 1 allowed");
+        var r2 = limiter.checkAndConsume("PlayerSteve");
+        assertTrue(r2.isAllowed(), "Request 2 allowed");
+
+        // 3rd request in same instant throttled
+        var r3 = limiter.checkAndConsume("PlayerSteve");
+        assertTrue(!r3.isAllowed(), "Request 3 throttled by cooldown");
+        assertTrue(r3.remainingCooldownMs() > 0, "Remaining cooldown > 0");
+        assertTrue(r3.message().contains("提问过快"), "Cooldown message alert");
+
+        // Player isolation: PlayerAlex has fresh quota
+        var rAlex = limiter.checkAndConsume("PlayerAlex");
+        assertTrue(rAlex.isAllowed(), "PlayerAlex not throttled by Steve");
+
+        // Reset works
+        limiter.reset("PlayerSteve");
+        var rReset = limiter.checkAndConsume("PlayerSteve");
+        assertTrue(rReset.isAllowed(), "PlayerSteve allowed after reset");
+    }
+
+    private static void testMcAgentCoreFacadeWithCacheAndLimiting() throws Exception {
+        McAgentCore core = new McAgentCore();
+
+        // 1. Query for sugar cane blueprint
+        var future1 = core.query("PlayerOne", "甘蔗机怎么做", null);
+        var res1 = future1.get(2, TimeUnit.SECONDS);
+        assertTrue("SUGAR_CANE_FARM".equals(res1.category()), "Core query resolved sugar cane farm");
+        assertTrue(res1.isFastPath(), "Core query is fast path");
+
+        // 2. Immediate second query from same question hits cache
+        var future2 = core.query("PlayerTwo", "甘蔗机怎么做", null);
+        var res2 = future2.get(2, TimeUnit.SECONDS);
+        assertTrue("SUGAR_CANE_FARM".equals(res2.category()), "Core query 2 from cache");
+        assertTrue(core.getCache().getStats().hits() >= 1, "Core cache recorded hit");
+    }
+
 }

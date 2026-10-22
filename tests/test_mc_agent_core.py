@@ -1,5 +1,9 @@
 import pytest
 from mc_agent_core import (
+    TellrawJsonBuilder,
+    ChatPaginator,
+    QueryCache,
+    PlayerRateLimiter,
     ContextSnapshot,
     TargetBlock,
     LocalGameRules,
@@ -302,3 +306,154 @@ def test_prompt_safety_fence_contains_v1_3_rules():
     ]
     for marker in v1_3_markers:
         assert marker in fenced.user_prompt
+
+
+def test_fast_path_v1_4_blueprints():
+    cases = [
+        ("全自动甘蔗机怎么做", "SUGAR_CANE_FARM", "切片结构", "/give @s minecraft:sugar_cane 64"),
+        ("刷石机怎么建", "STONE_GENERATOR", "圆石生成", "/give @s minecraft:lava_bucket 1"),
+        ("红石时钟怎么做", "REDSTONE_CLOCKS", "极速脉冲", "/give @s minecraft:comparator 1"),
+        ("全自动南瓜机", "PUMPKIN_MELON_FARM", "生长原理", "/give @s minecraft:pumpkin_seeds 64"),
+    ]
+    for query, category, marker, expected_cmd in cases:
+        res = FastPathResolver.try_resolve(query, None)
+        assert res is not None
+        assert res.category == category
+        assert marker in res.text_response
+        assert res.suggested_command == expected_cmd
+
+
+def test_prompt_safety_fence_contains_v1_4_rules():
+    fenced = PromptSafetyFence.build("测试自动化生产与时钟规则", None)
+    v1_4_markers = [
+        "【全自动甘蔗/竹子机搭建指南】",
+        "【高效安全造石机与刷石力学】",
+        "【经典红石时钟与高频脉冲器】",
+        "【全自动南瓜/西瓜机搭建指南】",
+    ]
+    for marker in v1_4_markers:
+        assert marker in fenced.user_prompt
+
+
+def test_tellraw_json_builder():
+    from mc_agent_core.formatter import ChatComponent
+    components = [
+        ChatComponent(text="[Hoshi] ", color="aqua", bold=True, hover_text="AI Assistant"),
+        ChatComponent(text="[100, 64, -200]", color="gold", bold=True, click_action="suggest_command", click_value="/tp 100 64 -200", hover_text="点击传送"),
+        ChatComponent(text=' 特殊引号: "测试"', color="white"),
+    ]
+    json_str = TellrawJsonBuilder.to_json(components)
+    assert json_str.startswith('{"text":"","extra":[')
+    assert '"color":"aqua"' in json_str
+    assert '"bold":true' in json_str
+    assert '"action":"suggest_command"' in json_str
+    assert '"value":"/tp 100 64 -200"' in json_str
+    assert '"contents":"点击传送"' in json_str
+    assert '\\"测试\\"' in json_str
+
+    cmd = TellrawJsonBuilder.to_tellraw_command("@a", components)
+    assert cmd.startswith('/tellraw @a {"text":"","extra":[')
+
+    empty = TellrawJsonBuilder.to_json([])
+    assert empty == '{"text":""}'
+
+
+def test_chat_paginator():
+    multiline = "\n".join(f"Line {i}" for i in range(1, 13))
+
+    # Page 1 of 3
+    p1 = ChatPaginator.paginate(multiline, target_page=1, page_size=5, command_prefix="/mcagent page")
+    assert p1.current_page == 1
+    assert p1.total_pages == 3
+    assert p1.total_lines == 12
+    assert len(p1.page_lines) == 5
+    assert p1.page_lines[0] == "Line 1"
+    assert "下一页 ▶" in p1.tellraw_json
+    assert "/mcagent page 2" in p1.tellraw_json
+
+    # Page 2 of 3
+    p2 = ChatPaginator.paginate(multiline, target_page=2, page_size=5, command_prefix="/mcagent page")
+    assert p2.current_page == 2
+    assert len(p2.page_lines) == 5
+    assert p2.page_lines[0] == "Line 6"
+
+    # Page 3 of 3
+    p3 = ChatPaginator.paginate(multiline, target_page=3, page_size=5, command_prefix="/mcagent page")
+    assert p3.current_page == 3
+    assert len(p3.page_lines) == 2
+    assert p3.page_lines[1] == "Line 12"
+
+    # Clamping
+    p_high = ChatPaginator.paginate(multiline, target_page=99, page_size=5)
+    assert p_high.current_page == 3
+    p_low = ChatPaginator.paginate(multiline, target_page=-5, page_size=5)
+    assert p_low.current_page == 1
+
+
+def test_query_cache_lru_and_ttl():
+    cache = QueryCache(capacity=2, ttl_millis=5000)
+    cache.put("q1", "Ans1")
+    cache.put("q2", "Ans2")
+    assert cache.get("q1") == "Ans1"
+
+    # Adding q3 evicts q2
+    cache.put("q3", "Ans3")
+    assert cache.get("q2") is None
+    assert cache.get("q1") == "Ans1"
+    assert cache.get("q3") == "Ans3"
+
+    stats = cache.get_stats()
+    assert stats.hits >= 3
+    assert stats.misses >= 1
+    assert stats.hit_ratio > 0.5
+
+    cache.clear()
+    assert cache.get_stats().size == 0
+
+
+def test_player_rate_limiter():
+    limiter = PlayerRateLimiter(min_interval_ms=2000, burst_capacity=2, daily_quota=5)
+
+    # First 2 allowed
+    r1 = limiter.check_and_consume("PlayerSteve")
+    assert r1.is_allowed
+    r2 = limiter.check_and_consume("PlayerSteve")
+    assert r2.is_allowed
+
+    # 3rd throttled
+    r3 = limiter.check_and_consume("PlayerSteve")
+    assert not r3.is_allowed
+    assert r3.remaining_cooldown_ms > 0
+    assert "提问过快" in r3.message
+
+    # Player isolation
+    r_alex = limiter.check_and_consume("PlayerAlex")
+    assert r_alex.is_allowed
+
+    # Reset
+    limiter.reset("PlayerSteve")
+    r_after = limiter.check_and_consume("PlayerSteve")
+    assert r_after.is_allowed
+
+
+def test_dispatcher_with_cache_and_rate_limiting():
+    dispatcher = AsyncQueryDispatcher()
+
+    # Query 1: resolves fast path
+    res1 = dispatcher.dispatch("全自动甘蔗机怎么做", None, player_id="PlayerP1")
+    assert res1.category == "SUGAR_CANE_FARM"
+    assert res1.is_fast_path
+
+    # Query 2 from different player: served from cache
+    res2 = dispatcher.dispatch("全自动甘蔗机怎么做", None, player_id="PlayerP2")
+    assert res2.category == "SUGAR_CANE_FARM"
+    assert dispatcher.cache.get_stats().hits >= 1
+
+    # Query 2 from PlayerP1 (consumes token 2, 0 left)
+    res_p1_2 = dispatcher.dispatch("全自动甘蔗机怎么做", None, player_id="PlayerP1")
+    assert res_p1_2.category == "SUGAR_CANE_FARM"
+
+    # Query 3 from PlayerP1 triggers cooldown (0 tokens left)
+    res_spam = dispatcher.dispatch("全自动甘蔗机怎么做", None, player_id="PlayerP1")
+    assert res_spam.category == "RATE_LIMITED"
+    assert "提问过快" in res_spam.raw_answer

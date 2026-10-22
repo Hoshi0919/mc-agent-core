@@ -57,7 +57,11 @@ public final class PromptSafetyFence {
         userPrompt.append(LocalGameRules.RAID_AND_VILLAGE_RULES).append("\n\n");
         userPrompt.append(LocalGameRules.PIGLIN_BARTERING_RULES).append("\n\n");
         userPrompt.append(LocalGameRules.ENCHANTING_TABLE_RULES).append("\n\n");
-        userPrompt.append(LocalGameRules.JAVA_BEDROCK_DIFFERENCES_RULES).append("\n");
+        userPrompt.append(LocalGameRules.JAVA_BEDROCK_DIFFERENCES_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.SUGAR_CANE_FARM_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.STONE_GENERATOR_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.REDSTONE_CLOCK_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.PUMPKIN_MELON_FARM_RULES).append("\n");
         userPrompt.append("</canonical_rules>\n\n");
 
         userPrompt.append("<player_query>\n");

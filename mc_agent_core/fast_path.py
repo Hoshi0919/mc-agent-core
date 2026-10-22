@@ -312,6 +312,46 @@ class FastPathResolver:
             )
             return Resolution(text_response=resp, suggested_command=None, category="JAVA_BEDROCK_DIFF")
 
+        
+        # 24. Sugar Cane / Bamboo Farm Blueprint
+        if any(k in q for k in ("甘蔗机", "竹子机", "全自动甘蔗", "甘蔗农场", "甘蔗怎么做", "侦测器甘蔗")):
+            resp = (
+                "§a【全自动甘蔗/竹子机搭建指南】§r\n"
+                "▸ §e切片结构§r：底层水槽+泥土，中层活塞，顶层侦测器（观察脸朝前看甘蔗第 3 格）。\n"
+                "▸ §b传导电路§r：活塞背后垫实心方块，上面撒红石粉连接侦测器输出。\n"
+                "▸ §c避坑提示§r：沙子和泥土种植生长速度完全相同；侦测器切勿装在第 2 格防止频繁空推。"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:sugar_cane 64", category="SUGAR_CANE_FARM")
+
+        # 25. Stone / Cobblestone Generator Blueprint
+        if any(k in q for k in ("刷石机", "造石机", "刷圆石", "刷石头", "安全刷石", "造石头")):
+            resp = (
+                "§6【高效安全造石机与刷石力学】§r\n"
+                "▸ §a圆石生成§r：流动水与流动岩浆在同一水平高度对撞。\n"
+                "▸ §e石头生成§r：岩浆流自上而下注入流动水上方瞬间冷凝（出平滑石）。\n"
+                "▸ §c防灭大忌§r：水流流速远快于岩浆，水流一侧必须下挖 2 格深坑阻断水势，严禁水流直接冲入岩浆源块！"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:lava_bucket 1", category="STONE_GENERATOR")
+
+        # 26. Redstone Clocks & Oscillators
+        if any(k in q for k in ("红石时钟", "漏斗时钟", "比较器时钟", "脉冲发生器", "高频红石", "红石脉冲")):
+            resp = (
+                "§c【经典红石时钟与高频脉冲器】§r\n"
+                "▸ §e极速脉冲§r：比较器打至减法模式（前置火把点亮），后方通电，输出红石线回环引至侧面，输出 1~2 tick 超高频脉冲。\n"
+                "▸ §b长周期时钟§r：Etho 双漏斗对吸时钟，两端接比较器+粘性活塞推移红石块，放入物品数 × 0.4 秒精确控制周期。"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:comparator 1", category="REDSTONE_CLOCKS")
+
+        # 27. Pumpkin / Melon Farm Blueprint
+        if any(k in q for k in ("南瓜机", "西瓜机", "全自动南瓜", "全自动西瓜", "结瓜农场", "南瓜农场")):
+            resp = (
+                "§6【全自动南瓜/西瓜机搭建指南】§r\n"
+                "▸ §e生长原理§r：成熟瓜梗向相邻泥土/草方块结瓜，结瓜瞬间触发方块状态更新。\n"
+                "▸ §a自动化构型§r：侦测器感应结瓜更新，驱动活塞推碎瓜果（南瓜掉落整瓜，西瓜掉落西瓜片）。\n"
+                "▸ §b无损收集§r：底层使用漏斗矿车穿透泥土隔空吸物，损耗最低。"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:pumpkin_seeds 64", category="PUMPKIN_MELON_FARM")
+
         return None
 
     @staticmethod

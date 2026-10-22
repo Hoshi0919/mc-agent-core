@@ -7,6 +7,10 @@ from .rules import LocalGameRules
 from .fast_path import FastPathResolver, Resolution
 from .fence import PromptSafetyFence, FencedPrompt
 from .formatter import MinecraftTextFormatter, ChatComponent
+from .tellraw import TellrawJsonBuilder
+from .paginator import ChatPaginator, PagedResult
+from .cache import QueryCache, CacheStats
+from .rate_limiter import PlayerRateLimiter, RateLimitResult
 from .dispatcher import AsyncQueryDispatcher, QueryResult
 
 __all__ = [
@@ -19,6 +23,13 @@ __all__ = [
     "FencedPrompt",
     "MinecraftTextFormatter",
     "ChatComponent",
+    "TellrawJsonBuilder",
+    "ChatPaginator",
+    "PagedResult",
+    "QueryCache",
+    "CacheStats",
+    "PlayerRateLimiter",
+    "RateLimitResult",
     "AsyncQueryDispatcher",
     "QueryResult",
 ]

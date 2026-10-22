@@ -23,6 +23,10 @@ from .rules import (
     PIGLIN_BARTERING_RULES,
     ENCHANTING_TABLE_RULES,
     JAVA_BEDROCK_DIFFERENCES_RULES,
+    SUGAR_CANE_FARM_RULES,
+    STONE_GENERATOR_RULES,
+    REDSTONE_CLOCK_RULES,
+    PUMPKIN_MELON_FARM_RULES,
 )
 
 INJECTION_PATTERNS = re.compile(
@@ -78,7 +82,11 @@ class PromptSafetyFence:
             f"{RAID_AND_VILLAGE_RULES}\n\n"
             f"{PIGLIN_BARTERING_RULES}\n\n"
             f"{ENCHANTING_TABLE_RULES}\n\n"
-            f"{JAVA_BEDROCK_DIFFERENCES_RULES}\n"
+            f"{JAVA_BEDROCK_DIFFERENCES_RULES}\n\n"
+            f"{SUGAR_CANE_FARM_RULES}\n\n"
+            f"{STONE_GENERATOR_RULES}\n\n"
+            f"{REDSTONE_CLOCK_RULES}\n\n"
+            f"{PUMPKIN_MELON_FARM_RULES}\n" 
             "</canonical_rules>"
         )
 

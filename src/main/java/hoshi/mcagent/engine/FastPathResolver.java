@@ -258,6 +258,42 @@ public final class FastPathResolver {
             return Optional.of(new Resolution(resp, null, "JAVA_BEDROCK_DIFF"));
         }
 
+        
+        // 24. Sugar Cane / Bamboo Farm Blueprint
+        if (q.contains("甘蔗机") || q.contains("竹子机") || q.contains("全自动甘蔗") || q.contains("甘蔗农场") || q.contains("甘蔗怎么做") || q.contains("侦测器甘蔗")) {
+            String resp = "§a【全自动甘蔗/竹子机搭建指南】§r\n" +
+                    "▸ §e切片结构§r：底层水槽+泥土，中层活塞，顶层侦测器（观察脸朝前看甘蔗第 3 格）。\n" +
+                    "▸ §b传导电路§r：活塞背后垫实心方块，上面撒红石粉连接侦测器输出。\n" +
+                    "▸ §c避坑提示§r：沙子和泥土种植生长速度完全相同；侦测器切勿装在第 2 格防止频繁空推。";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:sugar_cane 64", "SUGAR_CANE_FARM"));
+        }
+
+        // 25. Stone / Cobblestone Generator Blueprint
+        if (q.contains("刷石机") || q.contains("造石机") || q.contains("刷圆石") || q.contains("刷石头") || q.contains("安全刷石") || q.contains("造石头")) {
+            String resp = "§6【高效安全造石机与刷石力学】§r\n" +
+                    "▸ §a圆石生成§r：流动水与流动岩浆在同一水平高度对撞。\n" +
+                    "▸ §e石头生成§r：岩浆流自上而下注入流动水上方瞬间冷凝（出平滑石）。\n" +
+                    "▸ §c防灭大忌§r：水流流速远快于岩浆，水流一侧必须下挖 2 格深坑阻断水势，严禁水流直接冲入岩浆源块！";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:lava_bucket 1", "STONE_GENERATOR"));
+        }
+
+        // 26. Redstone Clocks & Oscillators
+        if (q.contains("红石时钟") || q.contains("漏斗时钟") || q.contains("比较器时钟") || q.contains("脉冲发生器") || q.contains("高频红石") || q.contains("红石脉冲")) {
+            String resp = "§c【经典红石时钟与高频脉冲器】§r\n" +
+                    "▸ §e极速脉冲§r：比较器打至减法模式（前置火把点亮），后方通电，输出红石线回环引至侧面，输出 1~2 tick 超高频脉冲。\n" +
+                    "▸ §b长周期时钟§r：Etho 双漏斗对吸时钟，两端接比较器+粘性活塞推移红石块，放入物品数 × 0.4 秒精确控制周期。";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:comparator 1", "REDSTONE_CLOCKS"));
+        }
+
+        // 27. Pumpkin / Melon Farm Blueprint
+        if (q.contains("南瓜机") || q.contains("西瓜机") || q.contains("全自动南瓜") || q.contains("全自动西瓜") || q.contains("结瓜农场") || q.contains("南瓜农场")) {
+            String resp = "§6【全自动南瓜/西瓜机搭建指南】§r\n" +
+                    "▸ §e生长原理§r：成熟瓜梗向相邻泥土/草方块结瓜，结瓜瞬间触发方块状态更新。\n" +
+                    "▸ §a自动化构型§r：侦测器感应结瓜更新，驱动活塞推碎瓜果（南瓜掉落整瓜，西瓜掉落西瓜片）。\n" +
+                    "▸ §b无损收集§r：底层使用漏斗矿车穿透泥土隔空吸物，损耗最低。";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:pumpkin_seeds 64", "PUMPKIN_MELON_FARM"));
+        }
+
         return Optional.empty();
     }
 
