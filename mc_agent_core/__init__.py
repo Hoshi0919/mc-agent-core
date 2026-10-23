@@ -2,7 +2,7 @@
 mc_agent_core: Grounded, Non-blocking In-Game AI Assistant Core for Minecraft (1.18 ~ 1.21.x)
 """
 
-from .context import ContextSnapshot, TargetBlock, ItemInstance, InventorySnapshot, TargetEntity
+from .context import ContextSnapshot, TargetBlock, ItemInstance, InventorySnapshot, TargetEntity, LogisticsReport
 from .rules import (
     LocalGameRules,
     VILLAGER_BREEDING_RULES,
@@ -12,6 +12,10 @@ from .rules import (
     IRON_GOLEM_REPAIR_RULES,
     ARMADILLO_WOLF_ARMOR_RULES,
     TRIAL_SPAWNER_BREEZE_RULES,
+    HOPPER_LOGISTICS_SORTING_RULES,
+    COMPARATOR_SUBTRACTION_ALGEBRA_RULES,
+    WATER_BUBBLE_COLUMN_ELEVATOR_RULES,
+    OBSERVER_PULSE_CLOCKS_RULES,
 )
 from .fast_path import FastPathResolver, Resolution
 from .fence import PromptSafetyFence, FencedPrompt
@@ -32,6 +36,7 @@ __all__ = [
     "ItemInstance",
     "InventorySnapshot",
     "TargetEntity",
+    "LogisticsReport",
     "LocalGameRules",
     "VILLAGER_BREEDING_RULES",
     "VILLAGER_CROP_FARM_RULES",
@@ -40,6 +45,10 @@ __all__ = [
     "IRON_GOLEM_REPAIR_RULES",
     "ARMADILLO_WOLF_ARMOR_RULES",
     "TRIAL_SPAWNER_BREEZE_RULES",
+    "HOPPER_LOGISTICS_SORTING_RULES",
+    "COMPARATOR_SUBTRACTION_ALGEBRA_RULES",
+    "WATER_BUBBLE_COLUMN_ELEVATOR_RULES",
+    "OBSERVER_PULSE_CLOCKS_RULES",
     "FastPathResolver",
     "Resolution",
     "PromptSafetyFence",

@@ -68,7 +68,11 @@ public final class PromptSafetyFence {
             LocalGameRules.ZOMBIE_VILLAGER_CURE_RULES + "\n\n" +
             LocalGameRules.IRON_GOLEM_REPAIR_RULES + "\n\n" +
             LocalGameRules.ARMADILLO_WOLF_ARMOR_RULES + "\n\n" +
-            LocalGameRules.TRIAL_SPAWNER_BREEZE_RULES).append("\n");
+            LocalGameRules.TRIAL_SPAWNER_BREEZE_RULES + "\n\n" +
+            LocalGameRules.HOPPER_LOGISTICS_SORTING_RULES + "\n\n" +
+            LocalGameRules.COMPARATOR_SUBTRACTION_ALGEBRA_RULES + "\n\n" +
+            LocalGameRules.WATER_BUBBLE_COLUMN_ELEVATOR_RULES + "\n\n" +
+            LocalGameRules.OBSERVER_PULSE_CLOCKS_RULES).append("\n");
         userPrompt.append("</canonical_rules>\n\n");
 
         userPrompt.append("<player_query>\n");

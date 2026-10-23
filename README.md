@@ -4,7 +4,21 @@
 
 ---
 
-## 🌟 核心特性（v1.6.0）
+## 🌟 核心特性（v1.7.0）
+
+1. **红石与物流拓扑感知引擎 (Redstone & Logistics Topology Perception)**：
+   - **`TargetBlock.evaluateLogisticsOrRedstone()`**：
+     - **漏斗 (Hopper)**：精准诊断红石强充能锁定 (`enabled=false`)，告警停止吸取/漏出物品并指出排查点；解析朝向（下行直通 vs 侧向推入）；给出 2.5 组/秒速率与 41+1+1+1+1 防串线及 18+1+1+1+1 紧凑过滤布局；
+     - **红石比较器 (Comparator)**：识别减法模式 (`subtract`, 前置火把点亮) 与比较模式 (`compare`)，即时输出差分代数公式与容器满度强度计算；
+     - **红石中继器 (Repeater)**：解析 1~4 刻延迟 (0.1~0.4s) 与侧向锁存锁定状态 (基岩锁存器)；
+     - **侦测器 (Observer)**：感知侦测面朝向与 1-tick 脉冲发射状态，提示面迎面 2-tick 超高频时钟与粘性活塞 1-tick 吐方块机制；
+     - **自动合成器 (Crafter 1.21)**：感应上升沿脉冲合成与比较器槽位读取 (0~9)；
+     - **阳光探测器 (Daylight Detector)**：识别日光正常 vs 月光夜间反转模式；
+     - **幽匿感测体 (Sculk Sensor)**：区分标准型与校准型单一频率 (1~15) 过滤机制；
+     - **水力气泡柱基座 (Soul Sand / Magma)**：区分上升极速喷射 (11m/s) 与下沉涡流，特别提示海带一键转化水源关键前置；
+     - **投掷器 vs 发射器 (Dropper vs Dispenser)**：明确掉落物实体形态与专属执行动作的区别，防止管道搭建失误。
+   - **`/hoshi inspect` 诊断集成**：准星注视红石物流组件时自动输出 `⚡ 红石/物流` 专属诊断与调优建议；
+   - **准星红石即时提问**：当玩家看着眼前红石问“为什么不漏/为什么不动/怎么算”时，直接触发毫秒级拓扑诊断！
 
 1. **全维游戏上下文感知系统 (Fine-Grained Context Awareness)**：
    - **`InventorySnapshot` & `ItemInstance`**：
@@ -79,7 +93,7 @@
      - 村民繁殖与有效床位动力学 (VILLAGER_BREEDING)：床头正上方必须有至少 2 格完整透明/空气高度（小村民跳床寻路判定）、3 面包/12 胡萝卜意愿度消耗、幼年 20 分钟（24000 ticks）成年；
      - 全自动村民农田机制 (VILLAGER_CROP_FARM)：棕袍农民 AI、入场前投喂 8 组单一作物背包防杂物堵死、隔墙栅栏投喂漏斗拦截法与漏斗矿车穿透吸物；
      - 高能自动化燃料与熔炼动力学 (SMELTING_FUEL_EFFICIENCY)：200 ticks (10.0 秒) 标准熔炼时钟、岩浆桶 (100 个返还铁桶)、煤炭块 (80 个)、干海带块 (20 个可再生首选)、熔炉阵列双漏斗推流；
-     - **v1.6.0 新增核心力学主题**：
+     - **v1.7.0 新增核心力学主题**：
        - **僵尸村民治愈机制与永久交易折扣 (ZOMBIE_VILLAGER_CURE)**：喷溅虚弱药水 + 普通金苹果投喂，3~5 分钟 (3600~6000 ticks) 转化，周围铁栏杆与床加速，治愈后永久超低折扣；
        - **铁傀儡修复维护与村庄防卫动力学 (IRON_GOLEM_REPAIR)**：100 点生命值（50 颗心）与 4 阶段肉眼可见裂纹，手持铁锭右键每个恢复 25 点生命并消除裂纹，高额反击伤害与声望戒律；
        - **犰狳刷鳞与狼铠防御系统 (ARMADILLO_WOLF_ARMOR)**：热带草原与恶地生态、手持刷子 (Brush) 无损刷取犰狳鳞甲、6 枚鳞甲合成与染色狼铠、吸收 100% 针对驯服狼的直接伤害与原位修复；
@@ -108,7 +122,7 @@ mc-agent-core/
 │   │   ├── TargetBlock.java             # 准星方块、硬度与掉落兼容性评估
 │   │   ├── TargetEntity.java            # 准星实体感知与上下文指引
 │   │   └── ContextSnapshot.java         # 全维上下文不可变快照与 Builder
-│   ├── crafting/                        # v1.6.0 配方与背包合成充盈度计算
+│   ├── crafting/                        # v1.7.0 配方与背包合成充盈度计算
 │   │   ├── CraftingRecipe.java          # 配方标准数据结构
 │   │   └── CraftingReadinessChecker.java # 背包原料扫描与充盈度计算
 │   ├── engine/
@@ -137,12 +151,12 @@ mc-agent-core/
 │   │   └── AsyncQueryDispatcher.java    # 整合缓存与限流的非阻塞异步分发器
 │   └── McAgentCore.java                 # 统一门面 Facade 入口
 ├── src/test/java/hoshi/mcagent/
-│   └── McAgentCoreTest.java             # Java 328 项全绿自动化回归测试
+│   └── McAgentCoreTest.java             # Java 379 项全绿自动化回归测试
 ├── mc_agent_core/                       # Python 仿真套件与原型（全模块 100% 对齐）
 │   ├── crafting.py                      # Python 版配方与合成充盈度
 │   ├── context.py                       # Python 版全维上下文快照
 │   └── ...
-└── tests/test_mc_agent_core.py          # Python 39 项端到端测试
+└── tests/test_mc_agent_core.py          # Python 43 项端到端测试
 ```
 
 ---
@@ -153,11 +167,11 @@ mc-agent-core/
 ```bash
 javac -encoding UTF-8 -d bin $(find src/main/java src/test/java -name '*.java')
 java -cp bin hoshi.mcagent.McAgentCoreTest
-# 🎉 All 328/328 Java tests passed successfully!
+# 🎉 All 379/379 Java tests passed successfully!
 ```
 
 ### Python 仿真套件
 ```bash
 PYTHONPATH=. uv run --with pytest pytest tests/ -v
-# 39 passed in 0.18s
+# 43 passed in 0.18s
 ```

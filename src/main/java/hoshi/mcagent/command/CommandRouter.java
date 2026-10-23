@@ -202,6 +202,11 @@ public class CommandRouter {
             sb.append(String.format("  光照：方块=%d, 天空=%d | 硬度: %.1f | 需求工具: %s\n",
                     tb.blockLight(), tb.skyLight(), tb.hardness(), harvest.toolRequirementName()));
             sb.append(String.format("  手持匹配：%s\n", harvest.advice()));
+
+            TargetBlock.LogisticsReport log = tb.evaluateLogisticsOrRedstone();
+            if (log.isLogisticsOrRedstone()) {
+                sb.append(String.format("  ⚡ §c红石/物流§r：%s | %s\n", log.stateDetails(), log.actionableAdvice()));
+            }
         }
 
         TargetEntity te = snapshot.targetEntity();
@@ -329,7 +334,7 @@ public class CommandRouter {
     private CommandResult handleHelp() {
         String text = "§6【Hoshi 智能问答指令帮助】§r\n" +
                 "▸ §e/hoshi ask <问题>§r - 咨询游戏机制与攻略\n" +
-                "▸ §e/hoshi inspect§r - 扫描准星方块与实体，评估挖掘工具与掉落安全性\n" +
+                "▸ §e/hoshi inspect§r - 扫描准星方块、红石物流状态与实体安全\n" +
                 "▸ §e/hoshi craft <物品>§r - 评估背包原料是否满足合成条件及缺失数量\n" +
                 "▸ §e/hoshi bom <方案> [数量]§r - 生成材料清单 (BOM)\n" +
                 "▸ §e/hoshi page <页码>§r - 翻页长篇内容\n" +

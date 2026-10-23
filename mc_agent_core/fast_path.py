@@ -39,6 +39,18 @@ class FastPathResolver:
                 cmd = f"/item replace entity @s weapon.mainhand from entity @s hotbar.{harvest.hotbar_alternative_slot}" if harvest.hotbar_alternative_slot is not None else None
                 return Resolution(text_response="\n".join(lines), suggested_command=cmd, category="TARGET_BLOCK_HARVEST")
 
+            log = context.target_block.evaluate_logistics_or_redstone()
+            if log.is_logistics_or_redstone:
+                if any(k in q for k in ("为什么不漏", "为什么不吸", "漏斗锁", "比较器模式", "比较器怎么算", "红石状态", "为什么不动", "眼前红石", "眼前漏斗", "这个漏斗", "这个比较器", "怎么工作", "物流状态", "气泡柱怎么不冒泡")):
+                    tb = context.target_block
+                    lines = [
+                        "§c【准星红石与物流拓扑诊断】§r",
+                        f"▸ 目标组件：{tb.block_id} at [{tb.x}, {tb.y}, {tb.z}]",
+                        f"▸ 运行状态：{log.state_details}",
+                        f"▸ 调优建议：{log.actionable_advice}"
+                    ]
+                    return Resolution(text_response="\n".join(lines), suggested_command=None, category="TARGET_BLOCK_LOGISTICS")
+
         # 0.1 Context-Aware Crosshair Target Entity Guidance
         if context and context.target_entity:
             if any(k in q for k in ("眼前生物", "准星生物", "这个生物", "怎么治愈", "怎么救", "怎么驯服", "怎么刷狼铠", "为什么打我", "打不打我")):
@@ -235,7 +247,7 @@ class FastPathResolver:
             return Resolution(text_response=resp, suggested_command="/give @s minecraft:honeycomb 64", category="COPPER_WAXING")
 
         # 13. Comparator & Container Fill / Item Sorter
-        if any(k in q for k in ("比较器", "分类机", "物品分类", "漏斗分类", "22个", "比较器信号", "测箱子")):
+        if any(k in q for k in ("比较器", "分类机", "物品分类", "漏斗分类", "22个", "比较器信号", "测箱子")) and not any(k in q for k in ("41", "防串线", "为什么不漏", "传输速率", "减法")):
             resp = (
                 "§c【红石比较器容器信号与分类机数学】§r\n"
                 "▸ §e容器满度公式§r：Signal = floor(1 + (sum(count / max_stack) / slots) * 14)（空容器输出 0）。\n"
@@ -488,6 +500,47 @@ class FastPathResolver:
                 "▸ §a克制策略§r：盾牌可 100% 弹反风弹；使用重锤/钻石剑等近战武器贴脸速杀。"
             )
             return Resolution(text_response=resp, suggested_command="/locate structure minecraft:trial_chambers", category="TRIAL_SPAWNER_BREEZE")
+
+        # 35. Hopper Logistics & Anti-Spill Sorter
+        if any(k in q for k in ("漏斗为什么不漏", "漏斗不工作", "漏斗锁了", "41个", "41 物品", "防串线", "漏斗传输速率")) or ("漏斗" in q and any(k in q for k in ("分类", "速率", "锁"))):
+            resp = (
+                "§6【漏斗传输力学与防串线分类器】§r\n"
+                "▸ §e传输规格§r：漏斗固定传输速率为 2.5 组/秒（每 8 游戏刻 / 4 红石刻传输 1 个物品）。\n"
+                "▸ §c红石锁定警告§r：当漏斗接收到红石充能时立即被锁定 (enabled=false)，停止吸物与漏物！排查紧邻红石粉、火把或充能方块。\n"
+                "▸ §a防串线 41 物品布局§r：第 1 格放 41 个目标物品，第 2~5 格各放 1 个重命名杂物（合计 45 个输出 2 级信号）；进入第 42 个（合计 46）冲至 3 级信号放行，永不并联串线！"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:hopper 5", category="HOPPER_LOGISTICS_SORTING")
+
+        # 36. Comparator Subtraction & Algebra
+        if any(k in q for k in ("比较器减法", "减法模式")) or ("比较器" in q and any(k in q for k in ("怎么算", "前置火把", "模式区别"))):
+            resp = (
+                "§c【红石比较器减法模式与代数运算】§r\n"
+                "▸ §e减法模式特征§r：前端单根红石火把点亮（右键切换比较/减法模式）。\n"
+                "▸ §a减法核心公式§r：输出信号强度 S_out = max(0, S_rear - max(S_left, S_right))。\n"
+                "▸ §b超频时钟搭建§r：减法模式下，输出端红石线引回侧面输入端，形成自衰减负反馈闭环，产生 1~2 tick 极速高频脉冲！"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:comparator 1", category="COMPARATOR_SUBTRACTION_ALGEBRA")
+
+        # 37. Bubble Column Elevator & Water Dynamics
+        if any(k in q for k in ("水电梯", "气泡柱", "灵魂沙电梯", "岩浆块电梯", "气泡柱上不去", "海带水源", "灵魂沙为什么不冒泡")):
+            resp = (
+                "§3【水力流体动力学与灵魂沙气泡柱电梯】§r\n"
+                "▸ §b上升与下沉§r：水底灵魂沙产生上升气泡柱 (约 11 格/秒，无限氧气)；岩浆块产生下沉涡流。\n"
+                "▸ §c水源铁律§r：气泡柱必须在每一格均为【水源 (Water Source)】中形成，流动水绝不冒泡！\n"
+                "▸ §a海带转化神技§r：垂直管道顶端倒一桶水，底部种植海带催熟插满至顶端，即可将整条流动水瞬间转化为水源；再将底部换为灵魂沙即刻激活！\n"
+                "▸ §e出入口阻水§r：底部出入口放置告示牌或打开的栅栏门挡水通人。"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:soul_sand 1", category="WATER_BUBBLE_COLUMN_ELEVATOR")
+
+        # 38. Observer Clocks & Pulse Mechanics
+        if any(k in q for k in ("侦测器时钟", "侦测器高频", "侦测器脉冲", "观察者时钟", "侦测器怎么摆", "粘性活塞吐方块")):
+            resp = (
+                "§4【侦测器脉冲发生与无损时钟调度】§r\n"
+                "▸ §e侦测与输出§r：前方感应方块状态更新 (BlockState Update)，后侧输出持续 1 红石刻（2 游戏刻 / 0.1s）瞬时脉冲。\n"
+                "▸ §a面迎面 2-Tick 极速时钟§r：两个侦测器侦测脸紧贴相对放置，互为更新源产生 10Hz 极速振荡！活塞推移其一可作为物理启停开关。\n"
+                "▸ §bJava 版 1-Tick 吐方块§r：粘性活塞接收 1-tick 极短脉冲时推出方块无暇收回（T-Flip-Flop 双稳态开关）。"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:observer 2", category="OBSERVER_PULSE_CLOCKS")
 
         return None
 

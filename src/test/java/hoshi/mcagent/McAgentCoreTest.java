@@ -84,6 +84,11 @@ public class McAgentCoreTest {
         testCraftingReadinessChecker();
         testFastPathV16Rules();
         testCommandRouterV16InspectAndCraft();
+        testTargetBlockLogisticsEvaluation();
+        testFastPathContextAwareLogistics();
+        testFastPathV17LogisticsRules();
+        testPromptSafetyFenceV17();
+        testCommandRouterV17LogisticsInspect();
 
         System.out.println(String.format("\n🎉 All %d/%d Java tests passed successfully!", testsPassed, testsRun));
     }
@@ -860,5 +865,144 @@ public class McAgentCoreTest {
         assertTrue(rCraft.isSuccess(), "Craft command succeeded");
         assertTrue(rCraft.getAction().equals("CRAFT"), "Action is CRAFT");
         assertTrue(rCraft.getMessage().contains("缺少"), "Craft reports missing items");
+    }
+
+    private static void testTargetBlockLogisticsEvaluation() {
+        // 1. Hopper locked
+        TargetBlock hopperLocked = new TargetBlock("minecraft:hopper", 10, 64, 20, 0, 0, 3.0f, "pickaxe", Map.of("facing", "down", "enabled", "false"));
+        var h1 = hopperLocked.evaluateLogisticsOrRedstone();
+        assertTrue(h1.isLogisticsOrRedstone(), "Hopper is logistics block");
+        assertTrue(h1.componentType().equals("HOPPER"), "Component is HOPPER");
+        assertTrue(h1.stateDetails().contains("已锁定"), "Detects locked hopper");
+        assertTrue(h1.actionableAdvice().contains("警告：红石充能"), "Hopper locked advice");
+
+        // 2. Hopper unlocked
+        TargetBlock hopperUnlocked = new TargetBlock("minecraft:hopper", 10, 64, 20, 0, 0, 3.0f, "pickaxe", Map.of("facing", "east", "enabled", "true"));
+        var h2 = hopperUnlocked.evaluateLogisticsOrRedstone();
+        assertTrue(!h2.stateDetails().contains("已锁定"), "Detects unlocked hopper");
+        assertTrue(h2.stateDetails().contains("流通就绪"), "Unlocked hopper ready");
+        assertTrue(h2.actionableAdvice().contains("朝向侧方"), "Side facing advice");
+
+        // 3. Comparator subtract vs compare
+        TargetBlock compSub = new TargetBlock("minecraft:comparator", 12, 64, 20, 0, 0, 0.0f, null, Map.of("mode", "subtract"));
+        var c1 = compSub.evaluateLogisticsOrRedstone();
+        assertTrue(c1.isLogisticsOrRedstone(), "Comparator is redstone block");
+        assertTrue(c1.stateDetails().contains("减法模式"), "Detects subtract mode");
+
+        TargetBlock compCmp = new TargetBlock("minecraft:comparator", 12, 64, 20, 0, 0, 0.0f, null, Map.of("mode", "compare"));
+        var c2 = compCmp.evaluateLogisticsOrRedstone();
+        assertTrue(c2.stateDetails().contains("比较模式"), "Detects compare mode");
+
+        // 4. Repeater delay and lock
+        TargetBlock repLocked = new TargetBlock("minecraft:repeater", 14, 64, 20, 0, 0, 0.0f, null, Map.of("delay", "3", "locked", "true"));
+        var r1 = repLocked.evaluateLogisticsOrRedstone();
+        assertTrue(r1.stateDetails().contains("锁存锁定"), "Repeater locked state");
+        assertTrue(r1.stateDetails().contains("3 红石刻"), "Repeater delay 3");
+
+        // 5. Observer
+        TargetBlock obs = new TargetBlock("minecraft:observer", 15, 64, 20, 0, 0, 3.0f, "pickaxe", Map.of("facing", "up", "powered", "true"));
+        var o1 = obs.evaluateLogisticsOrRedstone();
+        assertTrue(o1.stateDetails().contains("朝向: up"), "Observer facing up");
+        assertTrue(o1.stateDetails().contains("发射中"), "Observer active pulse");
+
+        // 6. Crafter 1.21
+        TargetBlock crafter = new TargetBlock("minecraft:crafter", 16, 64, 20, 0, 0, 1.5f, "pickaxe", Map.of("orientation", "north_up", "triggered", "true"));
+        var cr = crafter.evaluateLogisticsOrRedstone();
+        assertTrue(cr.componentType().equals("CRAFTER"), "Component is CRAFTER");
+        assertTrue(cr.stateDetails().contains("1.21 自动合成器"), "Detects crafter");
+
+        // 7. Bubble column soul sand
+        TargetBlock soul = new TargetBlock("minecraft:soul_sand", 17, 60, 20, 0, 0, 0.5f, "shovel", null);
+        var s1 = soul.evaluateLogisticsOrRedstone();
+        assertTrue(s1.componentType().equals("SOUL_SAND_BUBBLE"), "Soul sand bubble component");
+        assertTrue(s1.actionableAdvice().contains("海带"), "Mentions kelp conversion");
+
+        // 8. Dropper vs Dispenser
+        TargetBlock dropper = new TargetBlock("minecraft:dropper", 18, 64, 20, 0, 0, 3.5f, "pickaxe", null);
+        var dr = dropper.evaluateLogisticsOrRedstone();
+        assertTrue(dr.componentType().equals("DROPPER"), "Component is DROPPER");
+
+        TargetBlock dispenser = new TargetBlock("minecraft:dispenser", 19, 64, 20, 0, 0, 3.5f, "pickaxe", null);
+        var di = dispenser.evaluateLogisticsOrRedstone();
+        assertTrue(di.componentType().equals("DISPENSER"), "Component is DISPENSER");
+
+        // 9. Daylight detector
+        TargetBlock dld = new TargetBlock("minecraft:daylight_detector", 20, 64, 20, 0, 0, 0.2f, null, Map.of("inverted", "true"));
+        var dd = dld.evaluateLogisticsOrRedstone();
+        assertTrue(dd.stateDetails().contains("反转模式"), "Detects inverted daylight detector");
+
+        // 10. Non-logistics block
+        TargetBlock dirt = new TargetBlock("minecraft:dirt", 21, 64, 20, 0, 0, 0.5f, "shovel", null);
+        var d1 = dirt.evaluateLogisticsOrRedstone();
+        assertTrue(!d1.isLogisticsOrRedstone(), "Dirt is not logistics");
+    }
+
+    private static void testFastPathContextAwareLogistics() {
+        // Player looks at locked hopper and asks "为什么不漏"
+        TargetBlock tbLocked = new TargetBlock("minecraft:hopper", 5, 64, 10, 0, 0, 3.0f, "pickaxe", Map.of("facing", "down", "enabled", "false"));
+        ContextSnapshot ctxLocked = ContextSnapshot.builder().targetBlock(tbLocked).build();
+        var res1 = FastPathResolver.tryResolve("这个漏斗为什么不漏东西？", ctxLocked);
+        assertTrue(res1.isPresent(), "Resolved context-aware hopper query");
+        assertTrue(res1.get().category().equals("TARGET_BLOCK_LOGISTICS"), "Category is TARGET_BLOCK_LOGISTICS");
+        assertTrue(res1.get().textResponse().contains("已锁定"), "Mentions locked hopper in response");
+        assertTrue(res1.get().textResponse().contains("红石充能"), "Advises redstone lock issue");
+
+        // Player looks at subtract comparator and asks "这个比较器怎么算"
+        TargetBlock tbComp = new TargetBlock("minecraft:comparator", 6, 64, 10, 0, 0, 0.0f, null, Map.of("mode", "subtract"));
+        ContextSnapshot ctxComp = ContextSnapshot.builder().targetBlock(tbComp).build();
+        var res2 = FastPathResolver.tryResolve("眼前这个比较器怎么算？", ctxComp);
+        assertTrue(res2.isPresent(), "Resolved context-aware comparator query");
+        assertTrue(res2.get().category().equals("TARGET_BLOCK_LOGISTICS"), "Category is TARGET_BLOCK_LOGISTICS");
+        assertTrue(res2.get().textResponse().contains("减法模式"), "Mentions subtract mode in response");
+    }
+
+    private static void testFastPathV17LogisticsRules() {
+        // 1. Hopper 41 sorting
+        var r1 = FastPathResolver.tryResolve("漏斗分类机41个物品怎么调？", null);
+        assertTrue(r1.isPresent(), "Resolved hopper sorting query");
+        assertTrue(r1.get().category().equals("HOPPER_LOGISTICS_SORTING"), "Category is HOPPER_LOGISTICS_SORTING");
+        assertTrue(r1.get().textResponse().contains("41 个"), "Mentions 41 items");
+        assertTrue(r1.get().textResponse().contains("防串线"), "Mentions anti-spill");
+
+        // 2. Comparator subtraction algebra
+        var r2 = FastPathResolver.tryResolve("比较器减法模式怎么算？", null);
+        assertTrue(r2.isPresent(), "Resolved comparator subtraction query");
+        assertTrue(r2.get().category().equals("COMPARATOR_SUBTRACTION_ALGEBRA"), "Category is COMPARATOR_SUBTRACTION_ALGEBRA");
+        assertTrue(r2.get().textResponse().contains("max(0, S_rear"), "Mentions formula");
+
+        // 3. Water bubble column elevator
+        var r3 = FastPathResolver.tryResolve("水电梯气泡柱为什么不冒泡？", null);
+        assertTrue(r3.isPresent(), "Resolved bubble elevator query");
+        assertTrue(r3.get().category().equals("WATER_BUBBLE_COLUMN_ELEVATOR"), "Category is WATER_BUBBLE_COLUMN_ELEVATOR");
+        assertTrue(r3.get().textResponse().contains("水源"), "Mentions water source requirement");
+        assertTrue(r3.get().textResponse().contains("海带"), "Mentions kelp transformation");
+
+        // 4. Observer clock
+        var r4 = FastPathResolver.tryResolve("侦测器高频时钟怎么做？", null);
+        assertTrue(r4.isPresent(), "Resolved observer clock query");
+        assertTrue(r4.get().category().equals("OBSERVER_PULSE_CLOCKS"), "Category is OBSERVER_PULSE_CLOCKS");
+        assertTrue(r4.get().textResponse().contains("面迎面"), "Mentions face-to-face observers");
+        assertTrue(r4.get().textResponse().contains("1-Tick 吐方块"), "Mentions sticky piston 1-tick");
+    }
+
+    private static void testPromptSafetyFenceV17() {
+        var fenced = PromptSafetyFence.build("测试", null);
+        assertTrue(fenced.userPrompt().contains("【漏斗传输动力学与防串线分类器】"), "Injected hopper sorting rules");
+        assertTrue(fenced.userPrompt().contains("【红石比较器减法模式与代数运算】"), "Injected comparator subtraction rules");
+        assertTrue(fenced.userPrompt().contains("【水力流体动力学与灵魂沙气泡柱电梯】"), "Injected water bubble rules");
+        assertTrue(fenced.userPrompt().contains("【侦测器脉冲发生与无损时钟调度】"), "Injected observer clock rules");
+    }
+
+    private static void testCommandRouterV17LogisticsInspect() {
+        McAgentCore core = new McAgentCore();
+        CommandRouter router = core.getCommandRouter();
+
+        TargetBlock tbLockedHopper = new TargetBlock("minecraft:hopper", 100, 64, 200, 0, 0, 3.0f, "pickaxe", Map.of("facing", "down", "enabled", "false"));
+        ContextSnapshot ctx = ContextSnapshot.builder().targetBlock(tbLockedHopper).build();
+
+        CommandResult res = router.execute("Steve", "/hoshi inspect", ctx);
+        assertTrue(res.isSuccess(), "Inspect on hopper succeeded");
+        assertTrue(res.getMessage().contains("红石/物流"), "Inspect output contains redstone/logistics section");
+        assertTrue(res.getMessage().contains("已锁定"), "Inspect output shows hopper locked");
     }
 }

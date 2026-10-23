@@ -147,6 +147,9 @@ class CommandRouter:
             lines.append(f"▸ §6注视方块§r：{tb.block_id} at [{tb.x}, {tb.y}, {tb.z}]")
             lines.append(f"  光照：方块={tb.block_light}, 天空={tb.sky_light} | 硬度: {tb.hardness:.1f} | 需求工具: {harvest.tool_requirement_name}")
             lines.append(f"  手持匹配：{harvest.advice}")
+            log = tb.evaluate_logistics_or_redstone()
+            if log.is_logistics_or_redstone:
+                lines.append(f"  ⚡ §c红石/物流§r：{log.state_details} | {log.actionable_advice}")
         if snapshot.target_entity:
             has_data = True
             lines.append(f"▸ §d注视实体§r：{snapshot.target_entity.to_summary()}")

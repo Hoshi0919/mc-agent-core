@@ -177,6 +177,18 @@ class TargetEntity:
 
 
 @dataclass(frozen=True)
+class LogisticsReport:
+    is_logistics_or_redstone: bool
+    component_type: str
+    state_details: str
+    actionable_advice: str
+
+    @classmethod
+    def none(cls):
+        return cls(False, "NONE", "非红石/物流交互方块", "")
+
+
+@dataclass(frozen=True)
 class HarvestReport:
     can_harvest_with_drops: bool
     tool_requirement_name: str
@@ -275,6 +287,119 @@ class TargetBlock:
             alt_slot,
             advice
         )
+
+    def evaluate_logistics_or_redstone(self) -> LogisticsReport:
+        if self.is_air or not self.block_id:
+            return LogisticsReport.none()
+        s = self.block_id.lower()
+
+        # 1. Hopper
+        if "hopper" in s:
+            facing = self.properties.get("facing", "down")
+            enabled_str = self.properties.get("enabled", "true")
+            locked = enabled_str.lower() == "false"
+            state = (
+                f"⚡ [已锁定 LOCKED] 漏斗被红石信号强充能锁定！当前朝向: {facing}"
+                if locked
+                else f"✔ [流通就绪 UNLOCKED] 漏斗处于正常非锁定流通状态。当前朝向: {facing}"
+            )
+            advice = (
+                "警告：红石充能导致停止吸取与漏出物品！请检查紧邻红石粉、红石火把或强充能方块。"
+                if locked
+                else (
+                    "传输速率: 2.5 组/秒 (4红石刻/个)。物品分类器推荐 41+1+1+1+1 (防串线) 或 18+1+1+1+1 布局。"
+                    if facing == "down"
+                    else "朝向侧方推入容器。若需向下传输请调整漏斗放置对准底部。"
+                )
+            )
+            return LogisticsReport(True, "HOPPER", state, advice)
+
+        # 2. Comparator
+        if "comparator" in s:
+            mode = self.properties.get("mode", "compare")
+            is_sub = mode.lower() == "subtract"
+            state = (
+                "⚡ [减法模式 SUBTRACT (前置火把点亮)] 输出 = max(0, 后端信号 - max(左侧信号, 右侧信号))"
+                if is_sub
+                else "✔ [比较模式 COMPARE (前置火把熄灭)] 若后端输入 ≥ 两侧最大输入则输出后端信号，否则输出 0"
+            )
+            advice = "容器满度公式: 信号强度 = floor(1 + (当前物品数 / (格数 × 64)) × 14)。只要有 1 个物品至少输出 1 格信号。"
+            return LogisticsReport(True, "COMPARATOR", state, advice)
+
+        # 3. Repeater
+        if "repeater" in s:
+            delay = int(self.properties.get("delay", "1")) if self.properties.get("delay", "1").isdigit() else 1
+            locked = self.properties.get("locked", "false").lower() == "true"
+            state = f"{'🔒 [锁存锁定 LATCHED] ' if locked else '✔ [正常传导] '}延迟: {delay} 红石刻 ({delay * 2} 游戏刻 / {delay * 0.1:.1f}s)"
+            advice = (
+                "侧向通电的中继器正将此前状态锁存锁定！解除侧向信号方可恢复动态传导。"
+                if locked
+                else "满格 15 级信号强中继输出；右键可循环调节 1~4 刻延迟。"
+            )
+            return LogisticsReport(True, "REPEATER", state, advice)
+
+        # 4. Observer
+        if "observer" in s:
+            facing = self.properties.get("facing", "south")
+            powered = self.properties.get("powered", "false").lower() == "true"
+            state = f"侦测面朝向: {facing} | 当前脉冲状态: {'发射中 (ACTIVE)' if powered else '待命 (IDLE)'}"
+            advice = "感应前方方块状态更新 (BlockState Update)，后侧输出持续 1 红石刻 (2 游戏刻 / 0.1s) 瞬时脉冲。双侦测器面迎面相对可构成 2-tick 超高频时钟。"
+            return LogisticsReport(True, "OBSERVER", state, advice)
+
+        # 5. Crafter
+        if "crafter" in s:
+            orientation = self.properties.get("orientation", "north_up")
+            triggered = self.properties.get("triggered", "false")
+            state = f"1.21 自动合成器 | 朝向: {orientation} | 触发状态: {triggered}"
+            advice = "接收红石上升沿脉冲瞬时合成并弹出成品！配合比较器可读取被禁用或有物品的槽位数 (0~9)。"
+            return LogisticsReport(True, "CRAFTER", state, advice)
+
+        # 6. Daylight Detector
+        if "daylight_detector" in s:
+            inverted = self.properties.get("inverted", "false").lower() == "true"
+            state = "🌙 [夜间/反转模式 (月光探测)]" if inverted else "☀️ [白昼/正常模式 (日光探测)]"
+            advice = (
+                "黑夜与雷雨天光照降低时输出高电平，常用于全自动路灯与夜间警报。"
+                if inverted
+                else "白昼正午输出最高 15 级强电平，随太阳高度角升降动态衰减。右键可切换为反转模式。"
+            )
+            return LogisticsReport(True, "DAYLIGHT_DETECTOR", state, advice)
+
+        # 7. Sculk Sensor
+        if "sculk_sensor" in s:
+            calibrated = "calibrated" in s
+            phase = self.properties.get("sculk_sensor_phase", "inactive")
+            state = f"{'💎 [校准型] ' if calibrated else '📡 [标准型] '}幽匿感测体 | 状态: {phase}"
+            advice = (
+                "通过后方/侧方红石信号 (1~15) 过滤单一频率 (1=移动, 6=装填, 12=受击, 13=死亡)；羊毛可 100% 阻隔振动传导。"
+                if calibrated
+                else "感应半径 8 格内振动波，输出强度对应振动频率 (1~15)；羊毛可 100% 隔音。"
+            )
+            return LogisticsReport(True, "SCULK_SENSOR", state, advice)
+
+        # 8. Bubble Column (Soul sand & Magma)
+        if "soul_sand" in s or "magma_block" in s:
+            is_soul = "soul_sand" in s
+            state = "🫧 [上升气泡柱基座]" if is_soul else "🌀 [下沉涡流基座]"
+            advice = (
+                "上方水域生成极速上升气泡柱 (约 11 格/秒) 并补充氧气。前置关键：垂直水柱每一格必须全部为【水源 (Water Source)】，可用海带顺水种植一键转化！"
+                if is_soul
+                else "上方水域生成极速向下涡流并消耗氧气。前置关键：垂直水柱每一格必须全部为【水源】。"
+            )
+            return LogisticsReport(True, "SOUL_SAND_BUBBLE" if is_soul else "MAGMA_BUBBLE", state, advice)
+
+        # 9. Dropper & Dispenser
+        if "dropper" in s or "dispenser" in s:
+            is_dispenser = "dispenser" in s
+            state = "🏹 [发射器 (Dispenser)]" if is_dispenser else "📦 [投掷器 (Dropper)]"
+            advice = (
+                "具备专属执行逻辑：射箭/药水、装填护甲/鞘翅、放置水桶岩浆、剪羊毛、点燃 TNT 等。不可用于常规无损物品管道！"
+                if is_dispenser
+                else "无论盛装何物，均以掉落物实体 (Item Entity) 吐出。适合垂直级联搭建投掷器物品升降机。"
+            )
+            return LogisticsReport(True, "DISPENSER" if is_dispenser else "DROPPER", state, advice)
+
+        return LogisticsReport.none()
 
     def to_summary(self) -> str:
         if self.is_air:

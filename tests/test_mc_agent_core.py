@@ -766,3 +766,124 @@ def test_command_router_v16_inspect_and_craft():
     assert r_craft.is_success
     assert r_craft.action == "CRAFT"
     assert "缺少" in r_craft.message
+
+
+def test_target_block_logistics_evaluation():
+    # 1. Hopper locked
+    tb_locked = TargetBlock(block_id="minecraft:hopper", x=10, y=64, z=20, properties={"facing": "down", "enabled": "false"})
+    h1 = tb_locked.evaluate_logistics_or_redstone()
+    assert h1.is_logistics_or_redstone
+    assert h1.component_type == "HOPPER"
+    assert "已锁定" in h1.state_details
+    assert "警告：红石充能" in h1.actionable_advice
+
+    # 2. Hopper unlocked
+    tb_unlocked = TargetBlock(block_id="minecraft:hopper", x=10, y=64, z=20, properties={"facing": "east", "enabled": "true"})
+    h2 = tb_unlocked.evaluate_logistics_or_redstone()
+    assert "流通就绪" in h2.state_details
+    assert "朝向侧方" in h2.actionable_advice
+
+    # 3. Comparator subtract vs compare
+    comp_sub = TargetBlock(block_id="minecraft:comparator", x=12, y=64, z=20, properties={"mode": "subtract"})
+    c1 = comp_sub.evaluate_logistics_or_redstone()
+    assert c1.is_logistics_or_redstone
+    assert "减法模式" in c1.state_details
+
+    comp_cmp = TargetBlock(block_id="minecraft:comparator", x=12, y=64, z=20, properties={"mode": "compare"})
+    c2 = comp_cmp.evaluate_logistics_or_redstone()
+    assert "比较模式" in c2.state_details
+
+    # 4. Repeater delay and lock
+    rep_locked = TargetBlock(block_id="minecraft:repeater", x=14, y=64, z=20, properties={"delay": "3", "locked": "true"})
+    r1 = rep_locked.evaluate_logistics_or_redstone()
+    assert "锁存锁定" in r1.state_details
+    assert "3 红石刻" in r1.state_details
+
+    # 5. Observer
+    obs = TargetBlock(block_id="minecraft:observer", x=15, y=64, z=20, properties={"facing": "up", "powered": "true"})
+    o1 = obs.evaluate_logistics_or_redstone()
+    assert "朝向: up" in o1.state_details
+    assert "发射中" in o1.state_details
+
+    # 6. Crafter
+    crafter = TargetBlock(block_id="minecraft:crafter", x=16, y=64, z=20, properties={"orientation": "north_up", "triggered": "true"})
+    cr = crafter.evaluate_logistics_or_redstone()
+    assert cr.component_type == "CRAFTER"
+    assert "1.21 自动合成器" in cr.state_details
+
+    # 7. Soul sand
+    soul = TargetBlock(block_id="minecraft:soul_sand", x=17, y=60, z=20)
+    s1 = soul.evaluate_logistics_or_redstone()
+    assert s1.component_type == "SOUL_SAND_BUBBLE"
+    assert "海带" in s1.actionable_advice
+
+    # 8. Dropper vs Dispenser
+    dr = TargetBlock(block_id="minecraft:dropper", x=18, y=64, z=20).evaluate_logistics_or_redstone()
+    assert dr.component_type == "DROPPER"
+    di = TargetBlock(block_id="minecraft:dispenser", x=19, y=64, z=20).evaluate_logistics_or_redstone()
+    assert di.component_type == "DISPENSER"
+
+    # 9. Non-logistics block
+    dirt = TargetBlock(block_id="minecraft:dirt", x=20, y=64, z=20).evaluate_logistics_or_redstone()
+    assert not dirt.is_logistics_or_redstone
+
+
+def test_fast_path_context_aware_logistics():
+    # Player looks at locked hopper and asks "为什么不漏"
+    tb_locked = TargetBlock(block_id="minecraft:hopper", x=5, y=64, z=10, properties={"facing": "down", "enabled": "false"})
+    ctx_locked = ContextSnapshot(player_name="Steve", dimension="overworld", x=5.0, y=64.0, z=10.0, target_block=tb_locked)
+    res1 = FastPathResolver.try_resolve("这个漏斗为什么不漏东西？", ctx_locked)
+    assert res1 is not None
+    assert res1.category == "TARGET_BLOCK_LOGISTICS"
+    assert "已锁定" in res1.text_response
+    assert "红石充能" in res1.text_response
+
+    # Player looks at subtract comparator and asks "这个比较器怎么算"
+    tb_comp = TargetBlock(block_id="minecraft:comparator", x=6, y=64, z=10, properties={"mode": "subtract"})
+    ctx_comp = ContextSnapshot(player_name="Steve", dimension="overworld", x=6.0, y=64.0, z=10.0, target_block=tb_comp)
+    res2 = FastPathResolver.try_resolve("眼前这个比较器怎么算？", ctx_comp)
+    assert res2 is not None
+    assert res2.category == "TARGET_BLOCK_LOGISTICS"
+    assert "减法模式" in res2.text_response
+
+
+def test_fast_path_v17_logistics_rules():
+    # 1. Hopper 41 sorting
+    r1 = FastPathResolver.try_resolve("漏斗分类机41个物品怎么调？")
+    assert r1 is not None
+    assert r1.category == "HOPPER_LOGISTICS_SORTING"
+    assert "41 个" in r1.text_response
+    assert "防串线" in r1.text_response
+
+    # 2. Comparator subtraction algebra
+    r2 = FastPathResolver.try_resolve("比较器减法模式怎么算？")
+    assert r2 is not None
+    assert r2.category == "COMPARATOR_SUBTRACTION_ALGEBRA"
+    assert "max(0, S_rear" in r2.text_response
+
+    # 3. Water bubble column elevator
+    r3 = FastPathResolver.try_resolve("水电梯气泡柱为什么不冒泡？")
+    assert r3 is not None
+    assert r3.category == "WATER_BUBBLE_COLUMN_ELEVATOR"
+    assert "水源" in r3.text_response
+    assert "海带" in r3.text_response
+
+    # 4. Observer clock
+    r4 = FastPathResolver.try_resolve("侦测器高频时钟怎么做？")
+    assert r4 is not None
+    assert r4.category == "OBSERVER_PULSE_CLOCKS"
+    assert "面迎面" in r4.text_response
+    assert "1-Tick 吐方块" in r4.text_response
+
+
+def test_command_router_v17_logistics_inspect():
+    dispatcher = AsyncQueryDispatcher()
+    router = CommandRouter(dispatcher)
+
+    tb_locked_hopper = TargetBlock(block_id="minecraft:hopper", x=100, y=64, z=200, properties={"facing": "down", "enabled": "false"})
+    ctx = ContextSnapshot(player_name="Steve", dimension="overworld", x=100.0, y=64.0, z=200.0, target_block=tb_locked_hopper)
+
+    res = router.execute("Steve", "/hoshi inspect", ctx)
+    assert res.is_success
+    assert "红石/物流" in res.message
+    assert "已锁定" in res.message
