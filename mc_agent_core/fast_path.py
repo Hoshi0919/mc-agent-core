@@ -115,7 +115,7 @@ class FastPathResolver:
                 return Resolution(text_response=resp, suggested_command=cmd, category="ORE_LOOKUP")
 
         # 3. Mob spawning & light level check
-        if "不刷怪" in q or ("刷怪" in q and any(k in q for k in ("亮度", "条件", "为什么", "怎么", "不生成"))):
+        if not any(k in q for k in ("刷怪塔", "刷怪笼", "刷铁机")) and ("不刷怪" in q or ("刷怪" in q and any(k in q for k in ("亮度", "条件", "为什么", "怎么", "不生成")))):
             lines = ["§b【1.18+ 敌对生物刷怪判定】§r"]
             if context and context.target_block and not context.target_block.is_air:
                 tb = context.target_block
@@ -186,7 +186,7 @@ class FastPathResolver:
             return Resolution(text_response=resp, suggested_command="/enchant @s minecraft:mending", category="ENCHANTMENT_CONFLICT")
 
         # 8. Villager trade locking & professions
-        if "村民" in q and any(k in q for k in ("转职", "锁", "刷", "工作台", "职业", "交易", "图书", "经验修补")):
+        if not any(k in q for k in ("刷铁", "铁傀儡", "补货")) and "村民" in q and any(k in q for k in ("转职", "锁", "刷", "工作台", "职业", "交易", "图书", "经验修补")):
             resp = (
                 "§a【村民职业与锁交易机制】§r\n"
                 "▸ §e永久锁定原则§r：只要与村民完成【任意 1 次交易】，其职业和附魔项将永久锁定，敲掉工作台也不会改变！\n"
@@ -296,7 +296,7 @@ class FastPathResolver:
             return Resolution(text_response=resp, suggested_command="/give @s minecraft:iron_ingot 4", category="IRON_GOLEM_REPAIR")
 
         # 16. Iron Golem Spawning & Iron Farm
-        if any(k in q for k in ("铁傀儡", "刷铁机", "为什么不刷铁", "村民惊吓", "不生成铁傀儡")):
+        if not any(k in q for k in ("失眠", "破视", "失效")) and any(k in q for k in ("铁傀儡", "刷铁机", "为什么不刷铁", "村民惊吓", "不生成铁傀儡")):
             resp = (
                 "§a【铁傀儡生成判定与刷铁机力学】§r\n"
                 "▸ §e三大必备前置条件§r：\n"
@@ -582,6 +582,47 @@ class FastPathResolver:
                 "▸ §a单次往返极速卸料站§r：矿车驶入停在漏斗上方，比较器检测漏斗非空触发充能铁轨断电锁车；漏斗排空瞬间比较器熄灭，非门恢复铁轨供电弹射矿车巡回！"
             )
             return Resolution(text_response=resp, suggested_command="/give @s minecraft:hopper_minecart 1", category="HOPPER_MINECART_UNLOADER_DYNAMICS")
+
+
+        # 43. Hostile Mob Spawn & Despawn Spheres
+        if any(k in q for k in ("刷怪塔不刷怪", "刷怪塔怎么不刷怪", "清除球", "128格", "挂机点怎么选", "刷怪半径", "mobcap", "生物上限")):
+            resp = (
+                "§4【敌对生物生成动力学与 128 格清除球】\n"
+                "▸ §c四大清除几何球§r：0~24格绝对禁刷；24~32格黄金高频活动圈；33~128格随机清除区(每tick 1/800几率消失)；>128格瞬间蒸发！\n"
+                "▸ §e单人 70 生物Cap占用§r：挂机点128格内若有未点亮天然矿洞，怪物迅速占满70上限导致刷怪塔断崖式停产！必须高空挂机或照亮洞穴。\n"
+                "▸ §a基岩低Y轴优势§r：算法从最高方块高度向下抽样，深层挖空基岩(Y=-58)效率比常规地表高 3~4 倍！"
+            )
+            return Resolution(text_response=resp, suggested_command="/hoshi mobfarm 120 64 false", category="HOSTILE_MOB_SPAWN_AND_DESPAWN_SPHERES")
+
+        # 44. Spawner Cage Mechanics & Suppression
+        if any(k in q for k in ("刷怪笼怎么封", "刷怪笼怎么不刷", "刷怪笼激活距离", "刷怪笼光照", "刷怪笼机制", "刷怪箱")):
+            resp = (
+                "§6【刷怪笼生成空间与光照压制力学】\n"
+                "▸ §e激活半径与扫描盒§r：玩家必须在刷怪笼 16 格以内；周围 9x9x3 空间内同类实体 < 6 只方可继续生成。\n"
+                "▸ §a光照彻底压制§r：1.18+ 普通刷怪笼需方块光照 >= 11 彻底熄灭（刷怪笼各面插火把或红石灯）；烈焰人需 >= 12。\n"
+                "▸ §b高效收集管道§r：底部铺设流水快速移出 9x9x3 区域，引至 23 格摔落井残血收割或三叉戟杀手自动挂机！"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:torch 8", category="SPAWNER_CAGE_MECHANICS_AND_SUPPRESSION")
+
+        # 45. Iron Farm Panic & LOS Sleep Timing
+        if any(k in q for k in ("刷铁机不刷铁傀儡", "刷铁机怎么不刷", "刷铁机失效", "村民失眠", "铁傀儡生成条件", "刷铁机僵尸")):
+            resp = (
+                "§3【铁傀儡农场恐慌时序与破视睡眠机制】\n"
+                "▸ §e刷新硬性三要素§r：至少 3 名村民；在过去 20 分钟内必须入睡过至少 1 tick；目视敌对实体进入恐慌状态。\n"
+                "▸ §c致命失眠陷阱§r：若僵尸视线未遮挡，村民 24 小时恐慌无法入睡，20分钟后因失眠彻底停产！\n"
+                "▸ §a破视时序优化§r：必须用活塞遮挡板或水流颠簸进行周期性视线遮断 (LOS Break)，让村民每隔数秒能偷睡 1 tick！"
+            )
+            return Resolution(text_response=resp, suggested_command="/hoshi villager iron", category="IRON_FARM_PANIC_AND_LOS_SLEEP")
+
+        # 46. Villager Workstation Pathing & Restocking
+        if any(k in q for k in ("村民怎么不补货", "村民转职", "村民怎么转职", "村民锁定职业", "村民不工作", "村民交易锁")):
+            resp = (
+                "§b【村民工作站点路径寻路与交易补货动力学】\n"
+                "▸ §e物理寻路可达§r：村民必须拥有到达工作站点脚部的物理可行寻路路径，隔着全实心方块或落差断崖无法绑定。\n"
+                "▸ §c职业永久锁定§r：一旦产生过任何交易（经验 XP > 0），职业与交易树永久锁定，拆除工作台也绝不转职！\n"
+                "▸ §a补货时钟法则§r：村民每天在日间工作时段 (2000~9000 ticks) 前往工作站至多补货 2 次；接触不到工作台将永久无法补货！"
+            )
+            return Resolution(text_response=resp, suggested_command="/hoshi villager trading", category="VILLAGER_WORKSTATION_PATHING_AND_RESTOCK")
 
         return None
 

@@ -151,7 +151,7 @@ public final class FastPathResolver {
         }
 
         // 3. Mob spawning & light level check
-        if (q.contains("不刷怪") || (q.contains("刷怪") && (q.contains("亮度") || q.contains("条件") || q.contains("为什么") || q.contains("怎么") || q.contains("不生成")))) {
+        if (!q.contains("刷怪塔") && !q.contains("刷怪笼") && !q.contains("刷铁机") && (q.contains("不刷怪") || (q.contains("刷怪") && (q.contains("亮度") || q.contains("条件") || q.contains("为什么") || q.contains("怎么") || q.contains("不生成"))))) {
             StringBuilder sb = new StringBuilder();
             sb.append("§b【1.18+ 敌对生物刷怪判定】§r\n");
             if (context != null && context.targetBlock() != null && !context.targetBlock().isAir()) {
@@ -211,7 +211,7 @@ public final class FastPathResolver {
         }
 
         // 8. Villager trade locking & professions
-        if (q.contains("村民") && (q.contains("转职") || q.contains("锁") || q.contains("刷") || q.contains("工作台") || q.contains("职业") || q.contains("交易") || q.contains("图书") || q.contains("经验修补"))) {
+        if (!q.contains("刷铁") && !q.contains("铁傀儡") && !q.contains("补货") && q.contains("村民") && (q.contains("转职") || q.contains("锁") || q.contains("刷") || q.contains("工作台") || q.contains("职业") || q.contains("交易") || q.contains("图书") || q.contains("经验修补"))) {
             String resp = "§a【村民职业与锁交易机制】§r\n" +
                     "▸ §e永久锁定原则§r：只要与村民完成【任意 1 次交易】，其职业和附魔项将永久锁定，敲掉工作台也不会改变！\n" +
                     "▸ §b无限刷经验修补书技巧§r：在未交易前，放置讲台让无业村民成为图书管理员，检查交易；若不是所需附魔书，空手破坏讲台重放即可无限重置！\n" +
@@ -306,7 +306,7 @@ public final class FastPathResolver {
 
 
         // 16. Iron Golem Spawning & Iron Farm
-        if (q.contains("铁傀儡") || q.contains("刷铁机") || q.contains("为什么不刷铁") || q.contains("村民惊吓") || q.contains("不生成铁傀儡")) {
+        if (!q.contains("失眠") && !q.contains("破视") && !q.contains("失效") && (q.contains("铁傀儡") || q.contains("刷铁机") || q.contains("为什么不刷铁") || q.contains("村民惊吓") || q.contains("不生成铁傀儡"))) {
             String resp = "§a【铁傀儡生成判定与刷铁机力学】§r\n" +
                     "▸ §e三大前置条件§r：至少 3 名有效村民绑定床铺；过去 20 分钟内村民必须睡过觉；村民需进入惊吓恐慌态。\\n\" +\n" +
                     "▸ §b生成空间§r：村民中心 16×13×16 空间内需要完整方块表面，上方有 3 格空气或水流。\\n\" +\n" +
@@ -547,6 +547,48 @@ public final class FastPathResolver {
                     "▸ §b隔空穿透特性§r：能够隔着正上方 1 个完整实心方块直接吸取上方容器或铁轨表面掉落物。\n" +
                     "▸ §a单次往返极速卸料站§r：矿车驶入停在漏斗上方，比较器检测漏斗非空触发充能铁轨断电锁车；漏斗排空瞬间比较器熄灭，非门恢复铁轨供电弹射矿车巡回！";
             return Optional.of(new Resolution(resp, "/give @s minecraft:hopper_minecart 1", "HOPPER_MINECART_UNLOADER_DYNAMICS"));
+        }
+
+
+        // 43. Hostile Mob Spawn & Despawn Spheres
+        if (q.contains("刷怪塔不刷怪") || q.contains("刷怪塔怎么不刷怪") || q.contains("清除球") ||
+                q.contains("128格") || q.contains("挂机点怎么选") || q.contains("刷怪半径") ||
+                q.contains("mobcap") || q.contains("生物上限")) {
+            String resp = "§4【敌对生物生成动力学与 128 格清除球】\n" +
+                    "▸ §c四大清除几何球§r：0~24格绝对禁刷；24~32格黄金高频活动圈；33~128格随机清除区(每tick 1/800几率消失)；>128格瞬间蒸发！\n" +
+                    "▸ §e单人 70 生物Cap占用§r：挂机点128格内若有未点亮天然矿洞，怪物迅速占满70上限导致刷怪塔断崖式停产！必须高空挂机或照亮洞穴。\n" +
+                    "▸ §a基岩低Y轴优势§r：算法从最高方块高度向下抽样，深层挖空基岩(Y=-58)效率比常规地表高 3~4 倍！";
+            return Optional.of(new Resolution(resp, "/hoshi mobfarm 120 64 false", "HOSTILE_MOB_SPAWN_AND_DESPAWN_SPHERES"));
+        }
+
+        // 44. Spawner Cage Mechanics & Suppression
+        if (q.contains("刷怪笼怎么封") || q.contains("刷怪笼怎么不刷") || q.contains("刷怪笼激活距离") ||
+                q.contains("刷怪笼光照") || q.contains("刷怪笼机制") || q.contains("刷怪箱")) {
+            String resp = "§6【刷怪笼生成空间与光照压制力学】\n" +
+                    "▸ §e激活半径与扫描盒§r：玩家必须在刷怪笼 16 格以内；周围 9x9x3 空间内同类实体 < 6 只方可继续生成。\n" +
+                    "▸ §a光照彻底压制§r：1.18+ 普通刷怪笼需方块光照 >= 11 彻底熄灭（刷怪笼各面插火把或红石灯）；烈焰人需 >= 12。\n" +
+                    "▸ §b高效收集管道§r：底部铺设流水快速移出 9x9x3 区域，引至 23 格摔落井残血收割或三叉戟杀手自动挂机！";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:torch 8", "SPAWNER_CAGE_MECHANICS_AND_SUPPRESSION"));
+        }
+
+        // 45. Iron Farm Panic & LOS Sleep Timing
+        if (q.contains("刷铁机不刷铁傀儡") || q.contains("刷铁机怎么不刷") || q.contains("刷铁机失效") ||
+                q.contains("村民失眠") || q.contains("铁傀儡生成条件") || q.contains("刷铁机僵尸")) {
+            String resp = "§3【铁傀儡农场恐慌时序与破视睡眠机制】\n" +
+                    "▸ §e刷新硬性三要素§r：至少 3 名村民；在过去 20 分钟内必须入睡过至少 1 tick；目视敌对实体进入恐慌状态。\n" +
+                    "▸ §c致命失眠陷阱§r：若僵尸视线未遮挡，村民 24 小时恐慌无法入睡，20分钟后因失眠彻底停产！\n" +
+                    "▸ §a破视时序优化§r：必须用活塞遮挡板或水流颠簸进行周期性视线遮断 (LOS Break)，让村民每隔数秒能偷睡 1 tick！";
+            return Optional.of(new Resolution(resp, "/hoshi villager iron", "IRON_FARM_PANIC_AND_LOS_SLEEP"));
+        }
+
+        // 46. Villager Workstation Pathing & Restocking
+        if (q.contains("村民怎么不补货") || q.contains("村民转职") || q.contains("村民怎么转职") ||
+                q.contains("村民锁定职业") || q.contains("村民不工作") || q.contains("村民交易锁")) {
+            String resp = "§b【村民工作站点路径寻路与交易补货动力学】\n" +
+                    "▸ §e物理寻路可达§r：村民必须拥有到达工作站点脚部的物理可行寻路路径，隔着全实心方块或落差断崖无法绑定。\n" +
+                    "▸ §c职业永久锁定§r：一旦产生过任何交易（经验 XP > 0），职业与交易树永久锁定，拆除工作台也绝不转职！\n" +
+                    "▸ §a补货时钟法则§r：村民每天在日间工作时段 (2000~9000 ticks) 前往工作站至多补货 2 次；接触不到工作台将永久无法补货！";
+            return Optional.of(new Resolution(resp, "/hoshi villager trading", "VILLAGER_WORKSTATION_PATHING_AND_RESTOCK"));
         }
 
         return Optional.empty();

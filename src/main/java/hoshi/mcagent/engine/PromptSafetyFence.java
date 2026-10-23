@@ -75,7 +75,11 @@ public final class PromptSafetyFence {
         userPrompt.append(LocalGameRules.CONDUIT_MULTIBLOCK_ACTIVATION_RULES).append("\n\n");
         userPrompt.append(LocalGameRules.NETHER_PORTAL_GEOMETRY_AND_CHUNKLOAD_RULES).append("\n\n");
         userPrompt.append(LocalGameRules.SMELTING_ARRAY_THROUGHPUT_BOTTLENECK_RULES).append("\n\n");
-        userPrompt.append(LocalGameRules.HOPPER_MINECART_UNLOADER_DYNAMICS_RULES).append("\n");
+        userPrompt.append(LocalGameRules.HOPPER_MINECART_UNLOADER_DYNAMICS_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.HOSTILE_MOB_SPAWN_AND_DESPAWN_SPHERES_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.SPAWNER_CAGE_MECHANICS_AND_SUPPRESSION_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.IRON_FARM_PANIC_AND_LOS_SLEEP_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.VILLAGER_WORKSTATION_PATHING_AND_RESTOCK_RULES).append("\n");
         userPrompt.append("</canonical_rules>\n\n");
 
         userPrompt.append("<player_query>\n");

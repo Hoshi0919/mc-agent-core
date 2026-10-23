@@ -5,6 +5,8 @@ import hoshi.mcagent.async.AsyncQueryDispatcher;
 import hoshi.mcagent.multiblock.MultiblockBlueprint;
 import hoshi.mcagent.multiblock.MultiblockValidator;
 import hoshi.mcagent.pipeline.PipelineThroughputAnalyzer;
+import hoshi.mcagent.farm.MobFarmDynamics;
+import hoshi.mcagent.villager.VillagerDynamics;
 import hoshi.mcagent.bom.BlueprintBOM;
 import hoshi.mcagent.bom.MaterialCalculator;
 import hoshi.mcagent.context.ContextSnapshot;
@@ -176,6 +178,38 @@ public class CommandRouter {
                 }
                 String transport = argStart + 3 < tokens.length ? tokens[argStart + 3] : "hopper";
                 return handlePipeline(playerId, machine, count, transport);
+            }
+            case "mobfarm":
+            case "mf": {
+                double afkY = 120.0;
+                double farmY = 64.0;
+                boolean cavesLit = false;
+                if (argStart + 1 < tokens.length) {
+                    try { afkY = Double.parseDouble(tokens[argStart + 1]); } catch (NumberFormatException ignored) {}
+                }
+                if (argStart + 2 < tokens.length) {
+                    try { farmY = Double.parseDouble(tokens[argStart + 2]); } catch (NumberFormatException ignored) {}
+                }
+                if (argStart + 3 < tokens.length) {
+                    cavesLit = Boolean.parseBoolean(tokens[argStart + 3]) || tokens[argStart + 3].equalsIgnoreCase("true") || tokens[argStart + 3].equals("1");
+                }
+                return handleMobFarm(playerId, afkY, farmY, cavesLit);
+            }
+            case "spawner": {
+                double dist = 10.0;
+                int light = 0;
+                if (argStart + 1 < tokens.length) {
+                    try { dist = Double.parseDouble(tokens[argStart + 1]); } catch (NumberFormatException ignored) {}
+                }
+                if (argStart + 2 < tokens.length) {
+                    try { light = Integer.parseInt(tokens[argStart + 2]); } catch (NumberFormatException ignored) {}
+                }
+                return handleSpawner(playerId, dist, light);
+            }
+            case "villager":
+            case "v": {
+                String type = argStart + 1 < tokens.length ? tokens[argStart + 1] : "iron";
+                return handleVillager(playerId, type, tokens, argStart);
             }
             case "nether":
             case "portal": {
@@ -370,6 +404,75 @@ public class CommandRouter {
         return CommandResult.success("PIPELINE", paged.fullPageText(), null, tellraw, paged);
     }
 
+    private CommandResult handleMobFarm(String playerId, double afkY, double farmY, boolean cavesLit) {
+        MobFarmDynamics.FarmReport report = MobFarmDynamics.evaluate(afkY, farmY, cavesLit);
+        String text = report.formattedReport();
+        ChatPaginator.PagedResult paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page");
+        sessionManager.recordInteraction(playerId, String.format("/hoshi mobfarm %.0f %.0f %s", afkY, farmY, cavesLit), text, "MOBFARM", paged);
+
+        var comps = MinecraftTextFormatter.parseComponents(paged.fullPageText(), String.format("/hoshi mobfarm %.0f %.0f %s", afkY, farmY, cavesLit));
+        String tellraw = TellrawJsonBuilder.toJson(comps);
+        return CommandResult.success("MOBFARM", paged.fullPageText(), null, tellraw, paged);
+    }
+
+    private CommandResult handleSpawner(String playerId, double dist, int light) {
+        MobFarmDynamics.SpawnerReport report = MobFarmDynamics.evaluateSpawner(dist, light);
+        String text = report.formattedReport();
+        var comps = MinecraftTextFormatter.parseComponents(text, String.format("/hoshi spawner %.0f %d", dist, light));
+        String tellraw = TellrawJsonBuilder.toJson(comps);
+        return CommandResult.success("SPAWNER", text, null, tellraw, null);
+    }
+
+    private CommandResult handleVillager(String playerId, String type, String[] tokens, int argStart) {
+        String t = type.toLowerCase();
+        String text;
+        if (t.contains("iron") || t.contains("golem") || t.equals("铁") || t.equals("刷铁")) {
+            int villagers = 3;
+            boolean hasLosBreak = false;
+            boolean hasSlept = true;
+            if (argStart + 2 < tokens.length) {
+                try { villagers = Integer.parseInt(tokens[argStart + 2]); } catch (NumberFormatException ignored) {}
+            }
+            if (argStart + 3 < tokens.length) {
+                hasLosBreak = Boolean.parseBoolean(tokens[argStart + 3]) || tokens[argStart + 3].equalsIgnoreCase("true");
+            }
+            if (argStart + 4 < tokens.length) {
+                hasSlept = Boolean.parseBoolean(tokens[argStart + 4]) || tokens[argStart + 4].equalsIgnoreCase("true");
+            }
+            text = VillagerDynamics.diagnoseIronFarm(villagers, hasLosBreak, hasSlept).formattedReport();
+        } else if (t.contains("breed") || t.contains("baby") || t.equals("繁殖")) {
+            int food = 6;
+            boolean beds = true;
+            int ceiling = 2;
+            if (argStart + 2 < tokens.length) {
+                try { food = Integer.parseInt(tokens[argStart + 2]); } catch (NumberFormatException ignored) {}
+            }
+            if (argStart + 3 < tokens.length) {
+                beds = Boolean.parseBoolean(tokens[argStart + 3]) || tokens[argStart + 3].equalsIgnoreCase("true");
+            }
+            if (argStart + 4 < tokens.length) {
+                try { ceiling = Integer.parseInt(tokens[argStart + 4]); } catch (NumberFormatException ignored) {}
+            }
+            text = VillagerDynamics.diagnoseBreeder(food, beds, ceiling).formattedReport();
+        } else {
+            boolean traded = true;
+            boolean canReach = true;
+            if (argStart + 2 < tokens.length) {
+                traded = Boolean.parseBoolean(tokens[argStart + 2]) || tokens[argStart + 2].equalsIgnoreCase("true");
+            }
+            if (argStart + 3 < tokens.length) {
+                canReach = Boolean.parseBoolean(tokens[argStart + 3]) || tokens[argStart + 3].equalsIgnoreCase("true");
+            }
+            text = VillagerDynamics.diagnoseTrading(traded, canReach).formattedReport();
+        }
+
+        ChatPaginator.PagedResult paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page");
+        sessionManager.recordInteraction(playerId, "/hoshi villager " + type, text, "VILLAGER", paged);
+        var comps = MinecraftTextFormatter.parseComponents(paged.fullPageText(), "/hoshi villager " + type);
+        String tellraw = TellrawJsonBuilder.toJson(comps);
+        return CommandResult.success("VILLAGER", paged.fullPageText(), null, tellraw, paged);
+    }
+
     private CommandResult handleStats() {
         String cacheStats = core.getCache().getStats().toString();
         int activeSessions = sessionManager.getActiveSessionCount();
@@ -387,6 +490,8 @@ public class CommandRouter {
                 "▸ §e/hoshi page <页码>§r - 翻页长篇内容\n" +
                 "▸ §e/hoshi multiblock <方案>§r - 调阅多方块蓝图与背包材料校验\n" +
                 "▸ §e/hoshi pipeline <设备> [数量] [物流]§r - 诊断工业流水线供料瓶颈\n" +
+                "▸ §e/hoshi mobfarm <挂机Y> <平台Y> [洞穴点亮]§r - 诊断清除球与生物Cap占用\n" +
+                "▸ §e/hoshi villager <iron/breeder/trading>§r - 诊断刷铁机/繁殖/工作站死锁\n" +
                 "▸ §e/hoshi nether [x y z]§r - 换算地狱传送门坐标\n" +
                 "▸ §e/hoshi clear§r - 清理会话与翻页缓存\n" +
                 "▸ §e/hoshi stats§r - 查看缓存与度量统计\n" +

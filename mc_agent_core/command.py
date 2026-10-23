@@ -6,6 +6,8 @@ from .context import ContextSnapshot
 from .crafting import CraftingReadinessChecker
 from .multiblock import find_blueprint, validate_inventory
 from .pipeline import analyze_smelting_array
+from .farm import evaluate_mob_farm, evaluate_spawner
+from .villager import diagnose_iron_farm, diagnose_breeder, diagnose_trading
 from .dispatcher import AsyncQueryDispatcher, QueryResult
 from .formatter import MinecraftTextFormatter
 from .paginator import ChatPaginator, PagedResult
@@ -133,6 +135,35 @@ class CommandRouter:
                     count = 16
             transport = tokens[arg_start + 3] if arg_start + 3 < len(tokens) else "hopper"
             return self._handle_pipeline(player_id, machine, count, transport)
+
+        elif sub in ("mobfarm", "mf"):
+            afk_y = 120.0
+            farm_y = 64.0
+            caves_lit = False
+            if arg_start + 1 < len(tokens):
+                try: afk_y = float(tokens[arg_start + 1])
+                except ValueError: pass
+            if arg_start + 2 < len(tokens):
+                try: farm_y = float(tokens[arg_start + 2])
+                except ValueError: pass
+            if arg_start + 3 < len(tokens):
+                caves_lit = tokens[arg_start + 3].lower() in ("true", "1", "yes")
+            return self._handle_mobfarm(player_id, afk_y, farm_y, caves_lit)
+
+        elif sub == "spawner":
+            dist = 10.0
+            light = 0
+            if arg_start + 1 < len(tokens):
+                try: dist = float(tokens[arg_start + 1])
+                except ValueError: pass
+            if arg_start + 2 < len(tokens):
+                try: light = int(tokens[arg_start + 2])
+                except ValueError: pass
+            return self._handle_spawner(player_id, dist, light)
+
+        elif sub in ("villager", "v"):
+            type_name = tokens[arg_start + 1] if arg_start + 1 < len(tokens) else "iron"
+            return self._handle_villager(player_id, type_name, tokens, arg_start)
 
         elif sub in ("nether", "portal"):
             return self._handle_nether(player_id, tokens, arg_start + 1, snapshot)
@@ -283,6 +314,64 @@ class CommandRouter:
         tellraw = TellrawJsonBuilder.to_json(comps)
         return CommandResult(status="SUCCESS", action="PIPELINE", message=paged.full_page_text, tellraw_json=tellraw, paged_result=paged)
 
+    def _handle_mobfarm(self, player_id: Optional[str], afk_y: float, farm_y: float, caves_lit: bool) -> CommandResult:
+        report = evaluate_mob_farm(afk_y, farm_y, caves_lit)
+        text = report.formatted_report
+        paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page")
+        self.session_manager.record_interaction(player_id, f"/hoshi mobfarm {afk_y:.0f} {farm_y:.0f} {caves_lit}", text, "MOBFARM", paged)
+        comps = MinecraftTextFormatter.parse_components(paged.full_page_text, f"/hoshi mobfarm {afk_y:.0f} {farm_y:.0f} {caves_lit}")
+        tellraw = TellrawJsonBuilder.to_json(comps)
+        return CommandResult(status="SUCCESS", action="MOBFARM", message=paged.full_page_text, tellraw_json=tellraw, paged_result=paged)
+
+    def _handle_spawner(self, player_id: Optional[str], dist: float, light: int) -> CommandResult:
+        report = evaluate_spawner(dist, light)
+        text = report.formatted_report
+        comps = MinecraftTextFormatter.parse_components(text, f"/hoshi spawner {dist:.0f} {light}")
+        tellraw = TellrawJsonBuilder.to_json(comps)
+        return CommandResult(status="SUCCESS", action="SPAWNER", message=text, tellraw_json=tellraw)
+
+    def _handle_villager(self, player_id: Optional[str], type_name: str, tokens: list[str], arg_start: int) -> CommandResult:
+        t = type_name.lower()
+        if "iron" in t or "golem" in t or t in ("铁", "刷铁"):
+            count = 3
+            los = False
+            slept = True
+            if arg_start + 2 < len(tokens):
+                try: count = int(tokens[arg_start + 2])
+                except ValueError: pass
+            if arg_start + 3 < len(tokens):
+                los = tokens[arg_start + 3].lower() in ("true", "1", "yes")
+            if arg_start + 4 < len(tokens):
+                slept = tokens[arg_start + 4].lower() in ("true", "1", "yes")
+            text = diagnose_iron_farm(count, los, slept).formatted_report
+        elif "breed" in t or "baby" in t or t == "繁殖":
+            food = 6
+            beds = True
+            ceil_h = 2
+            if arg_start + 2 < len(tokens):
+                try: food = int(tokens[arg_start + 2])
+                except ValueError: pass
+            if arg_start + 3 < len(tokens):
+                beds = tokens[arg_start + 3].lower() in ("true", "1", "yes")
+            if arg_start + 4 < len(tokens):
+                try: ceil_h = int(tokens[arg_start + 4])
+                except ValueError: pass
+            text = diagnose_breeder(food, beds, ceil_h).formatted_report
+        else:
+            traded = True
+            reach = True
+            if arg_start + 2 < len(tokens):
+                traded = tokens[arg_start + 2].lower() in ("true", "1", "yes")
+            if arg_start + 3 < len(tokens):
+                reach = tokens[arg_start + 3].lower() in ("true", "1", "yes")
+            text = diagnose_trading(traded, reach).formatted_report
+
+        paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page")
+        self.session_manager.record_interaction(player_id, f"/hoshi villager {type_name}", text, "VILLAGER", paged)
+        comps = MinecraftTextFormatter.parse_components(paged.full_page_text, f"/hoshi villager {type_name}")
+        tellraw = TellrawJsonBuilder.to_json(comps)
+        return CommandResult(status="SUCCESS", action="VILLAGER", message=paged.full_page_text, tellraw_json=tellraw, paged_result=paged)
+
     def _handle_stats(self) -> CommandResult:
         cache_stats = str(self.dispatcher.cache.get_stats()) if self.dispatcher.cache else "N/A"
         active = self.session_manager.active_session_count
@@ -297,6 +386,8 @@ class CommandRouter:
             "▸ §e/hoshi craft <物品>§r - 评估背包原料是否满足合成条件及缺失数量\n"
             "▸ §e/hoshi multiblock <方案>§r - 调阅多方块蓝图与背包材料校验\n"
             "▸ §e/hoshi pipeline <设备> [数量] [物流]§r - 诊断工业流水线供料瓶颈\n"
+            "▸ §e/hoshi mobfarm <挂机Y> <平台Y> [洞穴点亮]§r - 诊断清除球与生物Cap占用\n"
+            "▸ §e/hoshi villager <iron/breeder/trading>§r - 诊断刷铁机/繁殖/工作站死锁\n"
             "▸ §e/hoshi bom <方案> [数量]§r - 生成材料清单 (BOM)\n"
             "▸ §e/hoshi page <页码>§r - 翻页长篇内容\n"
             "▸ §e/hoshi nether [x y z]§r - 换算地狱传送门坐标\n"

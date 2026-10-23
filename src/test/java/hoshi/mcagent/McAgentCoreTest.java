@@ -27,6 +27,8 @@ import hoshi.mcagent.crafting.CraftingRecipe;
 import hoshi.mcagent.multiblock.MultiblockBlueprint;
 import hoshi.mcagent.multiblock.MultiblockValidator;
 import hoshi.mcagent.pipeline.PipelineThroughputAnalyzer;
+import hoshi.mcagent.farm.MobFarmDynamics;
+import hoshi.mcagent.villager.VillagerDynamics;
 
 import java.util.List;
 import java.util.Map;
@@ -98,6 +100,11 @@ public class McAgentCoreTest {
         testFastPathV18Rules();
         testPromptSafetyFenceV18();
         testCommandRouterV18MultiblockAndPipeline();
+        testMobFarmDynamics();
+        testVillagerDynamics();
+        testFastPathV19Rules();
+        testPromptSafetyFenceV19();
+        testCommandRouterV19MobFarmAndVillager();
 
         System.out.println(String.format("\n🎉 All %d/%d Java tests passed successfully!", testsPassed, testsRun));
     }
@@ -1133,6 +1140,154 @@ public class McAgentCoreTest {
         CommandResult helpRes = router.execute("Steve", "/hoshi help", null);
         assertTrue(helpRes.getMessage().contains("multiblock"), "Help mentions multiblock");
         assertTrue(helpRes.getMessage().contains("pipeline"), "Help mentions pipeline");
+    }
+
+
+    private static void testMobFarmDynamics() {
+        // 1. Zone evaluation
+        var r1 = MobFarmDynamics.evaluate(80.0, 64.0, false);
+        assertTrue(r1.zone() == MobFarmDynamics.DespawnZone.NO_SPAWN, "16 blocks is NO_SPAWN");
+        assertTrue(!r1.zone().viable(), "NO_SPAWN is not viable");
+
+        var r2 = MobFarmDynamics.evaluate(92.0, 64.0, false);
+        assertTrue(r2.zone() == MobFarmDynamics.DespawnZone.ACTIVE_GOLDEN, "28 blocks is ACTIVE_GOLDEN");
+        assertTrue(r2.zone().viable(), "ACTIVE_GOLDEN is viable");
+        assertTrue(r2.mobCapRisk(), "Unlit caves trigger mob cap risk in active zone");
+
+        var r3 = MobFarmDynamics.evaluate(120.0, 64.0, true);
+        assertTrue(r3.zone() == MobFarmDynamics.DespawnZone.RANDOM_DESPAWN, "56 blocks is RANDOM_DESPAWN");
+        assertTrue(!r3.mobCapRisk(), "Lit caves eliminate mob cap risk");
+
+        var r4 = MobFarmDynamics.evaluate(200.0, 64.0, false);
+        assertTrue(r4.zone() == MobFarmDynamics.DespawnZone.INSTANT_DESPAWN, "136 blocks is INSTANT_DESPAWN");
+        assertTrue(!r4.zone().viable(), "INSTANT_DESPAWN is not viable");
+
+        // Height advantage
+        var rDeep = MobFarmDynamics.evaluate(2.0, -58.0, true);
+        assertTrue(rDeep.heightAdvantageRatio() > 0.5, "Deep farm height ratio calculated");
+
+        // 2. Spawner evaluation
+        var sActive = MobFarmDynamics.evaluateSpawner(12.0, 4);
+        assertTrue(sActive.playerInRange(), "Player in spawner range <= 16");
+        assertTrue(!sActive.lightSuppressed(), "Light < 11 not suppressed");
+        assertTrue(sActive.active(), "Spawner is active");
+
+        var sFar = MobFarmDynamics.evaluateSpawner(22.0, 0);
+        assertTrue(!sFar.playerInRange(), "Player out of range > 16");
+        assertTrue(!sFar.active(), "Spawner inactive when far");
+
+        var sLit = MobFarmDynamics.evaluateSpawner(10.0, 12);
+        assertTrue(sLit.lightSuppressed(), "Light >= 11 is suppressed");
+        assertTrue(!sLit.active(), "Spawner inactive when lit");
+    }
+
+    private static void testVillagerDynamics() {
+        // 1. Iron Farm
+        var if1 = VillagerDynamics.diagnoseIronFarm(2, false, false);
+        assertTrue(!if1.healthy(), "Iron farm fails with < 3 villagers");
+        assertTrue(if1.issue().contains("村民数量不足"), "Mentions villager count deficit");
+
+        var if2 = VillagerDynamics.diagnoseIronFarm(3, false, true);
+        assertTrue(!if2.healthy(), "Iron farm fails without LOS break");
+        assertTrue(if2.issue().contains("永恒恐慌失眠"), "Mentions permanent panic insomnia");
+
+        var if3 = VillagerDynamics.diagnoseIronFarm(3, true, false);
+        assertTrue(!if3.healthy(), "Iron farm fails without recent sleep");
+        assertTrue(if3.issue().contains("未成功入睡过"), "Mentions sleep timer expired");
+
+        var if4 = VillagerDynamics.diagnoseIronFarm(3, true, true);
+        assertTrue(if4.healthy(), "Iron farm healthy with 3 villagers, LOS break & sleep");
+
+        // 2. Breeder
+        var b1 = VillagerDynamics.diagnoseBreeder(6, true, 1);
+        assertTrue(!b1.healthy(), "Breeder fails with 1 block ceiling");
+        assertTrue(b1.issue().contains("净空不足"), "Mentions ceiling height deficit");
+
+        var b2 = VillagerDynamics.diagnoseBreeder(2, true, 2);
+        assertTrue(!b2.healthy(), "Breeder fails with < 3 food");
+        assertTrue(b2.issue().contains("食物意愿储备不足"), "Mentions food willingness deficit");
+
+        var b3 = VillagerDynamics.diagnoseBreeder(6, false, 2);
+        assertTrue(!b3.healthy(), "Breeder fails with no unclaimed beds");
+        assertTrue(b3.issue().contains("无多余空闲床位"), "Mentions no excess beds");
+
+        var b4 = VillagerDynamics.diagnoseBreeder(6, true, 2);
+        assertTrue(b4.healthy(), "Breeder healthy with food, beds and 2-block ceiling");
+
+        // 3. Trading Hall
+        var t1 = VillagerDynamics.diagnoseTrading(true, false);
+        assertTrue(!t1.healthy(), "Trading deadlocked if traded before but cannot reach workstation");
+        assertTrue(t1.issue().contains("无法触碰工作台补货"), "Mentions restock unreachable");
+
+        var t2 = VillagerDynamics.diagnoseTrading(false, false);
+        assertTrue(!t2.healthy(), "Cannot claim profession without reachable workstation");
+
+        var t3 = VillagerDynamics.diagnoseTrading(true, true);
+        assertTrue(t3.healthy(), "Trading healthy when workstation is reachable");
+    }
+
+    private static void testFastPathV19Rules() {
+        var res1 = FastPathResolver.tryResolve("刷怪塔怎么不刷怪", null);
+        assertTrue(res1.isPresent(), "Resolved mob farm query");
+        assertTrue(res1.get().category().equals("HOSTILE_MOB_SPAWN_AND_DESPAWN_SPHERES"), "Category is HOSTILE_MOB_SPAWN_AND_DESPAWN_SPHERES");
+        assertTrue(res1.get().textResponse().contains("四大清除几何球"), "Mentions despawn spheres");
+
+        var res2 = FastPathResolver.tryResolve("刷怪笼怎么封", null);
+        assertTrue(res2.isPresent(), "Resolved spawner cage query");
+        assertTrue(res2.get().category().equals("SPAWNER_CAGE_MECHANICS_AND_SUPPRESSION"), "Category is SPAWNER_CAGE_MECHANICS_AND_SUPPRESSION");
+        assertTrue(res2.get().textResponse().contains("16 格以内"), "Mentions 16 block radius");
+
+        var res3 = FastPathResolver.tryResolve("村民失眠刷铁机失效", null);
+        assertTrue(res3.isPresent(), "Resolved iron farm query");
+        assertTrue(res3.get().category().equals("IRON_FARM_PANIC_AND_LOS_SLEEP"), "Category is IRON_FARM_PANIC_AND_LOS_SLEEP");
+        assertTrue(res3.get().textResponse().contains("致命失眠陷阱"), "Mentions insomnia trap");
+
+        var res4 = FastPathResolver.tryResolve("村民怎么不补货", null);
+        assertTrue(res4.isPresent(), "Resolved villager restock query");
+        assertTrue(res4.get().category().equals("VILLAGER_WORKSTATION_PATHING_AND_RESTOCK"), "Category is VILLAGER_WORKSTATION_PATHING_AND_RESTOCK");
+        assertTrue(res4.get().textResponse().contains("职业永久锁定"), "Mentions permanent lock");
+    }
+
+    private static void testPromptSafetyFenceV19() {
+        var fenced = PromptSafetyFence.build("测试刷怪与村民机制", null);
+        assertTrue(fenced.userPrompt().contains("【敌对生物生成动力学与 128 格清除球】"), "Injected mob farm rules");
+        assertTrue(fenced.userPrompt().contains("【刷怪笼生成空间与光照压制力学】"), "Injected spawner rules");
+        assertTrue(fenced.userPrompt().contains("【铁傀儡农场恐慌时序与破视睡眠机制】"), "Injected iron farm rules");
+        assertTrue(fenced.userPrompt().contains("【村民工作站点路径寻路与交易补货动力学】"), "Injected villager restock rules");
+    }
+
+    private static void testCommandRouterV19MobFarmAndVillager() {
+        McAgentCore core = new McAgentCore();
+        PlayerSessionManager sm = new PlayerSessionManager();
+        CommandRouter router = new CommandRouter(core, sm);
+
+        // 1. mobfarm command
+        var mfRes = router.execute("Steve", "/hoshi mobfarm 120 64 true", null);
+        assertTrue(mfRes.isSuccess(), "Mobfarm command succeeded");
+        assertTrue(mfRes.getAction().equals("MOBFARM"), "Action is MOBFARM");
+        assertTrue(mfRes.getMessage().contains("清除球区间判定"), "Message contains zone report");
+        assertTrue(mfRes.getMessage().contains("洞穴压制状态良好"), "Message confirms lit caves");
+
+        // 2. spawner command
+        var spRes = router.execute("Steve", "/hoshi spawner 10 12", null);
+        assertTrue(spRes.isSuccess(), "Spawner command succeeded");
+        assertTrue(spRes.getAction().equals("SPAWNER"), "Action is SPAWNER");
+        assertTrue(spRes.getMessage().contains("安全熄灭"), "Message confirms light suppression");
+
+        // 3. villager command
+        var vIronRes = router.execute("Steve", "/hoshi villager iron 3 false true", null);
+        assertTrue(vIronRes.isSuccess(), "Villager iron command succeeded");
+        assertTrue(vIronRes.getAction().equals("VILLAGER"), "Action is VILLAGER");
+        assertTrue(vIronRes.getMessage().contains("永恒恐慌失眠"), "Diagnoses permanent insomnia");
+
+        var vBreedRes = router.execute("Steve", "/hoshi villager breeder 6 true 1", null);
+        assertTrue(vBreedRes.isSuccess(), "Villager breeder command succeeded");
+        assertTrue(vBreedRes.getMessage().contains("净空不足"), "Diagnoses ceiling clearance");
+
+        // 4. Help mentions mobfarm and villager
+        var helpRes = router.execute("Steve", "/hoshi help", null);
+        assertTrue(helpRes.getMessage().contains("mobfarm"), "Help mentions mobfarm");
+        assertTrue(helpRes.getMessage().contains("villager"), "Help mentions villager");
     }
 
 }

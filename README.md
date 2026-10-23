@@ -4,7 +4,34 @@
 
 ---
 
-## 🌟 核心特性（v1.8.0）
+## 🌟 核心特性（v1.9.0）
+
+1. **敌对生物生成动力学、清除球与刷怪塔诊断引擎 (Mob Spawning Dynamics & Despawn Spheres Analyzer)**：
+   - **`MobFarmDynamics`**：
+     - **四大空间几何清除球判定**（以玩家挂机点为中心）：
+       - `0 ~ 24 格`：绝对禁刷盲区 (No-Spawn Sphere)，除刷怪笼外禁止自然生成任何生物；
+       - `24 ~ 32 格`：黄金高频活动圈 (Active Golden Sphere)，生物生成后立即自由寻路/活动，不触发随机消失，产出最高；
+       - `33 ~ 128 格`：随机清除区 (Random Despawn Sphere)，每 tick 1/800 几率尝试清除（约 28s 半衰期），需极速冲刷或摔落；
+       - `> 128 格`：瞬间蒸发视界 (Instant Despawn Horizon)，下一 tick 直接被垃圾回收强制清除！若挂机点距刷怪平台超过 128 格产出彻底为零；
+     - **单人 70 生物Cap与洞穴压制诊断**：挂机点周边 128 格球体内未点亮矿洞会迅速占满 70 只怪物上限导致平台停摆，精准提示高空挂机或矿洞照亮；
+     - **基岩低 Y 轴抽样优势**：计算地表包围盒与高度抽样率，深层基岩 ($Y=-58$) 挖空平台生成效率达常规地表的 3~4 倍；
+     - **刷怪笼激活与光照压制 (`evaluateSpawner`)**：16 格激活半径检测、9×9×3 盒体生物上限检查与 1.18+ 光照 $\ge 11$ 彻底熄灭压制评估；
+   - **`/hoshi mobfarm <挂机Y> <平台Y> [洞穴点亮]`** 与 **`/hoshi spawner <距离> <光照>`**：游戏内一键生成生电级刷怪动力学诊断报告！
+
+2. **村民铁傀儡农场恐慌时序与工作站死锁诊断器 (Villager AI Dynamics & Iron Farm Analyzer)**：
+   - **`VillagerDynamics`**：
+     - **刷铁机运行诊断 (`diagnoseIronFarm`)**：
+       - 硬性最低 3 名有效村民判定；
+       - **致命永恒失眠陷阱 (Permanent Panic Insomnia)**：村民 24 小时目视僵尸导致持续逃跑恐慌而无法入睡，超过 20 分钟后因失眠彻底停产！诊断报告明确提示采用活塞遮挡板或水流颠簸进行周期性视线遮断 (LOS Break)，让村民每隔数秒偷睡 1 tick；
+       - 20 分钟内入睡前置检查；
+     - **村民繁殖机诊断 (`diagnoseBreeder`)**：
+       - 床头上方至少 2 格充裕空气净空检测（小村民跳跃寻路硬性条件）；
+       - 食物意愿储量检测（3 面包或 12 胡萝卜/马铃薯）；
+       - 村庄未绑定空闲床位核验；
+     - **村民交易大厅诊断 (`diagnoseTrading`)**：
+       - 交易经验 $XP > 0$ 职业永久锁定检测；
+       - 工作台物理脚部可达性与每日日间 2 次补货时钟验证；
+   - **`/hoshi villager <iron/breeder/trading>`**：直击生存与交易大厅常见疑难杂症！
 
 1. **多方块蓝图对齐校验与装配引擎 (Multiblock Blueprint Validator & Assembly Guide)**：
    - **`MultiblockValidator`**：支持现代 Minecraft 原版与生电自动化 6 大核心多方块结构定义：
@@ -170,12 +197,12 @@ mc-agent-core/
 │   │   └── AsyncQueryDispatcher.java    # 整合缓存与限流的非阻塞异步分发器
 │   └── McAgentCore.java                 # 统一门面 Facade 入口
 ├── src/test/java/hoshi/mcagent/
-│   └── McAgentCoreTest.java             # Java 379 项全绿自动化回归测试
+│   └── McAgentCoreTest.java             # Java 493 项全绿自动化回归测试
 ├── mc_agent_core/                       # Python 仿真套件与原型（全模块 100% 对齐）
 │   ├── crafting.py                      # Python 版配方与合成充盈度
 │   ├── context.py                       # Python 版全维上下文快照
 │   └── ...
-└── tests/test_mc_agent_core.py          # Python 43 项端到端测试
+└── tests/test_mc_agent_core.py          # Python 53 项端到端测试
 ```
 
 ---
@@ -186,11 +213,11 @@ mc-agent-core/
 ```bash
 javac -encoding UTF-8 -d bin $(find src/main/java src/test/java -name '*.java')
 java -cp bin hoshi.mcagent.McAgentCoreTest
-# 🎉 All 428/428 Java tests passed successfully!
+# 🎉 All 493/493 Java tests passed successfully!
 ```
 
 ### Python 仿真套件
 ```bash
 PYTHONPATH=. uv run --with pytest pytest tests/ -v
-# 48 passed in 0.23s
+# 53 passed in 0.29s
 ```

@@ -20,7 +20,13 @@ from .rules import (
     NETHER_PORTAL_GEOMETRY_AND_CHUNKLOAD_RULES,
     SMELTING_ARRAY_THROUGHPUT_BOTTLENECK_RULES,
     HOPPER_MINECART_UNLOADER_DYNAMICS_RULES,
+    HOSTILE_MOB_SPAWN_AND_DESPAWN_SPHERES_RULES,
+    SPAWNER_CAGE_MECHANICS_AND_SUPPRESSION_RULES,
+    IRON_FARM_PANIC_AND_LOS_SLEEP_RULES,
+    VILLAGER_WORKSTATION_PATHING_AND_RESTOCK_RULES,
 )
+from .farm import DespawnZone, FarmReport, SpawnerReport, evaluate_mob_farm, evaluate_spawner
+from .villager import FarmType as VillagerFarmType, VillagerReport, diagnose_iron_farm, diagnose_breeder, diagnose_trading
 from .multiblock import MultiblockBlueprint, MultiblockReport, find_blueprint, validate_inventory
 from .pipeline import PipelineReport, analyze_smelting_array
 from .fast_path import FastPathResolver, Resolution
@@ -59,6 +65,20 @@ __all__ = [
     "NETHER_PORTAL_GEOMETRY_AND_CHUNKLOAD_RULES",
     "SMELTING_ARRAY_THROUGHPUT_BOTTLENECK_RULES",
     "HOPPER_MINECART_UNLOADER_DYNAMICS_RULES",
+    "HOSTILE_MOB_SPAWN_AND_DESPAWN_SPHERES_RULES",
+    "SPAWNER_CAGE_MECHANICS_AND_SUPPRESSION_RULES",
+    "IRON_FARM_PANIC_AND_LOS_SLEEP_RULES",
+    "VILLAGER_WORKSTATION_PATHING_AND_RESTOCK_RULES",
+    "DespawnZone",
+    "FarmReport",
+    "SpawnerReport",
+    "evaluate_mob_farm",
+    "evaluate_spawner",
+    "VillagerFarmType",
+    "VillagerReport",
+    "diagnose_iron_farm",
+    "diagnose_breeder",
+    "diagnose_trading",
     "MultiblockBlueprint",
     "MultiblockReport",
     "find_blueprint",

@@ -1004,3 +1004,159 @@ def test_command_router_v18_multiblock_and_pipeline():
     res_help = router.execute("Steve", "/hoshi help", None)
     assert "multiblock" in res_help.message
     assert "pipeline" in res_help.message
+
+
+def test_mob_farm_dynamics():
+    from mc_agent_core.farm import evaluate_mob_farm, evaluate_spawner, DespawnZone
+
+    # 1. Zone evaluation
+    r1 = evaluate_mob_farm(80.0, 64.0, False)
+    assert r1.zone == DespawnZone.NO_SPAWN
+    assert not r1.zone.viable
+
+    r2 = evaluate_mob_farm(92.0, 64.0, False)
+    assert r2.zone == DespawnZone.ACTIVE_GOLDEN
+    assert r2.zone.viable
+    assert r2.mob_cap_risk
+
+    r3 = evaluate_mob_farm(120.0, 64.0, True)
+    assert r3.zone == DespawnZone.RANDOM_DESPAWN
+    assert not r3.mob_cap_risk
+
+    r4 = evaluate_mob_farm(200.0, 64.0, False)
+    assert r4.zone == DespawnZone.INSTANT_DESPAWN
+    assert not r4.zone.viable
+
+    # Height advantage
+    r_deep = evaluate_mob_farm(2.0, -58.0, True)
+    assert r_deep.height_advantage_ratio > 0.5
+
+    # 2. Spawner evaluation
+    s_active = evaluate_spawner(12.0, 4)
+    assert s_active.player_in_range
+    assert not s_active.light_suppressed
+    assert s_active.active
+
+    s_far = evaluate_spawner(22.0, 0)
+    assert not s_far.player_in_range
+    assert not s_far.active
+
+    s_lit = evaluate_spawner(10.0, 12)
+    assert s_lit.light_suppressed
+    assert not s_lit.active
+
+
+def test_villager_dynamics():
+    from mc_agent_core.villager import diagnose_iron_farm, diagnose_breeder, diagnose_trading
+
+    # 1. Iron farm
+    if1 = diagnose_iron_farm(2, False, False)
+    assert not if1.healthy
+    assert "村民数量不足" in if1.issue
+
+    if2 = diagnose_iron_farm(3, False, True)
+    assert not if2.healthy
+    assert "永恒恐慌失眠" in if2.issue
+
+    if3 = diagnose_iron_farm(3, True, False)
+    assert not if3.healthy
+    assert "未成功入睡过" in if3.issue
+
+    if4 = diagnose_iron_farm(3, True, True)
+    assert if4.healthy
+
+    # 2. Breeder
+    b1 = diagnose_breeder(6, True, 1)
+    assert not b1.healthy
+    assert "净空不足" in b1.issue
+
+    b2 = diagnose_breeder(2, True, 2)
+    assert not b2.healthy
+    assert "食物意愿储备不足" in b2.issue
+
+    b3 = diagnose_breeder(6, False, 2)
+    assert not b3.healthy
+    assert "无多余空闲床位" in b3.issue
+
+    b4 = diagnose_breeder(6, True, 2)
+    assert b4.healthy
+
+    # 3. Trading
+    t1 = diagnose_trading(True, False)
+    assert not t1.healthy
+    assert "无法触碰工作台补货" in t1.issue
+
+    t2 = diagnose_trading(False, False)
+    assert not t2.healthy
+
+    t3 = diagnose_trading(True, True)
+    assert t3.healthy
+
+
+def test_fast_path_v19_rules():
+    # 1. Mob farm
+    r1 = FastPathResolver.try_resolve("刷怪塔怎么不刷怪？")
+    assert r1 is not None
+    assert r1.category == "HOSTILE_MOB_SPAWN_AND_DESPAWN_SPHERES"
+    assert "四大清除几何球" in r1.text_response
+
+    # 2. Spawner
+    r2 = FastPathResolver.try_resolve("刷怪笼怎么封？")
+    assert r2 is not None
+    assert r2.category == "SPAWNER_CAGE_MECHANICS_AND_SUPPRESSION"
+    assert "16 格以内" in r2.text_response
+
+    # 3. Iron farm
+    r3 = FastPathResolver.try_resolve("村民失眠刷铁机失效")
+    assert r3 is not None
+    assert r3.category == "IRON_FARM_PANIC_AND_LOS_SLEEP"
+    assert "致命失眠陷阱" in r3.text_response
+
+    # 4. Villager restock
+    r4 = FastPathResolver.try_resolve("村民怎么不补货？")
+    assert r4 is not None
+    assert r4.category == "VILLAGER_WORKSTATION_PATHING_AND_RESTOCK"
+    assert "职业永久锁定" in r4.text_response
+
+
+def test_prompt_safety_fence_v19():
+    fenced = PromptSafetyFence.build("测试", None)
+    assert "【敌对生物生成动力学与 128 格清除球】" in fenced.user_prompt
+    assert "【刷怪笼生成空间与光照压制力学】" in fenced.user_prompt
+    assert "【铁傀儡农场恐慌时序与破视睡眠机制】" in fenced.user_prompt
+    assert "【村民工作站点路径寻路与交易补货动力学】" in fenced.user_prompt
+
+
+def test_command_router_v19_mobfarm_and_villager():
+    dispatcher = AsyncQueryDispatcher()
+    router = CommandRouter(dispatcher)
+
+    # 1. mobfarm
+    res_mf = router.execute("Steve", "/hoshi mobfarm 120 64 true", None)
+    assert res_mf.is_success
+    assert res_mf.action == "MOBFARM"
+    assert "清除球区间判定" in res_mf.message
+    assert "洞穴压制状态良好" in res_mf.message
+
+    # 2. spawner
+    res_sp = router.execute("Steve", "/hoshi spawner 10 12", None)
+    assert res_sp.is_success
+    assert res_sp.action == "SPAWNER"
+    assert "安全熄灭" in res_sp.message
+
+    # 3. villager iron
+    res_v_iron = router.execute("Steve", "/hoshi villager iron 3 false true", None)
+    assert res_v_iron.is_success
+    assert res_v_iron.action == "VILLAGER"
+    assert "永恒恐慌失眠" in res_v_iron.message
+
+    # 4. villager breeder
+    res_v_breed = router.execute("Steve", "/hoshi villager breeder 6 true 1", None)
+    assert res_v_breed.is_success
+    assert res_v_breed.action == "VILLAGER"
+    assert "净空不足" in res_v_breed.message
+
+    # 5. Help
+    res_help = router.execute("Steve", "/hoshi help", None)
+    assert "mobfarm" in res_help.message
+    assert "villager" in res_help.message
