@@ -334,7 +334,7 @@ class FastPathResolver:
             return Resolution(text_response=resp, suggested_command="/locate structure minecraft:end_city", category="END_DRAGON_GATEWAY")
 
         # 19. Conduit Structure & Power
-        if any(k in q for k in ("潮涌核心", "潮涌能量", "导管怎么激活", "潮涌核心怎么摆", "海洋之心", "鹦鹉螺壳", "海晶石框架")):
+        if any(k in q for k in ("潮涌核心", "潮涌能量", "导管怎么激活", "潮涌核心怎么摆", "海洋之心", "鹦鹉螺壳", "海晶石框架")) and not any(k in q for k in ("42", "满级", "三环", "攻击", "电击")):
             resp = (
                 "§3【潮涌核心搭建与水下主宰力学】§r\n"
                 "▸ §e核心合成§r：1 个【海洋之心】（埋藏的宝藏箱）+ 8 个【鹦鹉螺壳】（钓鱼或溺尸掉落）。\n"
@@ -541,6 +541,47 @@ class FastPathResolver:
                 "▸ §bJava 版 1-Tick 吐方块§r：粘性活塞接收 1-tick 极短脉冲时推出方块无暇收回（T-Flip-Flop 双稳态开关）。"
             )
             return Resolution(text_response=resp, suggested_command="/give @s minecraft:observer 2", category="OBSERVER_PULSE_CLOCKS")
+
+
+        # 39. Conduit Multiblock Full Power & Defensive Strike
+        if any(k in q for k in ("潮涌核心42", "潮涌核心满级", "潮涌核心三环", "潮涌核心攻击", "潮涌核心电击", "潮涌核心放电")):
+            resp = (
+                "§3【潮涌核心多方块环架与水下主宰力学】\n"
+                "▸ §e激活三要素§r：中心潮涌核心置于 3x3x3 水体中央；外部由 5x5x5 海晶石系方块环绕。\n"
+                "▸ §b阶梯激活与满级三环§r：最少 16 块启动单环 (32格半径)；满级 42 块构成三环相互垂直闭合框架 (96格半径最大范围)。\n"
+                "▸ §d防卫电击伤害§r：42 块满级框架下，对 8 格内侵入水体或雨中的敌对生物（溺尸、守卫者等）每 2 秒施加 4 点 (2心) 电击伤害！"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:prismarine 42", category="CONDUIT_MULTIBLOCK_ACTIVATION")
+
+        # 40. Nether Portal Geometry & Chunk Loading
+        if any(k in q for k in ("传送门最小", "传送门最大", "地狱门尺寸", "传送门尺寸", "传送门强加载", "传送门区块加载")):
+            resp = (
+                "§5【下界传送门几何极值与区块强加载动力学】\n"
+                "▸ §e几何极值规格§r：内部传送门帷幕最小 2x3（总框架 4x5，四角留空只需 10 块黑曜石），最大 21x21（总框架 23x23）。\n"
+                "▸ §a点火与熄灭§r：打火石、火焰弹或可燃方块引燃即可点亮；任一黑曜石破损或遭遇爆炸瞬间熄灭。\n"
+                "▸ §b跨维度常载区块加载器§r：实体/物品穿过传送门时，目标维度对应区块立即获得持续 15 秒（300 ticks）的实体处理强加载！"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:obsidian 14", category="NETHER_PORTAL_GEOMETRY_AND_CHUNKLOAD")
+
+        # 41. Smelting Array Throughput & Bottleneck
+        if any(k in q for k in ("熔炉阵列供料", "漏斗供料瓶颈", "熔炉漏斗跟不上", "高炉供料", "熔炼阵列瓶颈", "熔炉阵列怎么设计")):
+            resp = (
+                "§6【熔炼炉阵列吞吐瓶颈与供料动力学】\n"
+                "▸ §e单机消耗基准§r：普通熔炉 10.0s/物 (0.1 items/s)；高炉/烟熏炉 5.0s/物 (0.2 items/s)。\n"
+                "▸ §c单漏斗输送致命瓶颈§r：单漏斗固定吞吐仅为 2.5 items/s！进料主干最多仅能供给 25 台普通熔炉，或仅能供给 12 台满载高炉！\n"
+                "▸ §a工业级优化拓扑§r：若超过 12 台高炉（如 16 台高炉需 3.2 items/s），必须采用【双漏斗对称并联】(5.0/s，支持 25 台) 或【漏斗矿车穿透极速分流】(20.0/s，支持 100 台)！"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:hopper 16", category="SMELTING_ARRAY_THROUGHPUT_BOTTLENECK")
+
+        # 42. Hopper Minecart Unloader Dynamics
+        if any(k in q for k in ("漏斗矿车卸料", "漏斗矿车吸物", "漏斗矿车站", "漏斗矿车速度", "矿车卸料站", "漏斗矿车穿透")):
+            resp = (
+                "§e【漏斗矿车穿透吸物与单次往返卸料站动力学】\n"
+                "▸ §e8倍极速吸物§r：漏斗矿车吸取速率为每 tick 1 个物品 (20 items/s)，为原版漏斗 (2.5/s) 的整整 8 倍！\n"
+                "▸ §b隔空穿透特性§r：能够隔着正上方 1 个完整实心方块直接吸取上方容器或铁轨表面掉落物。\n"
+                "▸ §a单次往返极速卸料站§r：矿车驶入停在漏斗上方，比较器检测漏斗非空触发充能铁轨断电锁车；漏斗排空瞬间比较器熄灭，非门恢复铁轨供电弹射矿车巡回！"
+            )
+            return Resolution(text_response=resp, suggested_command="/give @s minecraft:hopper_minecart 1", category="HOPPER_MINECART_UNLOADER_DYNAMICS")
 
         return None
 

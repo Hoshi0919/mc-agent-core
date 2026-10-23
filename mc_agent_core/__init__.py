@@ -16,7 +16,13 @@ from .rules import (
     COMPARATOR_SUBTRACTION_ALGEBRA_RULES,
     WATER_BUBBLE_COLUMN_ELEVATOR_RULES,
     OBSERVER_PULSE_CLOCKS_RULES,
+    CONDUIT_MULTIBLOCK_ACTIVATION_RULES,
+    NETHER_PORTAL_GEOMETRY_AND_CHUNKLOAD_RULES,
+    SMELTING_ARRAY_THROUGHPUT_BOTTLENECK_RULES,
+    HOPPER_MINECART_UNLOADER_DYNAMICS_RULES,
 )
+from .multiblock import MultiblockBlueprint, MultiblockReport, find_blueprint, validate_inventory
+from .pipeline import PipelineReport, analyze_smelting_array
 from .fast_path import FastPathResolver, Resolution
 from .fence import PromptSafetyFence, FencedPrompt
 from .formatter import MinecraftTextFormatter, ChatComponent
@@ -49,6 +55,16 @@ __all__ = [
     "COMPARATOR_SUBTRACTION_ALGEBRA_RULES",
     "WATER_BUBBLE_COLUMN_ELEVATOR_RULES",
     "OBSERVER_PULSE_CLOCKS_RULES",
+    "CONDUIT_MULTIBLOCK_ACTIVATION_RULES",
+    "NETHER_PORTAL_GEOMETRY_AND_CHUNKLOAD_RULES",
+    "SMELTING_ARRAY_THROUGHPUT_BOTTLENECK_RULES",
+    "HOPPER_MINECART_UNLOADER_DYNAMICS_RULES",
+    "MultiblockBlueprint",
+    "MultiblockReport",
+    "find_blueprint",
+    "validate_inventory",
+    "PipelineReport",
+    "analyze_smelting_array",
     "FastPathResolver",
     "Resolution",
     "PromptSafetyFence",

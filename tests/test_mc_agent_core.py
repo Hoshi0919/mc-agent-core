@@ -1,5 +1,8 @@
 import pytest
 from mc_agent_core import (
+    find_blueprint,
+    validate_inventory,
+    analyze_smelting_array,
     TellrawJsonBuilder,
     ChatPaginator,
     QueryCache,
@@ -887,3 +890,117 @@ def test_command_router_v17_logistics_inspect():
     assert res.is_success
     assert "红石/物流" in res.message
     assert "已锁定" in res.message
+
+
+def test_multiblock_validator():
+    conduit = find_blueprint("conduit")
+    assert conduit is not None
+    assert conduit.total_block_count == 43
+    assert conduit.width_x == 5
+
+    # Alias
+    assert find_blueprint("潮涌核心").id == "conduit"
+    assert find_blueprint("地狱门").id == "nether_portal"
+    assert find_blueprint("信标").id == "beacon_tier4"
+
+    # Short inventory
+    inv_short = InventorySnapshot(main_inventory={
+        0: ItemInstance(item_id="minecraft:prismarine", count=20),
+        1: ItemInstance(item_id="minecraft:conduit", count=1)
+    })
+    rep_short = validate_inventory(conduit, inv_short)
+    assert not rep_short.is_fully_ready
+    assert rep_short.gaps[0].missing_count == 22
+    assert "还缺 22 个" in rep_short.format_report()
+
+    # Ready inventory
+    inv_ready = InventorySnapshot(main_inventory={
+        0: ItemInstance(item_id="minecraft:prismarine", count=30),
+        1: ItemInstance(item_id="minecraft:prismarine_bricks", count=12),
+        2: ItemInstance(item_id="minecraft:conduit", count=1)
+    })
+    rep_ready = validate_inventory(conduit, inv_ready)
+    assert rep_ready.is_fully_ready
+    assert "100% 齐备" in rep_ready.format_report()
+
+
+def test_pipeline_throughput_analyzer():
+    # 16 Blast furnaces on single hopper (2.5 vs 3.2 items/s)
+    rep1 = analyze_smelting_array(16, "blast_furnace", "hopper")
+    assert rep1.has_bottleneck
+    assert rep1.max_supported_machines == 12
+    assert 21.0 < rep1.deficit_percentage < 22.0
+    assert "瓶颈告警" in rep1.format_report()
+
+    # 16 Blast furnaces on dual hoppers (5.0 vs 3.2 items/s)
+    rep2 = analyze_smelting_array(16, "blast_furnace", "dual_hopper")
+    assert not rep2.has_bottleneck
+    assert rep2.max_supported_machines == 25
+    assert "物流充盈" in rep2.format_report()
+
+    # 64 Blast furnaces on minecart
+    rep3 = analyze_smelting_array(64, "blast_furnace", "minecart")
+    assert not rep3.has_bottleneck
+    assert rep3.max_supported_machines == 100
+
+
+def test_fast_path_v18_rules():
+    # 1. Conduit 42
+    r1 = FastPathResolver.try_resolve("潮涌核心42块怎么摆？")
+    assert r1 is not None
+    assert r1.category == "CONDUIT_MULTIBLOCK_ACTIVATION"
+    assert "42 块" in r1.text_response
+    assert "三环" in r1.text_response
+
+    # 2. Nether portal max size
+    r2 = FastPathResolver.try_resolve("传送门最大尺寸是多少？")
+    assert r2 is not None
+    assert r2.category == "NETHER_PORTAL_GEOMETRY_AND_CHUNKLOAD"
+    assert "21x21" in r2.text_response
+    assert "区块强加载" in r2.text_response
+
+    # 3. Smelting array bottleneck
+    r3 = FastPathResolver.try_resolve("熔炉阵列供料漏斗跟不上怎么办？")
+    assert r3 is not None
+    assert r3.category == "SMELTING_ARRAY_THROUGHPUT_BOTTLENECK"
+    assert "2.5 items/s" in r3.text_response
+    assert "双漏斗对称并联" in r3.text_response
+
+    # 4. Hopper minecart unloader
+    r4 = FastPathResolver.try_resolve("漏斗矿车卸料站怎么做？")
+    assert r4 is not None
+    assert r4.category == "HOPPER_MINECART_UNLOADER_DYNAMICS"
+    assert "20 items/s" in r4.text_response
+    assert "比较器" in r4.text_response
+
+
+def test_prompt_safety_fence_v18():
+    fenced = PromptSafetyFence.build("测试", None)
+    assert "【潮涌核心多方块环架与水下主宰力学】" in fenced.user_prompt
+    assert "【下界传送门几何极值与区块强加载动力学】" in fenced.user_prompt
+    assert "【熔炼炉阵列吞吐瓶颈与供料动力学】" in fenced.user_prompt
+    assert "【漏斗矿车穿透吸物与单次往返卸料站动力学】" in fenced.user_prompt
+
+
+def test_command_router_v18_multiblock_and_pipeline():
+    dispatcher = AsyncQueryDispatcher()
+    router = CommandRouter(dispatcher)
+
+    # Multiblock
+    res_mb = router.execute("Steve", "/hoshi multiblock conduit", None)
+    assert res_mb.is_success
+    assert res_mb.action == "MULTIBLOCK"
+    assert "潮涌核心满级三环" in res_mb.message
+    assert "几何规格" in res_mb.message
+
+    # Pipeline
+    res_pipe = router.execute("Steve", "/hoshi pipeline blast_furnace 16 hopper", None)
+    assert res_pipe.is_success
+    assert res_pipe.action == "PIPELINE"
+    assert "高炉冶炼阵列" in res_pipe.message
+    assert "瓶颈告警" in res_pipe.message
+
+    # Help
+    res_help = router.execute("Steve", "/hoshi help", None)
+    assert "multiblock" in res_help.message
+    assert "pipeline" in res_help.message

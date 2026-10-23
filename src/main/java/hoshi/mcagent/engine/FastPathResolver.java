@@ -332,7 +332,7 @@ public final class FastPathResolver {
         }
 
         // 19. Conduit Structure & Power
-        if (q.contains("潮涌核心") || q.contains("潮涌能量") || q.contains("导管怎么激活") || q.contains("潮涌核心怎么摆") || q.contains("海洋之心") || q.contains("鹦鹉螺壳") || q.contains("海晶石框架")) {
+        if ((q.contains("潮涌核心") || q.contains("潮涌能量") || q.contains("导管怎么激活") || q.contains("潮涌核心怎么摆") || q.contains("海洋之心") || q.contains("鹦鹉螺壳") || q.contains("海晶石框架")) && !q.contains("42") && !q.contains("满级") && !q.contains("三环") && !q.contains("攻击") && !q.contains("电击")) {
             String resp = "§3【潮涌核心搭建与水下主宰力学】§r\n" +
                     "▸ §e核心合成§r：1 个海洋之心（藏宝箱）+ 8 个鹦鹉螺壳（钓鱼或溺尸掉落）。\\n\" +\n" +
                     "▸ §a框架搭建§r：核心置于水中心，用海晶石搭建 5×5 正交环。16 块启动基础范围 32 格，42 块满级范围达 96 格！\\n\" +\n" +
@@ -506,6 +506,47 @@ public final class FastPathResolver {
                     "▸ §a面迎面 2-Tick 极速时钟§r：两个侦测器侦测脸紧贴相对放置，互为更新源产生 10Hz 极速振荡！活塞推移其一可作为物理启停开关。\n" +
                     "▸ §bJava 版 1-Tick 吐方块§r：粘性活塞接收 1-tick 极短脉冲时推出方块无暇收回（T-Flip-Flop 双稳态开关）。";
             return Optional.of(new Resolution(resp, "/give @s minecraft:observer 2", "OBSERVER_PULSE_CLOCKS"));
+        }
+
+
+        // 39. Conduit Multiblock Full Power & Defensive Strike
+        if (q.contains("潮涌核心42") || q.contains("潮涌核心满级") || q.contains("潮涌核心三环") ||
+                q.contains("潮涌核心攻击") || q.contains("潮涌核心电击") || q.contains("潮涌核心放电")) {
+            String resp = "§3【潮涌核心多方块环架与水下主宰力学】\n" +
+                    "▸ §e激活三要素§r：中心潮涌核心置于 3x3x3 水体中央；外部由 5x5x5 海晶石系方块环绕。\n" +
+                    "▸ §b阶梯激活与满级三环§r：最少 16 块启动单环 (32格半径)；满级 42 块构成三环相互垂直闭合框架 (96格半径最大范围)。\n" +
+                    "▸ §d防卫电击伤害§r：42 块满级框架下，对 8 格内侵入水体或雨中的敌对生物（溺尸、守卫者等）每 2 秒施加 4 点 (2心) 电击伤害！";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:prismarine 42", "CONDUIT_MULTIBLOCK_ACTIVATION"));
+        }
+
+        // 40. Nether Portal Geometry & Chunk Loading
+        if (q.contains("传送门最小") || q.contains("传送门最大") || q.contains("地狱门尺寸") ||
+                q.contains("传送门尺寸") || q.contains("传送门强加载") || q.contains("传送门区块加载")) {
+            String resp = "§5【下界传送门几何极值与区块强加载动力学】\n" +
+                    "▸ §e几何极值规格§r：内部传送门帷幕最小 2x3（总框架 4x5，四角留空只需 10 块黑曜石），最大 21x21（总框架 23x23）。\n" +
+                    "▸ §a点火与熄灭§r：打火石、火焰弹或可燃方块引燃即可点亮；任一黑曜石破损或遭遇爆炸瞬间熄灭。\n" +
+                    "▸ §b跨维度常载区块加载器§r：实体/物品穿过传送门时，目标维度对应区块立即获得持续 15 秒（300 ticks）的实体处理强加载！";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:obsidian 14", "NETHER_PORTAL_GEOMETRY_AND_CHUNKLOAD"));
+        }
+
+        // 41. Smelting Array Throughput & Bottleneck
+        if (q.contains("熔炉阵列供料") || q.contains("漏斗供料瓶颈") || q.contains("熔炉漏斗跟不上") ||
+                q.contains("高炉供料") || q.contains("熔炼阵列瓶颈") || q.contains("熔炉阵列怎么设计")) {
+            String resp = "§6【熔炼炉阵列吞吐瓶颈与供料动力学】\n" +
+                    "▸ §e单机消耗基准§r：普通熔炉 10.0s/物 (0.1 items/s)；高炉/烟熏炉 5.0s/物 (0.2 items/s)。\n" +
+                    "▸ §c单漏斗输送致命瓶颈§r：单漏斗固定吞吐仅为 2.5 items/s！进料主干最多仅能供给 25 台普通熔炉，或仅能供给 12 台满载高炉！\n" +
+                    "▸ §a工业级优化拓扑§r：若超过 12 台高炉（如 16 台高炉需 3.2 items/s），必须采用【双漏斗对称并联】(5.0/s，支持 25 台) 或【漏斗矿车穿透极速分流】(20.0/s，支持 100 台)！";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:hopper 16", "SMELTING_ARRAY_THROUGHPUT_BOTTLENECK"));
+        }
+
+        // 42. Hopper Minecart Unloader Dynamics
+        if (q.contains("漏斗矿车卸料") || q.contains("漏斗矿车吸物") || q.contains("漏斗矿车站") ||
+                q.contains("漏斗矿车速度") || q.contains("矿车卸料站") || q.contains("漏斗矿车穿透")) {
+            String resp = "§e【漏斗矿车穿透吸物与单次往返卸料站动力学】\n" +
+                    "▸ §e8倍极速吸物§r：漏斗矿车吸取速率为每 tick 1 个物品 (20 items/s)，为原版漏斗 (2.5/s) 的整整 8 倍！\n" +
+                    "▸ §b隔空穿透特性§r：能够隔着正上方 1 个完整实心方块直接吸取上方容器或铁轨表面掉落物。\n" +
+                    "▸ §a单次往返极速卸料站§r：矿车驶入停在漏斗上方，比较器检测漏斗非空触发充能铁轨断电锁车；漏斗排空瞬间比较器熄灭，非门恢复铁轨供电弹射矿车巡回！";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:hopper_minecart 1", "HOPPER_MINECART_UNLOADER_DYNAMICS"));
         }
 
         return Optional.empty();

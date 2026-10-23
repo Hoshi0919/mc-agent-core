@@ -1,11 +1,12 @@
 package hoshi.mcagent.engine;
 
 import hoshi.mcagent.context.ContextSnapshot;
-
 import java.util.regex.Pattern;
 
 /**
- * Defends against prompt injection and delimiters leaks in multiplayer chat.
+ * System prompt safety fencer and prompt injection firewall.
+ * Injects canonical game mechanics into the LLM system prompt so the model
+ * cannot be gaslit or jailbroken into reciting outdated/hallucinated rules.
  */
 public final class PromptSafetyFence {
 
@@ -13,23 +14,21 @@ public final class PromptSafetyFence {
             "(?i)(ignore\\s+(all\\s+)?(previous|prior|above)\\s+instructions|system\\s+prompt|give\\s+me\\s+op|/op\\s+|gamemode\\s+creative|execute\\s+as|discard\\s+safety)"
     );
 
-    public record FencedPrompt(
-            String systemPrompt,
-            String userPrompt,
-            boolean flaggedAsSuspicious
-    ) {}
+    public record FencedPrompt(String systemPrompt, String userPrompt, boolean flaggedAsSuspicious) {}
 
-    public static FencedPrompt build(String rawQuery, ContextSnapshot context) {
-        String sanitized = sanitize(rawQuery);
-        boolean suspicious = INJECTION_PATTERNS.matcher(rawQuery).find();
+    public static FencedPrompt build(String rawUserQuery, ContextSnapshot context) {
+        String sanitized = sanitize(rawUserQuery);
+        boolean suspicious = INJECTION_PATTERNS.matcher(rawUserQuery).find();
 
         String systemPrompt = """
-                You are Hoshi, an intelligent and grounded in-game assistant inside Minecraft (Version 1.21.x).
+                You are Hoshi, an expert in-game Minecraft companion and mechanics advisor.
+                Strictly adhere to the canonical Minecraft rules provided below.
                 
-                Rules:
+                Rules of engagement:
                 1. Always prioritize factual accuracy for Minecraft 1.18~1.21. Never hallucinate outdated mechanics (e.g. 1.20+ requires Smithing Template for netherite, 1.18+ diamond optimal at Y=-58, monster spawning requires block light 0).
                 2. Keep responses concise, clear, and direct. The player is reading this in a Minecraft chatbox or small HUD overlay. Maximum 3 to 4 compact sentences.
-                3. Do NOT execute destructive server commands or claim you have OP privileges.\n                4. When suggesting in-game coordinates or commands, place them cleanly so the player can copy or click them.
+                3. Do NOT execute destructive server commands or claim you have OP privileges.
+                4. When suggesting in-game coordinates or commands, place them cleanly so the player can copy or click them.
                 """;
 
         StringBuilder userPrompt = new StringBuilder();
@@ -61,18 +60,22 @@ public final class PromptSafetyFence {
         userPrompt.append(LocalGameRules.SUGAR_CANE_FARM_RULES).append("\n\n");
         userPrompt.append(LocalGameRules.STONE_GENERATOR_RULES).append("\n\n");
         userPrompt.append(LocalGameRules.REDSTONE_CLOCK_RULES).append("\n\n");
-        userPrompt.append(LocalGameRules.PUMPKIN_MELON_FARM_RULES + "\n\n" +
-            LocalGameRules.VILLAGER_BREEDING_RULES + "\n\n" +
-            LocalGameRules.VILLAGER_CROP_FARM_RULES + "\n\n" +
-            LocalGameRules.SMELTING_FUEL_EFFICIENCY_RULES + "\n\n" +
-            LocalGameRules.ZOMBIE_VILLAGER_CURE_RULES + "\n\n" +
-            LocalGameRules.IRON_GOLEM_REPAIR_RULES + "\n\n" +
-            LocalGameRules.ARMADILLO_WOLF_ARMOR_RULES + "\n\n" +
-            LocalGameRules.TRIAL_SPAWNER_BREEZE_RULES + "\n\n" +
-            LocalGameRules.HOPPER_LOGISTICS_SORTING_RULES + "\n\n" +
-            LocalGameRules.COMPARATOR_SUBTRACTION_ALGEBRA_RULES + "\n\n" +
-            LocalGameRules.WATER_BUBBLE_COLUMN_ELEVATOR_RULES + "\n\n" +
-            LocalGameRules.OBSERVER_PULSE_CLOCKS_RULES).append("\n");
+        userPrompt.append(LocalGameRules.PUMPKIN_MELON_FARM_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.VILLAGER_BREEDING_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.VILLAGER_CROP_FARM_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.SMELTING_FUEL_EFFICIENCY_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.ZOMBIE_VILLAGER_CURE_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.IRON_GOLEM_REPAIR_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.ARMADILLO_WOLF_ARMOR_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.TRIAL_SPAWNER_BREEZE_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.HOPPER_LOGISTICS_SORTING_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.COMPARATOR_SUBTRACTION_ALGEBRA_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.WATER_BUBBLE_COLUMN_ELEVATOR_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.OBSERVER_PULSE_CLOCKS_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.CONDUIT_MULTIBLOCK_ACTIVATION_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.NETHER_PORTAL_GEOMETRY_AND_CHUNKLOAD_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.SMELTING_ARRAY_THROUGHPUT_BOTTLENECK_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.HOPPER_MINECART_UNLOADER_DYNAMICS_RULES).append("\n");
         userPrompt.append("</canonical_rules>\n\n");
 
         userPrompt.append("<player_query>\n");

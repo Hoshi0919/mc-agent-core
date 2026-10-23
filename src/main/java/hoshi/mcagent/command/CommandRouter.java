@@ -2,6 +2,9 @@ package hoshi.mcagent.command;
 
 import hoshi.mcagent.McAgentCore;
 import hoshi.mcagent.async.AsyncQueryDispatcher;
+import hoshi.mcagent.multiblock.MultiblockBlueprint;
+import hoshi.mcagent.multiblock.MultiblockValidator;
+import hoshi.mcagent.pipeline.PipelineThroughputAnalyzer;
 import hoshi.mcagent.bom.BlueprintBOM;
 import hoshi.mcagent.bom.MaterialCalculator;
 import hoshi.mcagent.context.ContextSnapshot;
@@ -156,6 +159,23 @@ public class CommandRouter {
                     } catch (NumberFormatException ignored) {}
                 }
                 return handleBOM(playerId, blueprint, scale);
+            }
+            case "multiblock":
+            case "mb": {
+                String bpName = argStart + 1 < tokens.length ? tokens[argStart + 1] : "conduit";
+                return handleMultiblock(playerId, bpName, snapshot);
+            }
+            case "pipeline":
+            case "pipe": {
+                String machine = argStart + 1 < tokens.length ? tokens[argStart + 1] : "furnace";
+                int count = 16;
+                if (argStart + 2 < tokens.length) {
+                    try {
+                        count = Integer.parseInt(tokens[argStart + 2]);
+                    } catch (NumberFormatException ignored) {}
+                }
+                String transport = argStart + 3 < tokens.length ? tokens[argStart + 3] : "hopper";
+                return handlePipeline(playerId, machine, count, transport);
             }
             case "nether":
             case "portal": {
@@ -323,6 +343,33 @@ public class CommandRouter {
         }
     }
 
+    private CommandResult handleMultiblock(String playerId, String query, ContextSnapshot snapshot) {
+        var bpOpt = MultiblockValidator.findBlueprint(query);
+        if (bpOpt.isEmpty()) {
+            return CommandResult.error("MULTIBLOCK", "§c未识别的多方块蓝图: " + query + "。可选: conduit (潮涌), beacon (信标), nether_portal (地狱门), end_portal (末地门), wither (凋灵), golem (铁傀儡)");
+        }
+        MultiblockBlueprint bp = bpOpt.get();
+        MultiblockValidator.MultiblockReport report = MultiblockValidator.validateInventory(bp, snapshot != null ? snapshot.inventory() : null);
+        String text = report.formatReport();
+        ChatPaginator.PagedResult paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page");
+        sessionManager.recordInteraction(playerId, "/hoshi multiblock " + bp.id(), text, "MULTIBLOCK", paged);
+
+        var comps = MinecraftTextFormatter.parseComponents(paged.fullPageText(), "/hoshi multiblock " + bp.id());
+        String tellraw = TellrawJsonBuilder.toJson(comps);
+        return CommandResult.success("MULTIBLOCK", paged.fullPageText(), "/hoshi multiblock " + bp.id(), tellraw, paged);
+    }
+
+    private CommandResult handlePipeline(String playerId, String machine, int count, String transport) {
+        PipelineThroughputAnalyzer.PipelineReport report = PipelineThroughputAnalyzer.analyzeSmeltingArray(count, machine, transport);
+        String text = report.formatReport();
+        ChatPaginator.PagedResult paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page");
+        sessionManager.recordInteraction(playerId, "/hoshi pipeline " + machine + " " + count + " " + transport, text, "PIPELINE", paged);
+
+        var comps = MinecraftTextFormatter.parseComponents(paged.fullPageText(), "/hoshi pipeline " + machine + " " + count + " " + transport);
+        String tellraw = TellrawJsonBuilder.toJson(comps);
+        return CommandResult.success("PIPELINE", paged.fullPageText(), null, tellraw, paged);
+    }
+
     private CommandResult handleStats() {
         String cacheStats = core.getCache().getStats().toString();
         int activeSessions = sessionManager.getActiveSessionCount();
@@ -338,6 +385,8 @@ public class CommandRouter {
                 "▸ §e/hoshi craft <物品>§r - 评估背包原料是否满足合成条件及缺失数量\n" +
                 "▸ §e/hoshi bom <方案> [数量]§r - 生成材料清单 (BOM)\n" +
                 "▸ §e/hoshi page <页码>§r - 翻页长篇内容\n" +
+                "▸ §e/hoshi multiblock <方案>§r - 调阅多方块蓝图与背包材料校验\n" +
+                "▸ §e/hoshi pipeline <设备> [数量] [物流]§r - 诊断工业流水线供料瓶颈\n" +
                 "▸ §e/hoshi nether [x y z]§r - 换算地狱传送门坐标\n" +
                 "▸ §e/hoshi clear§r - 清理会话与翻页缓存\n" +
                 "▸ §e/hoshi stats§r - 查看缓存与度量统计\n" +

@@ -4,7 +4,24 @@
 
 ---
 
-## 🌟 核心特性（v1.7.0）
+## 🌟 核心特性（v1.8.0）
+
+1. **多方块蓝图对齐校验与装配引擎 (Multiblock Blueprint Validator & Assembly Guide)**：
+   - **`MultiblockValidator`**：支持现代 Minecraft 原版与生电自动化 6 大核心多方块结构定义：
+     - **潮涌核心满级三环 (Conduit 3-Ring Frame)**：5×5×5 几何空间、42 块海晶石系方块环形闭合、中心 3×3×3 水体要求；激活 96 格最大有效半径与每 2 秒 4 点敌对生物电击伤害；
+     - **四级信标金字塔 (Tier 4 Beacon Pyramid)**：9×9 底座 4 层金字塔 (164 矿物块)，天顶 320 格直视无阻挡检测；激活急迫 II (Haste II) 与生命恢复，实现秒挖深板岩；
+     - **下界传送门极值架构 (Nether Portal)**：最小 4×5 (内框 2×3，10~14 黑曜石) 至最大 23×23 (内框 21×21)；实体穿过触发 15 秒目标区块强加载 (Chunk Loader)；
+     - **末地传送门悬空环 (End Portal Ring)**：12 个框架内倾朝向 (facing) 判定与末影之眼填充，通往末影龙中心岛黑曜石平台；
+     - **凋灵召唤构架 (Wither Assembly)**：4 灵魂沙/灵魂土 T 型骨架 + 3 凋灵骷髅头颅，最后放置判定与无敌充能自爆时钟；
+     - **铁傀儡装配构架 (Iron Golem Assembly)**：4 铁块 T 型摆放 + 雕刻南瓜，2×3×2 实体空间排他校验。
+   - **`validateInventory(bp, inv)` 背包材料智能核验**：精准比对玩家现有背包材料，计算完成度百分比，标出具体缺失材料清单（支持海晶石系与矿物块系智能别名混搭！）；
+   - **`/hoshi multiblock <方案名>`**：即时调阅 3D 几何规格、材料满足度与激活装配指引。
+
+2. **工业流水线与物流吞吐瓶颈分析引擎 (Pipeline Throughput & Bottleneck Analyzer)**：
+   - **`PipelineThroughputAnalyzer`**：
+     - 精准量化物流传输与机器消耗常数：单漏斗 2.5 items/s (8 ticks/item)、双漏斗 5.0 items/s、漏斗矿车隔空穿透 20.0 items/s (1 tick/item)、水流浮冰高速通道 32.0 items/s、普通熔炉 0.1 items/s (10.0s/物)、高炉/烟熏炉 0.2 items/s (5.0s/物)；
+     - **`analyzeSmeltingArray(count, machine, transport)`**：输入阵列规模与物流方式，精确解算总需求通量与管道极限；若存在赤字（如单漏斗供料 16 台高炉时赤字 21.9%），直接告警主干供料瓶颈并计算最大满载承载台数（12 台），自动给出对称并联或矿车分流优化方案；
+   - **`/hoshi pipeline <设备类型> [数量] [物流]`**：游戏内一键生成工业级流水线吞吐瓶颈诊断报告！
 
 1. **红石与物流拓扑感知引擎 (Redstone & Logistics Topology Perception)**：
    - **`TargetBlock.evaluateLogisticsOrRedstone()`**：
@@ -45,6 +62,8 @@
      - `/hoshi bom <方案> [数量]`：快速生成红石构件材料清单与生存堆叠折算；
      - `/hoshi nether [x y z]`：转换下界/主界传送门对应坐标（省略坐标时自动调用玩家当前快照）；
      - `/hoshi stats`：实时查看服务端缓存命中率、吞吐量与活跃会话数；
+     - `/hoshi multiblock <方案>`：调阅多方块蓝图与背包材料核验（潮涌、信标、地狱门、末地门、凋灵、铁傀儡）；
+     - `/hoshi pipeline <设备> [数量] [物流]`：诊断工业流水线供料瓶颈（普通熔炉、高炉、烟熏炉与漏斗/矿车/水流）；
      - `/hoshi clear`：清空玩家个人会话记忆与翻页缓存；
      - `/hoshi help`：交互式指令帮助面板（包含可点击的建议指令）。
    - 公屏聊天自动唤醒触发：支持 `!问题`、`?问题`、`@ai 问题`、`@hoshi 问题` 原生提取与路由。
@@ -167,11 +186,11 @@ mc-agent-core/
 ```bash
 javac -encoding UTF-8 -d bin $(find src/main/java src/test/java -name '*.java')
 java -cp bin hoshi.mcagent.McAgentCoreTest
-# 🎉 All 379/379 Java tests passed successfully!
+# 🎉 All 428/428 Java tests passed successfully!
 ```
 
 ### Python 仿真套件
 ```bash
 PYTHONPATH=. uv run --with pytest pytest tests/ -v
-# 43 passed in 0.18s
+# 48 passed in 0.23s
 ```

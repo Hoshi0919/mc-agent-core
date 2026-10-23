@@ -24,6 +24,10 @@ import hoshi.mcagent.context.ItemInstance;
 import hoshi.mcagent.context.TargetEntity;
 import hoshi.mcagent.crafting.CraftingReadinessChecker;
 import hoshi.mcagent.crafting.CraftingRecipe;
+import hoshi.mcagent.multiblock.MultiblockBlueprint;
+import hoshi.mcagent.multiblock.MultiblockValidator;
+import hoshi.mcagent.pipeline.PipelineThroughputAnalyzer;
+
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -89,6 +93,11 @@ public class McAgentCoreTest {
         testFastPathV17LogisticsRules();
         testPromptSafetyFenceV17();
         testCommandRouterV17LogisticsInspect();
+        testMultiblockValidator();
+        testPipelineThroughputAnalyzer();
+        testFastPathV18Rules();
+        testPromptSafetyFenceV18();
+        testCommandRouterV18MultiblockAndPipeline();
 
         System.out.println(String.format("\n🎉 All %d/%d Java tests passed successfully!", testsPassed, testsRun));
     }
@@ -1005,4 +1014,125 @@ public class McAgentCoreTest {
         assertTrue(res.getMessage().contains("红石/物流"), "Inspect output contains redstone/logistics section");
         assertTrue(res.getMessage().contains("已锁定"), "Inspect output shows hopper locked");
     }
+
+    private static void testMultiblockValidator() {
+        // Conduit
+        var conduitOpt = MultiblockValidator.findBlueprint("conduit");
+        assertTrue(conduitOpt.isPresent(), "Conduit blueprint found");
+        MultiblockBlueprint conduit = conduitOpt.get();
+        assertTrue(conduit.totalBlockCount() == 43, "Conduit needs 43 total blocks (42 prismarine + 1 conduit)");
+        assertTrue(conduit.widthX() == 5 && conduit.heightY() == 5, "Conduit dimensions 5x5");
+
+        // Alias check
+        var aliasOpt = MultiblockValidator.findBlueprint("潮涌核心");
+        assertTrue(aliasOpt.isPresent() && aliasOpt.get().id().equals("conduit"), "Conduit alias resolved");
+
+        var portalOpt = MultiblockValidator.findBlueprint("地狱门");
+        assertTrue(portalOpt.isPresent() && portalOpt.get().id().equals("nether_portal"), "Nether portal alias resolved");
+
+        // Inventory check: Short on prismarine
+        Map<Integer, ItemInstance> main = Map.of(
+                0, ItemInstance.of("minecraft:prismarine", 20),
+                1, ItemInstance.of("minecraft:conduit", 1)
+        );
+        InventorySnapshot inv = new InventorySnapshot(null, null, null, null, null, null, Map.of(), main);
+        var report = MultiblockValidator.validateInventory(conduit, inv);
+        assertTrue(!report.isFullyReady(), "Conduit is not ready with 20 prismarine");
+        assertTrue(report.gaps().get(0).missingCount() == 22, "Missing 22 prismarine");
+        assertTrue(report.formatReport().contains("还缺 22 个"), "Format report contains missing count");
+
+        // Inventory check: Ready with prismarine bricks mixed
+        Map<Integer, ItemInstance> readyMain = Map.of(
+                0, ItemInstance.of("minecraft:prismarine", 30),
+                1, ItemInstance.of("minecraft:prismarine_bricks", 12),
+                2, ItemInstance.of("minecraft:conduit", 1)
+        );
+        InventorySnapshot readyInv = new InventorySnapshot(null, null, null, null, null, null, Map.of(), readyMain);
+        var readyReport = MultiblockValidator.validateInventory(conduit, readyInv);
+        assertTrue(readyReport.isFullyReady(), "Conduit ready with mixed prismarine blocks");
+        assertTrue(readyReport.formatReport().contains("100% 齐备"), "Format report confirms 100% ready");
+    }
+
+    private static void testPipelineThroughputAnalyzer() {
+        // 16 Blast furnaces on single hopper (2.5 items/s vs 3.2 items/s demand)
+        var rep1 = PipelineThroughputAnalyzer.analyzeSmeltingArray(16, "blast_furnace", "hopper");
+        assertTrue(rep1.hasBottleneck(), "Single hopper creates bottleneck for 16 blast furnaces");
+        assertTrue(rep1.maxSupportedMachines() == 12, "Single hopper supports max 12 blast furnaces");
+        assertTrue(rep1.deficitPercentage() > 21.0 && rep1.deficitPercentage() < 22.0, "Deficit percentage is ~21.9%");
+        assertTrue(rep1.formatReport().contains("瓶颈告警"), "Format report has bottleneck alert");
+
+        // 16 Blast furnaces on dual hoppers (5.0 items/s vs 3.2 items/s demand)
+        var rep2 = PipelineThroughputAnalyzer.analyzeSmeltingArray(16, "blast_furnace", "dual_hopper");
+        assertTrue(!rep2.hasBottleneck(), "Dual hopper has no bottleneck for 16 blast furnaces");
+        assertTrue(rep2.maxSupportedMachines() == 25, "Dual hopper supports max 25 blast furnaces");
+        assertTrue(rep2.formatReport().contains("物流充盈"), "Format report confirms healthy throughput");
+
+        // 64 Blast furnaces on hopper minecart (20.0 items/s vs 12.8 items/s demand)
+        var rep3 = PipelineThroughputAnalyzer.analyzeSmeltingArray(64, "blast_furnace", "minecart");
+        assertTrue(!rep3.hasBottleneck(), "Hopper minecart easily handles 64 blast furnaces");
+        assertTrue(rep3.maxSupportedMachines() == 100, "Hopper minecart supports max 100 blast furnaces");
+    }
+
+    private static void testFastPathV18Rules() {
+        // 1. Conduit Multiblock Full Power
+        var r1 = FastPathResolver.tryResolve("潮涌核心42块怎么摆？", null);
+        assertTrue(r1.isPresent(), "Resolved conduit multiblock query");
+        assertTrue(r1.get().category().equals("CONDUIT_MULTIBLOCK_ACTIVATION"), "Category is CONDUIT_MULTIBLOCK_ACTIVATION");
+        assertTrue(r1.get().textResponse().contains("42 块"), "Mentions 42 blocks");
+        assertTrue(r1.get().textResponse().contains("三环"), "Mentions 3 rings");
+
+        // 2. Nether Portal Geometry
+        var r2 = FastPathResolver.tryResolve("传送门最大尺寸是多少？", null);
+        assertTrue(r2.isPresent(), "Resolved portal geometry query");
+        assertTrue(r2.get().category().equals("NETHER_PORTAL_GEOMETRY_AND_CHUNKLOAD"), "Category is NETHER_PORTAL_GEOMETRY_AND_CHUNKLOAD");
+        assertTrue(r2.get().textResponse().contains("21x21"), "Mentions 21x21");
+        assertTrue(r2.get().textResponse().contains("区块强加载"), "Mentions chunk loading");
+
+        // 3. Smelting Array Bottleneck
+        var r3 = FastPathResolver.tryResolve("熔炉阵列供料漏斗跟不上怎么办？", null);
+        assertTrue(r3.isPresent(), "Resolved smelting array bottleneck query");
+        assertTrue(r3.get().category().equals("SMELTING_ARRAY_THROUGHPUT_BOTTLENECK"), "Category is SMELTING_ARRAY_THROUGHPUT_BOTTLENECK");
+        assertTrue(r3.get().textResponse().contains("2.5 items/s"), "Mentions 2.5 items/s");
+        assertTrue(r3.get().textResponse().contains("双漏斗对称并联"), "Mentions dual hopper");
+
+        // 4. Hopper Minecart Unloader
+        var r4 = FastPathResolver.tryResolve("漏斗矿车卸料站怎么做？", null);
+        assertTrue(r4.isPresent(), "Resolved hopper minecart unloader query");
+        assertTrue(r4.get().category().equals("HOPPER_MINECART_UNLOADER_DYNAMICS"), "Category is HOPPER_MINECART_UNLOADER_DYNAMICS");
+        assertTrue(r4.get().textResponse().contains("20 items/s"), "Mentions 20 items/s");
+        assertTrue(r4.get().textResponse().contains("比较器"), "Mentions comparator lock");
+    }
+
+    private static void testPromptSafetyFenceV18() {
+        var fenced = PromptSafetyFence.build("测试", null);
+        assertTrue(fenced.userPrompt().contains("【潮涌核心多方块环架与水下主宰力学】"), "Injected conduit multiblock rules");
+        assertTrue(fenced.userPrompt().contains("【下界传送门几何极值与区块强加载动力学】"), "Injected portal geometry rules");
+        assertTrue(fenced.userPrompt().contains("【熔炼炉阵列吞吐瓶颈与供料动力学】"), "Injected smelting throughput rules");
+        assertTrue(fenced.userPrompt().contains("【漏斗矿车穿透吸物与单次往返卸料站动力学】"), "Injected minecart unloader rules");
+    }
+
+    private static void testCommandRouterV18MultiblockAndPipeline() {
+        McAgentCore core = new McAgentCore();
+        CommandRouter router = core.getCommandRouter();
+
+        // 1. Multiblock command
+        CommandResult mbRes = router.execute("Steve", "/hoshi multiblock conduit", null);
+        assertTrue(mbRes.isSuccess(), "Multiblock conduit command succeeded");
+        assertTrue(mbRes.getAction().equals("MULTIBLOCK"), "Action is MULTIBLOCK");
+        assertTrue(mbRes.getMessage().contains("潮涌核心满级三环"), "Message contains blueprint name");
+        assertTrue(mbRes.getMessage().contains("几何规格"), "Message contains dimensions");
+
+        // 2. Pipeline command
+        CommandResult pipeRes = router.execute("Steve", "/hoshi pipeline blast_furnace 16 hopper", null);
+        assertTrue(pipeRes.isSuccess(), "Pipeline command succeeded");
+        assertTrue(pipeRes.getAction().equals("PIPELINE"), "Action is PIPELINE");
+        assertTrue(pipeRes.getMessage().contains("高炉冶炼阵列"), "Message contains array name");
+        assertTrue(pipeRes.getMessage().contains("瓶颈告警"), "Message contains bottleneck diagnosis");
+
+        // 3. Help command contains new options
+        CommandResult helpRes = router.execute("Steve", "/hoshi help", null);
+        assertTrue(helpRes.getMessage().contains("multiblock"), "Help mentions multiblock");
+        assertTrue(helpRes.getMessage().contains("pipeline"), "Help mentions pipeline");
+    }
+
 }

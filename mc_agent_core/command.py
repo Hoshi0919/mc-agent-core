@@ -4,6 +4,8 @@ from typing import Optional
 from .bom import BlueprintBOM, MaterialCalculator
 from .context import ContextSnapshot
 from .crafting import CraftingReadinessChecker
+from .multiblock import find_blueprint, validate_inventory
+from .pipeline import analyze_smelting_array
 from .dispatcher import AsyncQueryDispatcher, QueryResult
 from .formatter import MinecraftTextFormatter
 from .paginator import ChatPaginator, PagedResult
@@ -116,6 +118,21 @@ class CommandRouter:
                 except ValueError:
                     scale = 1
             return self._handle_bom(player_id, blueprint, scale)
+
+        elif sub in ("multiblock", "mb"):
+            bp_name = tokens[arg_start + 1] if arg_start + 1 < len(tokens) else "conduit"
+            return self._handle_multiblock(player_id, bp_name, snapshot)
+
+        elif sub in ("pipeline", "pipe"):
+            machine = tokens[arg_start + 1] if arg_start + 1 < len(tokens) else "furnace"
+            count = 16
+            if arg_start + 2 < len(tokens):
+                try:
+                    count = int(tokens[arg_start + 2])
+                except ValueError:
+                    count = 16
+            transport = tokens[arg_start + 3] if arg_start + 3 < len(tokens) else "hopper"
+            return self._handle_pipeline(player_id, machine, count, transport)
 
         elif sub in ("nether", "portal"):
             return self._handle_nether(player_id, tokens, arg_start + 1, snapshot)
@@ -245,6 +262,27 @@ class CommandRouter:
             tellraw = TellrawJsonBuilder.to_json(comps)
             return CommandResult(status="SUCCESS", action="NETHER", message=msg, command_suggestion=cmd, tellraw_json=tellraw)
 
+    def _handle_multiblock(self, player_id: Optional[str], query: str, snapshot: Optional[ContextSnapshot]) -> CommandResult:
+        bp = find_blueprint(query)
+        if not bp:
+            return CommandResult(status="ERROR", action="MULTIBLOCK", message=f"§c未识别的多方块蓝图: {query}。可选: conduit, beacon, nether_portal, end_portal, wither, golem")
+        report = validate_inventory(bp, snapshot.inventory if snapshot else None)
+        text = report.format_report()
+        paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page")
+        self.session_manager.record_interaction(player_id, f"/hoshi multiblock {bp.id}", text, "MULTIBLOCK", paged)
+        comps = MinecraftTextFormatter.parse_components(paged.full_page_text, f"/hoshi multiblock {bp.id}")
+        tellraw = TellrawJsonBuilder.to_json(comps)
+        return CommandResult(status="SUCCESS", action="MULTIBLOCK", message=paged.full_page_text, command_suggestion=f"/hoshi multiblock {bp.id}", tellraw_json=tellraw, paged_result=paged)
+
+    def _handle_pipeline(self, player_id: Optional[str], machine: str, count: int, transport: str) -> CommandResult:
+        report = analyze_smelting_array(count, machine, transport)
+        text = report.format_report()
+        paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page")
+        self.session_manager.record_interaction(player_id, f"/hoshi pipeline {machine} {count} {transport}", text, "PIPELINE", paged)
+        comps = MinecraftTextFormatter.parse_components(paged.full_page_text, f"/hoshi pipeline {machine} {count} {transport}")
+        tellraw = TellrawJsonBuilder.to_json(comps)
+        return CommandResult(status="SUCCESS", action="PIPELINE", message=paged.full_page_text, tellraw_json=tellraw, paged_result=paged)
+
     def _handle_stats(self) -> CommandResult:
         cache_stats = str(self.dispatcher.cache.get_stats()) if self.dispatcher.cache else "N/A"
         active = self.session_manager.active_session_count
@@ -255,6 +293,10 @@ class CommandRouter:
         text = (
             "§6【Hoshi 智能问答指令帮助】§r\n"
             "▸ §e/hoshi ask <问题>§r - 咨询游戏机制与攻略\n"
+            "▸ §e/hoshi inspect§r - 扫描准星方块、红石物流状态与实体安全\n"
+            "▸ §e/hoshi craft <物品>§r - 评估背包原料是否满足合成条件及缺失数量\n"
+            "▸ §e/hoshi multiblock <方案>§r - 调阅多方块蓝图与背包材料校验\n"
+            "▸ §e/hoshi pipeline <设备> [数量] [物流]§r - 诊断工业流水线供料瓶颈\n"
             "▸ §e/hoshi bom <方案> [数量]§r - 生成材料清单 (BOM)\n"
             "▸ §e/hoshi page <页码>§r - 翻页长篇内容\n"
             "▸ §e/hoshi nether [x y z]§r - 换算地狱传送门坐标\n"
