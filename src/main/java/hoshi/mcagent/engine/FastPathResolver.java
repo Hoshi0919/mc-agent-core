@@ -591,7 +591,44 @@ public final class FastPathResolver {
             return Optional.of(new Resolution(resp, "/hoshi villager trading", "VILLAGER_WORKSTATION_PATHING_AND_RESTOCK"));
         }
 
-        return Optional.empty();
+
+        // 47. Anvil Penalty & Binary Tree Optimizer
+        if (q.contains("神装怎么合") || q.contains("二叉树附魔合并") || q.contains("铁砧二叉树") || q.contains("铁砧合并方案") || q.contains("附魔书怎么合最省")) {
+            String resp = "§6【铁砧累积惩罚与二叉树最优合并规避算法】\n" +
+                    "▸ §c指数爆炸惩罚§r：累积惩罚为 2^N - 1 级；单步 >= 40 级直接触发【过于昂贵！】彻底无法锻造。\n" +
+                    "▸ §a二叉树合并对数降维§r：将 6~8 本书两两配对合并成复合书，树高压制在 3 层内，最后一次性拍上装备，最终惩罚仅 7 级！\n" +
+                    "▸ §e一键规划指令§r：使用 `/hoshi anvil <装备> <附魔1> <附魔2>...` 即可生成零失误单步工序！";
+            return Optional.of(new Resolution(resp, "/hoshi anvil netherite_sword sharpness:5 unbreaking:3 mending:1 looting:3", "ANVIL_PENALTY_AND_BINARY_TREE_OPTIMIZER"));
+        }
+
+        // 48. Enchantment Compatibility & Gear Rules
+        if (q.contains("附魔互斥") || q.contains("精准和时运") || q.contains("无限和经验修补") || q.contains("保护和火保") || q.contains("重锤附魔")) {
+            String resp = "§d【附魔互斥矩阵与神装配方验证】\n" +
+                    "▸ §e严格互斥对§r：精准采集 vs 时运；无限 vs 经验修补；多重射击 vs 穿透；激流 vs 忠诚/引雷。\n" +
+                    "▸ §b护甲四保互斥§r：保护、火焰保护、爆炸保护、弹射物保护不可共存于同一防具。\n" +
+                    "▸ §a1.21 重锤专属神装§r：致密 (Density 增伤) + 破甲 (Breach 穿透) + 风爆 (Wind Burst 击中滞空)！";
+            return Optional.of(new Resolution(resp, "/give @s minecraft:enchanted_book 1", "ENCHANTMENT_COMPATIBILITY_AND_GEAR_RULES"));
+        }
+
+        // 49. Create Stress Capacity & Kinetics
+        if (q.contains("create应力") || q.contains("机械动力过载") || q.contains("create转速") || q.contains("蒸汽机配置") || q.contains("齿轮比") || q.contains("应力过载")) {
+            String resp = "§e【Create 机械动力学应力网络与过载断裂力学】\n" +
+                    "▸ §c过载断裂机制§r：机器消耗 Impact(SU) = kappa * RPM。若总消耗 > 总容量，全线转速归零停摆！\n" +
+                    "▸ §b齿轮传动法则§r：大齿轮带小齿轮 2:1 提速但消耗翻倍；小齿轮带大齿轮 1:2 降速消耗减半。\n" +
+                    "▸ §a动力阶梯与蒸汽机§r：水轮 256 SU，大水轮 512 SU，风车满配 8,192 SU；18 级超频蒸汽机锅炉最高释放 294,912 SU！";
+            return Optional.of(new Resolution(resp, "/hoshi create stress steam 9", "CREATE_STRESS_CAPACITY_AND_KINETICS"));
+        }
+
+        // 50. Portal Permaloader & Chunk Ticking
+        if (q.contains("常载区块") || q.contains("强加载器") || q.contains("传送门加载器") || q.contains("permaloader") || q.contains("下界门串门") || q.contains("传送门对齐")) {
+            String resp = "§b【生电传送门常载网与 Ticket 30 强加载拓扑】\n" +
+                    "▸ §e15秒时钟律§r：实体穿越传送门赋予 15.0 秒 (300 ticks) Ticket 30 强加载票；投掷时钟建议控制在 8~12 秒防断流。\n" +
+                    "▸ §a三阶辐射圈§r：3x3 实体完全处理区、5x5 方块红石区、7x7 懒惰区。\n" +
+                    "▸ §c8:1 坐标对齐§r：实际门偏离理想坐标超过 16 格将诱发单向串门撕裂；使用 `/hoshi chunkloader portal <主界X> <主界Z> <下界X> <下界Z>` 诊断漂移！";
+            return Optional.of(new Resolution(resp, "/hoshi chunkloader permaloader 10.0", "PORTAL_PERMALOADER_AND_CHUNK_TICKING"));
+        }
+
+return Optional.empty();
     }
 
     private static Resolution resolveCoordinates(ContextSnapshot ctx) {

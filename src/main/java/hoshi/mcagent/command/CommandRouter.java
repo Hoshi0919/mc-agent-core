@@ -7,6 +7,14 @@ import hoshi.mcagent.multiblock.MultiblockValidator;
 import hoshi.mcagent.pipeline.PipelineThroughputAnalyzer;
 import hoshi.mcagent.farm.MobFarmDynamics;
 import hoshi.mcagent.villager.VillagerDynamics;
+import hoshi.mcagent.anvil.AnvilOptimizer;
+import hoshi.mcagent.anvil.AnvilPlan;
+import hoshi.mcagent.create.CreateKineticsAnalyzer;
+import hoshi.mcagent.chunkload.PortalChunkLoaderAnalyzer;
+import java.util.Map;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.ArrayList;
 import hoshi.mcagent.bom.BlueprintBOM;
 import hoshi.mcagent.bom.MaterialCalculator;
 import hoshi.mcagent.context.ContextSnapshot;
@@ -210,6 +218,18 @@ public class CommandRouter {
             case "v": {
                 String type = argStart + 1 < tokens.length ? tokens[argStart + 1] : "iron";
                 return handleVillager(playerId, type, tokens, argStart);
+            }
+            case "anvil":
+            case "enchant": {
+                return handleAnvil(playerId, tokens, argStart);
+            }
+            case "create":
+            case "kinetics": {
+                return handleCreate(playerId, tokens, argStart);
+            }
+            case "chunkloader":
+            case "cl": {
+                return handleChunkloader(playerId, tokens, argStart);
             }
             case "nether":
             case "portal": {
@@ -473,6 +493,129 @@ public class CommandRouter {
         return CommandResult.success("VILLAGER", paged.fullPageText(), null, tellraw, paged);
     }
 
+    private CommandResult handleAnvil(String playerId, String[] tokens, int argStart) {
+        String gearName = "netherite_sword";
+        Map<String, Integer> enchants = new LinkedHashMap<>();
+
+        if (argStart + 1 < tokens.length) {
+            gearName = tokens[argStart + 1].toLowerCase();
+        }
+
+        if (argStart + 2 < tokens.length) {
+            for (int i = argStart + 2; i < tokens.length; i++) {
+                String token = tokens[i];
+                String[] parts = token.split("[:：=]");
+                String id = parts[0].toLowerCase();
+                int level = 1;
+                if (parts.length > 1) {
+                    try {
+                        level = Integer.parseInt(parts[1]);
+                    } catch (NumberFormatException ignored) {}
+                }
+                enchants.put(id, level);
+            }
+        } else {
+            // Default top-tier set
+            if (gearName.contains("sword") || gearName.contains("剑")) {
+                enchants.put("sharpness", 5);
+                enchants.put("unbreaking", 3);
+                enchants.put("mending", 1);
+                enchants.put("looting", 3);
+                enchants.put("sweeping_edge", 3);
+            } else if (gearName.contains("pickaxe") || gearName.contains("镐")) {
+                enchants.put("efficiency", 5);
+                enchants.put("unbreaking", 3);
+                enchants.put("fortune", 3);
+                enchants.put("mending", 1);
+            } else if (gearName.contains("bow") || gearName.contains("弓")) {
+                enchants.put("power", 5);
+                enchants.put("unbreaking", 3);
+                enchants.put("infinity", 1);
+                enchants.put("flame", 1);
+            } else {
+                enchants.put("protection", 4);
+                enchants.put("unbreaking", 3);
+                enchants.put("mending", 1);
+            }
+        }
+
+        AnvilPlan plan = AnvilOptimizer.optimize(gearName, enchants);
+        String text = plan.formatReport();
+        ChatPaginator.PagedResult paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page");
+        sessionManager.recordInteraction(playerId, "/hoshi anvil " + gearName, text, "ANVIL", paged);
+        var comps = MinecraftTextFormatter.parseComponents(paged.fullPageText(), "/hoshi anvil " + gearName);
+        String tellraw = TellrawJsonBuilder.toJson(comps);
+        return CommandResult.success("ANVIL", paged.fullPageText(), null, tellraw, paged);
+    }
+
+    private CommandResult handleCreate(String playerId, String[] tokens, int argStart) {
+        String source = "steam";
+        int param = 9;
+        if (argStart + 1 < tokens.length) {
+            String s = tokens[argStart + 1].toLowerCase();
+            if (s.equals("stress") || s.equals("kinetics")) {
+                if (argStart + 2 < tokens.length) source = tokens[argStart + 2];
+                if (argStart + 3 < tokens.length) {
+                    try { param = Integer.parseInt(tokens[argStart + 3]); } catch (NumberFormatException ignored) {}
+                }
+            } else {
+                source = s;
+                if (argStart + 2 < tokens.length) {
+                    try { param = Integer.parseInt(tokens[argStart + 2]); } catch (NumberFormatException ignored) {}
+                }
+            }
+        }
+
+        List<CreateKineticsAnalyzer.MachineEntry> machines = new ArrayList<>();
+        machines.add(new CreateKineticsAnalyzer.MachineEntry("crushing_wheel", 4, 64.0));
+        machines.add(new CreateKineticsAnalyzer.MachineEntry("mechanical_press", 2, 64.0));
+        machines.add(new CreateKineticsAnalyzer.MachineEntry("mechanical_arm", 2, 32.0));
+        machines.add(new CreateKineticsAnalyzer.MachineEntry("fluid_pump", 4, 16.0));
+
+        var report = CreateKineticsAnalyzer.analyze(source, param, machines);
+        String text = report.formatReport();
+        ChatPaginator.PagedResult paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page");
+        sessionManager.recordInteraction(playerId, "/hoshi create " + source, text, "CREATE", paged);
+        var comps = MinecraftTextFormatter.parseComponents(paged.fullPageText(), "/hoshi create " + source);
+        String tellraw = TellrawJsonBuilder.toJson(comps);
+        return CommandResult.success("CREATE", paged.fullPageText(), null, tellraw, paged);
+    }
+
+    private CommandResult handleChunkloader(String playerId, String[] tokens, int argStart) {
+        String sub = argStart + 1 < tokens.length ? tokens[argStart + 1].toLowerCase() : "permaloader";
+        String text;
+
+        if (sub.equals("portal") || sub.equals("align") || sub.equals("coord")) {
+            double owX = 800.0, owZ = -1600.0, nX = 100.0, nZ = -200.0;
+            if (argStart + 2 < tokens.length) {
+                try { owX = Double.parseDouble(tokens[argStart + 2]); } catch (NumberFormatException ignored) {}
+            }
+            if (argStart + 3 < tokens.length) {
+                try { owZ = Double.parseDouble(tokens[argStart + 3]); } catch (NumberFormatException ignored) {}
+            }
+            if (argStart + 4 < tokens.length) {
+                try { nX = Double.parseDouble(tokens[argStart + 4]); } catch (NumberFormatException ignored) {}
+            }
+            if (argStart + 5 < tokens.length) {
+                try { nZ = Double.parseDouble(tokens[argStart + 5]); } catch (NumberFormatException ignored) {}
+            }
+            text = PortalChunkLoaderAnalyzer.evaluateAlignment(owX, 64.0, owZ, nX, 64.0, nZ).formatReport();
+        } else {
+            double interval = 10.0;
+            if (argStart + 2 < tokens.length) {
+                try { interval = Double.parseDouble(tokens[argStart + 2]); } catch (NumberFormatException ignored) {}
+            }
+            String transport = argStart + 3 < tokens.length ? tokens[argStart + 3] : "hopper_dropper_clock";
+            text = PortalChunkLoaderAnalyzer.analyzePermaloader(interval, transport).formatReport();
+        }
+
+        ChatPaginator.PagedResult paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page");
+        sessionManager.recordInteraction(playerId, "/hoshi chunkloader " + sub, text, "CHUNKLOADER", paged);
+        var comps = MinecraftTextFormatter.parseComponents(paged.fullPageText(), "/hoshi chunkloader " + sub);
+        String tellraw = TellrawJsonBuilder.toJson(comps);
+        return CommandResult.success("CHUNKLOADER", paged.fullPageText(), null, tellraw, paged);
+    }
+
     private CommandResult handleStats() {
         String cacheStats = core.getCache().getStats().toString();
         int activeSessions = sessionManager.getActiveSessionCount();
@@ -492,6 +635,9 @@ public class CommandRouter {
                 "▸ §e/hoshi pipeline <设备> [数量] [物流]§r - 诊断工业流水线供料瓶颈\n" +
                 "▸ §e/hoshi mobfarm <挂机Y> <平台Y> [洞穴点亮]§r - 诊断清除球与生物Cap占用\n" +
                 "▸ §e/hoshi villager <iron/breeder/trading>§r - 诊断刷铁机/繁殖/工作站死锁\n" +
+                "▸ §e/hoshi anvil <装备> [附魔:等级...]§r - 规划二叉树最优附魔工序规避过于昂贵\n" +
+                "▸ §e/hoshi create stress <动力源> [规模]§r - 诊断 Create 模组动力网应力与过载转速\n" +
+                "▸ §e/hoshi chunkloader <permaloader/portal>§r - 诊断生电传送门常载网与 8:1 坐标漂移\n" +
                 "▸ §e/hoshi nether [x y z]§r - 换算地狱传送门坐标\n" +
                 "▸ §e/hoshi clear§r - 清理会话与翻页缓存\n" +
                 "▸ §e/hoshi stats§r - 查看缓存与度量统计\n" +

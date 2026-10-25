@@ -404,5 +404,32 @@ public final class LocalGameRules {
             "2. 职业锁定：一旦与村民完成过任何交易（经验 XP > 0），该村民职业与交易树永久锁定，拆毁工作站点亦绝不转职；\n" +
             "3. 每日补货时钟：村民每天在工作时间（日间 2000 ~ 9000 ticks）前往绑定的工作站至多补货 2 次；若无法触碰工作台则永远无法补货打折物品。";
 
+
+    public static final String ANVIL_PENALTY_AND_BINARY_TREE_OPTIMIZER_RULES =
+            "【铁砧累积惩罚与二叉树最优合并规避算法】\n" +
+            "1. 累积惩罚指数爆炸公式：铁砧每次工作记录工作次数 N，累积惩罚花费为 2^N - 1 级（0, 1, 3, 7, 15, 31, 63...）；\n" +
+            "2. 过于昂贵！(Too Expensive!) 致命封顶：生存模式下单步铁砧消耗达到 40 级即判定失败并彻底拒绝合成！若将 6~7 本书线性依次敲在装备上，第 5 步即可超过 40 级导致装备报废；\n" +
+            "3. 二叉树平衡合并：将多本书两两合并为复合书（树高仅 ceil(log2(N)) <= 3），最后再将复合书整体拍上装备，最终装备惩罚仅为 3 次（7 级），全程单步消耗压制在 10~25 级以内，彻底规避 39 级上限！";
+
+    public static final String ENCHANTMENT_COMPATIBILITY_AND_GEAR_RULES =
+            "【附魔互斥矩阵与神装配方验证】\n" +
+            "1. 核心互斥对：精准采集 (Silk Touch) 严格互斥时运 (Fortune)；无限 (Infinity) 严格互斥经验修补 (Mending)；激流 (Riptide) 互斥忠诚与引雷；多重射击 (Multishot) 互斥穿透 (Piercing)；\n" +
+            "2. 护甲互斥群：保护 (Protection)、火焰保护、爆炸保护、弹射物保护四者互斥；深海行者互斥冰霜行者；\n" +
+            "3. 武器互斥群：锋利 (Sharpness)、亡灵杀手 (Smite)、节肢杀手 (Bane of Arthropods) 互斥；\n" +
+            "4. 1.21 重锤专属神装：致密 (Density，增加下落冲击伤害)、破甲 (Breach，无视护甲防御)、风爆 (Wind Burst，命中弹射升空实现无限滞空跳打)。";
+
+    public static final String CREATE_STRESS_CAPACITY_AND_KINETICS_RULES =
+            "【Create 机械动力学应力网络与过载断裂力学】\n" +
+            "1. 守恒动力学与应力消耗：机器消耗遵循 Impact(SU) = kappa * RPM。转速提升 2 倍，消耗同步翻倍！常见基准：粉碎轮/辊压机/机械臂 kappa=8，搅拌机/动力锯/泵/磨盘 kappa=4，传动带 kappa=1；\n" +
+            "2. 过载断裂 (Overstressed)：当动力网内所有机器总消耗超过动力源输出总容量（Total Impact > Total Capacity）时，全网转速瞬间暴跌至 0 彻底停摆！\n" +
+            "3. 动力源阶梯：小型水轮 256 SU @ 8 RPM，大型水轮 512 SU @ 4 RPM，风车轴承每 8 块帆布输出 512 SU（128 帆布满级输出 8,192 SU @ 16 RPM）；\n" +
+            "4. 工业级蒸汽机矩阵：锅炉等级 1~18 级（由加热等级：营火/烈焰人/烈焰饼超频 + 机械泵注水决定），9 级被动满产 147,456 SU，18 级超频最大释放 294,912 SU @ 64 RPM！";
+
+    public static final String PORTAL_PERMALOADER_AND_CHUNK_TICKING_RULES =
+            "【生电传送门常载网与 Ticket 30 强加载拓扑】\n" +
+            "1. 15 秒强加载时钟：实体（掉落物/箭矢/漏斗矿车）穿越下界传送门时，目标维度对应区块获得 15.0 秒 (300 ticks) Ticket 30 强加载票；必须在 15 秒内持续投掷穿梭（黄金安全周期 8~12 秒），超出 15 秒则强加载票蒸发导致区块卸载停摆；\n" +
+            "2. 三阶辐射加载圈：以传送门区块为中心，3x3 区块为实体处理区 (Entity Ticking, 实体AI与红石全速运行)，5x5 区块为方块红石区 (Block Ticking, 红石运转但无实体AI)，7x7 为懒惰区 (Lazy Chunks, 仅寻路与常驻内存)；\n" +
+            "3. 8:1 坐标绝对对齐与防串门：主世界 (X, Z) 对应下界 (floor(X/8), floor(Z/8))；若下界实际门偏离理想坐标超过 16 格，将发生单向穿透撕裂（从下界返回主世界时在偏移位置生成新门，破坏双向闭环）！";
+
     private LocalGameRules() {}
 }

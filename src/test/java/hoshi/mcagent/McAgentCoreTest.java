@@ -29,6 +29,13 @@ import hoshi.mcagent.multiblock.MultiblockValidator;
 import hoshi.mcagent.pipeline.PipelineThroughputAnalyzer;
 import hoshi.mcagent.farm.MobFarmDynamics;
 import hoshi.mcagent.villager.VillagerDynamics;
+import hoshi.mcagent.anvil.AnvilOptimizer;
+import hoshi.mcagent.anvil.AnvilPlan;
+import hoshi.mcagent.anvil.EnchantmentEntry;
+import hoshi.mcagent.create.CreateKineticsAnalyzer;
+import hoshi.mcagent.chunkload.PortalChunkLoaderAnalyzer;
+import java.util.LinkedHashMap;
+import java.util.ArrayList;
 
 import java.util.List;
 import java.util.Map;
@@ -105,6 +112,12 @@ public class McAgentCoreTest {
         testFastPathV19Rules();
         testPromptSafetyFenceV19();
         testCommandRouterV19MobFarmAndVillager();
+        testAnvilOptimizerV20();
+        testCreateKineticsAnalyzerV20();
+        testPortalChunkLoaderAnalyzerV20();
+        testFastPathV20Rules();
+        testPromptSafetyFenceV20();
+        testCommandRouterV20AnvilCreateChunkloader();
 
         System.out.println(String.format("\n🎉 All %d/%d Java tests passed successfully!", testsPassed, testsRun));
     }
@@ -1288,6 +1301,198 @@ public class McAgentCoreTest {
         var helpRes = router.execute("Steve", "/hoshi help", null);
         assertTrue(helpRes.getMessage().contains("mobfarm"), "Help mentions mobfarm");
         assertTrue(helpRes.getMessage().contains("villager"), "Help mentions villager");
+    }
+
+    private static void testAnvilOptimizerV20() {
+        // 1. Prior penalty math
+        assertTrue(AnvilOptimizer.calculatePenalty(0) == 0, "Penalty for work 0 is 0");
+        assertTrue(AnvilOptimizer.calculatePenalty(1) == 1, "Penalty for work 1 is 1");
+        assertTrue(AnvilOptimizer.calculatePenalty(2) == 3, "Penalty for work 2 is 3");
+        assertTrue(AnvilOptimizer.calculatePenalty(3) == 7, "Penalty for work 3 is 7");
+        assertTrue(AnvilOptimizer.calculatePenalty(4) == 15, "Penalty for work 4 is 15");
+        assertTrue(AnvilOptimizer.calculatePenalty(5) == 31, "Penalty for work 5 is 31");
+        assertTrue(AnvilOptimizer.calculatePenalty(6) == 63, "Penalty for work 6 is 63");
+
+        // 2. Enchantment registry and conflicts
+        var sharp = EnchantmentEntry.get("sharpness");
+        assertTrue(sharp != null, "Sharpness found in registry");
+        assertTrue(sharp.conflictsWith("smite"), "Sharpness conflicts with smite");
+        assertTrue(sharp.conflictsWith("bane_of_arthropods"), "Sharpness conflicts with bane of arthropods");
+        assertTrue(!sharp.conflictsWith("unbreaking"), "Sharpness does not conflict with unbreaking");
+        assertTrue(sharp.isCompatibleWithGear("netherite_sword"), "Sharpness compatible with sword");
+        assertTrue(!sharp.isCompatibleWithGear("bow"), "Sharpness incompatible with bow");
+
+        var fortune = EnchantmentEntry.get("fortune");
+        assertTrue(fortune.conflictsWith("silk_touch"), "Fortune conflicts with silk touch");
+
+        var mending = EnchantmentEntry.get("mending");
+        assertTrue(mending.conflictsWith("infinity"), "Mending conflicts with infinity");
+
+        // 3. Binary tree merge of 5 enchantments onto Netherite Sword
+        Map<String, Integer> enchants = new LinkedHashMap<>();
+        enchants.put("sharpness", 5);
+        enchants.put("unbreaking", 3);
+        enchants.put("mending", 1);
+        enchants.put("looting", 3);
+        enchants.put("sweeping_edge", 3);
+
+        AnvilPlan plan = AnvilOptimizer.optimize("netherite_sword", enchants);
+        assertTrue(!plan.isTooExpensive(), "Plan is NOT too expensive (< 40 levels per step)");
+        assertTrue(plan.getMaxStepCost() < 40, "Max step cost is strictly < 40");
+        assertTrue(plan.getFinalWorkCount() <= 4, "Final gear work count is <= 4 (logarithmic tree)");
+        assertTrue(!plan.getSteps().isEmpty(), "Merge steps are populated");
+        assertTrue(plan.formatReport().contains("二叉树优化已就绪"), "Report confirms ready status");
+
+        // 4. Incompatible and conflicting detection
+        Map<String, Integer> conflictEnchants = new LinkedHashMap<>();
+        conflictEnchants.put("sharpness", 5);
+        conflictEnchants.put("smite", 5);
+        conflictEnchants.put("feather_falling", 4);
+        AnvilPlan badPlan = AnvilOptimizer.optimize("netherite_sword", conflictEnchants);
+        assertTrue(!badPlan.getWarnings().isEmpty(), "Warnings populated for conflicts");
+        assertTrue(badPlan.formatReport().contains("冲突警报"), "Report warns about mutual exclusion");
+        assertTrue(badPlan.formatReport().contains("通常不能直接赋予装备"), "Report warns about gear mismatch");
+    }
+
+    private static void testCreateKineticsAnalyzerV20() {
+        // 1. Source capacity checks
+        var repWater = CreateKineticsAnalyzer.analyze("water", 2, null);
+        assertTrue(repWater.totalCapacity == 512.0, "2 waterwheels = 512 SU");
+
+        var repLarge = CreateKineticsAnalyzer.analyze("large_water", 2, null);
+        assertTrue(repLarge.totalCapacity == 1024.0, "2 large waterwheels = 1024 SU");
+
+        var repWind = CreateKineticsAnalyzer.analyze("windmill", 64, null);
+        assertTrue(repWind.totalCapacity == 4096.0, "64 sail windmill = 4096 SU");
+
+        var repSteam = CreateKineticsAnalyzer.analyze("steam", 9, null);
+        assertTrue(repSteam.totalCapacity == 147456.0, "Level 9 steam boiler = 147,456 SU");
+
+        var repSteamOverheated = CreateKineticsAnalyzer.analyze("steam", 18, null);
+        assertTrue(repSteamOverheated.totalCapacity == 294912.0, "Level 18 overheated boiler = 294,912 SU");
+
+        // 2. Machine impact factors
+        assertTrue(CreateKineticsAnalyzer.resolveImpactFactor("crushing_wheel") == 8.0, "Crushing wheel factor is 8");
+        assertTrue(CreateKineticsAnalyzer.resolveImpactFactor("mechanical_press") == 8.0, "Mechanical press factor is 8");
+        assertTrue(CreateKineticsAnalyzer.resolveImpactFactor("mechanical_mixer") == 4.0, "Mechanical mixer factor is 4");
+        assertTrue(CreateKineticsAnalyzer.resolveImpactFactor("belt") == 1.0, "Belt factor is 1");
+
+        // 3. Overstressed test: 1 small waterwheel (256 SU) driving 2 presses at 64 RPM (Impact 1024 SU)
+        List<CreateKineticsAnalyzer.MachineEntry> heavyLoad = new ArrayList<>();
+        heavyLoad.add(new CreateKineticsAnalyzer.MachineEntry("mechanical_press", 2, 64.0));
+        var overstressedRep = CreateKineticsAnalyzer.analyze("water", 1, heavyLoad);
+        assertTrue(overstressedRep.isOverstressed, "Heavy load triggers overstressed");
+        assertTrue(overstressedRep.deficitSU == 768.0, "Deficit SU is 1024 - 256 = 768 SU");
+        assertTrue(overstressedRep.formatReport().contains("过载断裂"), "Report highlights overstressed error");
+
+        // 4. Safe healthy test: Level 9 steam engine driving crushing wheels
+        List<CreateKineticsAnalyzer.MachineEntry> factory = new ArrayList<>();
+        factory.add(new CreateKineticsAnalyzer.MachineEntry("crushing_wheel", 4, 64.0)); // 2048 SU
+        factory.add(new CreateKineticsAnalyzer.MachineEntry("mechanical_press", 2, 64.0)); // 1024 SU
+        var safeRep = CreateKineticsAnalyzer.analyze("steam", 9, factory);
+        assertTrue(!safeRep.isOverstressed, "Steam factory is safe and not overstressed");
+        assertTrue(safeRep.surplusSU > 140000.0, "Massive surplus SU for steam factory");
+        assertTrue(safeRep.formatReport().contains("动力裕度充沛"), "Report confirms surplus power");
+    }
+
+    private static void testPortalChunkLoaderAnalyzerV20() {
+        // 1. Alignment: 800, 64, -1600 -> ideal 100, -200
+        var perfect = PortalChunkLoaderAnalyzer.evaluateAlignment(800.0, 64.0, -1600.0, 100.0, 64.0, -200.0);
+        assertTrue(perfect.isPerfect, "Perfect alignment detected");
+        assertTrue(perfect.isSafe, "Perfect alignment is safe");
+        assertTrue(!perfect.isBleedRisk, "Zero bleed risk");
+        assertTrue(perfect.driftDistance < 0.001, "Drift is 0");
+        assertTrue(perfect.formatReport().contains("1:1 双向绝对严格对称绑定"), "Report confirms 1:1 binding");
+
+        // 2. Misalignment > 16 blocks: actual nether 100, -180 (drift = 20 blocks)
+        var drifted = PortalChunkLoaderAnalyzer.evaluateAlignment(800.0, 64.0, -1600.0, 100.0, 64.0, -180.0);
+        assertTrue(!drifted.isSafe, "Drifted portal is unsafe");
+        assertTrue(drifted.isBleedRisk, "Drifted portal triggers bleed risk");
+        assertTrue(drifted.driftDistance == 20.0, "Drift distance is 20.0");
+        assertTrue(drifted.formatReport().contains("单向串门撕裂"), "Report warns about portal bleed");
+
+        // 3. Permaloader interval 10.0s (healthy)
+        var plSafe = PortalChunkLoaderAnalyzer.analyzePermaloader(10.0, "hopper_cart");
+        assertTrue(plSafe.isValid, "Permaloader is valid");
+        assertTrue(!plSafe.isExpired, "10s permaloader is not expired (< 15s)");
+        assertTrue(plSafe.ticketTicksRemaining == 100.0, "Remaining ticks = (15 - 10) * 20 = 100 ticks");
+        assertTrue(plSafe.formatReport().contains("强加载时钟维持正常"), "Report confirms active permaloader");
+
+        // 4. Permaloader interval 16.0s (expired)
+        var plExpired = PortalChunkLoaderAnalyzer.analyzePermaloader(16.0, "hopper_cart");
+        assertTrue(plExpired.isExpired, "16s permaloader is expired (>= 15s)");
+        assertTrue(plExpired.formatReport().contains("Ticket 30 强加载票在实体到达前已彻底过期"), "Report diagnoses expired ticket");
+
+        // 5. Invalid interval
+        var plInvalid = PortalChunkLoaderAnalyzer.analyzePermaloader(-5.0, "hopper_cart");
+        assertTrue(!plInvalid.isValid, "Negative interval is invalid");
+    }
+
+    private static void testFastPathV20Rules() {
+        var r1 = FastPathResolver.tryResolve("神装怎么合最省经验", null);
+        assertTrue(r1.isPresent(), "Resolved anvil optimization query");
+        assertTrue(r1.get().category().equals("ANVIL_PENALTY_AND_BINARY_TREE_OPTIMIZER"), "Category is ANVIL_PENALTY_AND_BINARY_TREE_OPTIMIZER");
+        assertTrue(r1.get().textResponse().contains("二叉树合并对数降维"), "Mentions binary tree logarithmic reduction");
+
+        var r2 = FastPathResolver.tryResolve("精准和时运能共存吗", null);
+        assertTrue(r2.isPresent(), "Resolved enchantment conflict query");
+        assertTrue(r2.get().category().equals("ENCHANTMENT_COMPATIBILITY_AND_GEAR_RULES"), "Category is ENCHANTMENT_COMPATIBILITY_AND_GEAR_RULES");
+        assertTrue(r2.get().textResponse().contains("精准采集 vs 时运"), "Mentions silk touch vs fortune");
+
+        var r3 = FastPathResolver.tryResolve("create应力过载怎么解决", null);
+        assertTrue(r3.isPresent(), "Resolved create kinetics query");
+        assertTrue(r3.get().category().equals("CREATE_STRESS_CAPACITY_AND_KINETICS"), "Category is CREATE_STRESS_CAPACITY_AND_KINETICS");
+        assertTrue(r3.get().textResponse().contains("过载断裂机制"), "Mentions overstressed mechanism");
+
+        var r4 = FastPathResolver.tryResolve("传送门加载器permaloader怎么做", null);
+        assertTrue(r4.isPresent(), "Resolved permaloader query");
+        assertTrue(r4.get().category().equals("PORTAL_PERMALOADER_AND_CHUNK_TICKING"), "Category is PORTAL_PERMALOADER_AND_CHUNK_TICKING");
+        assertTrue(r4.get().textResponse().contains("15秒时钟律"), "Mentions 15-second clock rule");
+    }
+
+    private static void testPromptSafetyFenceV20() {
+        var fenced = PromptSafetyFence.build("测试神装与Create应力机制", null);
+        assertTrue(fenced.userPrompt().contains("【铁砧累积惩罚与二叉树最优合并规避算法】"), "Injected anvil optimizer rules");
+        assertTrue(fenced.userPrompt().contains("【附魔互斥矩阵与神装配方验证】"), "Injected enchantment compatibility rules");
+        assertTrue(fenced.userPrompt().contains("【Create 机械动力学应力网络与过载断裂力学】"), "Injected create kinetics rules");
+        assertTrue(fenced.userPrompt().contains("【生电传送门常载网与 Ticket 30 强加载拓扑】"), "Injected permaloader rules");
+    }
+
+    private static void testCommandRouterV20AnvilCreateChunkloader() {
+        McAgentCore core = new McAgentCore();
+        PlayerSessionManager sm = new PlayerSessionManager();
+        CommandRouter router = new CommandRouter(core, sm);
+
+        // 1. anvil command
+        var anvilRes = router.execute("Steve", "/hoshi anvil netherite_sword sharpness:5 unbreaking:3 mending:1 looting:3", null);
+        assertTrue(anvilRes.isSuccess(), "Anvil command succeeded");
+        assertTrue(anvilRes.getAction().equals("ANVIL"), "Action is ANVIL");
+        assertTrue(anvilRes.getMessage().contains("二叉树优化已就绪"), "Anvil report confirms ready");
+        assertTrue(anvilRes.getMessage().contains("锻造执行工序"), "Anvil report contains steps");
+
+        // 2. create command
+        var createRes = router.execute("Steve", "/hoshi create stress steam 9", null);
+        assertTrue(createRes.isSuccess(), "Create command succeeded");
+        assertTrue(createRes.getAction().equals("CREATE"), "Action is CREATE");
+        assertTrue(createRes.getMessage().contains("动力裕度充沛"), "Create report confirms power surplus");
+
+        // 3. chunkloader permaloader command
+        var clRes = router.execute("Steve", "/hoshi chunkloader permaloader 10.0", null);
+        assertTrue(clRes.isSuccess(), "Chunkloader permaloader command succeeded");
+        assertTrue(clRes.getAction().equals("CHUNKLOADER"), "Action is CHUNKLOADER");
+        assertTrue(clRes.getMessage().contains("强加载时钟维持正常"), "Chunkloader report confirms normal clock");
+
+        // 4. chunkloader portal command
+        var alignRes = router.execute("Steve", "/hoshi chunkloader portal 800 -1600 100 -200", null);
+        assertTrue(alignRes.isSuccess(), "Chunkloader portal align succeeded");
+        assertTrue(alignRes.getAction().equals("CHUNKLOADER"), "Action is CHUNKLOADER");
+        assertTrue(alignRes.getMessage().contains("完美的 1:1 双向绝对严格对称绑定"), "Portal report confirms 1:1 binding");
+
+        // 5. Help mentions new commands
+        var helpRes = router.execute("Steve", "/hoshi help", null);
+        assertTrue(helpRes.getMessage().contains("anvil"), "Help mentions anvil");
+        assertTrue(helpRes.getMessage().contains("create"), "Help mentions create");
+        assertTrue(helpRes.getMessage().contains("chunkloader"), "Help mentions chunkloader");
     }
 
 }

@@ -24,7 +24,14 @@ from .rules import (
     SPAWNER_CAGE_MECHANICS_AND_SUPPRESSION_RULES,
     IRON_FARM_PANIC_AND_LOS_SLEEP_RULES,
     VILLAGER_WORKSTATION_PATHING_AND_RESTOCK_RULES,
+    ANVIL_PENALTY_AND_BINARY_TREE_OPTIMIZER_RULES,
+    ENCHANTMENT_COMPATIBILITY_AND_GEAR_RULES,
+    CREATE_STRESS_CAPACITY_AND_KINETICS_RULES,
+    PORTAL_PERMALOADER_AND_CHUNK_TICKING_RULES,
 )
+from .anvil import EnchantmentEntry, AnvilItem, AnvilMergeStep, AnvilPlan, optimize_anvil_tree, calculate_penalty, get_enchantment
+from .create_kinetics import MachineEntry, KineticReport, analyze_create_network, resolve_impact_factor
+from .chunkload import AlignmentResult, PermaloaderReport, evaluate_portal_alignment, analyze_permaloader
 from .farm import DespawnZone, FarmReport, SpawnerReport, evaluate_mob_farm, evaluate_spawner
 from .villager import FarmType as VillagerFarmType, VillagerReport, diagnose_iron_farm, diagnose_breeder, diagnose_trading
 from .multiblock import MultiblockBlueprint, MultiblockReport, find_blueprint, validate_inventory
@@ -110,4 +117,25 @@ __all__ = [
     "CommandRouter",
     "CraftingRecipe",
     "CraftingReadinessChecker",
+    "ANVIL_PENALTY_AND_BINARY_TREE_OPTIMIZER_RULES",
+    "ENCHANTMENT_COMPATIBILITY_AND_GEAR_RULES",
+    "CREATE_STRESS_CAPACITY_AND_KINETICS_RULES",
+    "PORTAL_PERMALOADER_AND_CHUNK_TICKING_RULES",
+    "EnchantmentEntry",
+    "AnvilItem",
+    "AnvilMergeStep",
+    "AnvilPlan",
+    "optimize_anvil_tree",
+    "calculate_penalty",
+    "get_enchantment",
+    "MachineEntry",
+    "KineticReport",
+    "analyze_create_network",
+    "resolve_impact_factor",
+    "AlignmentResult",
+    "PermaloaderReport",
+    "evaluate_portal_alignment",
+    "analyze_permaloader",
 ]
+
+__version__ = "2.0.0"

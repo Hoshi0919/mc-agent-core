@@ -79,7 +79,11 @@ public final class PromptSafetyFence {
         userPrompt.append(LocalGameRules.HOSTILE_MOB_SPAWN_AND_DESPAWN_SPHERES_RULES).append("\n\n");
         userPrompt.append(LocalGameRules.SPAWNER_CAGE_MECHANICS_AND_SUPPRESSION_RULES).append("\n\n");
         userPrompt.append(LocalGameRules.IRON_FARM_PANIC_AND_LOS_SLEEP_RULES).append("\n\n");
-        userPrompt.append(LocalGameRules.VILLAGER_WORKSTATION_PATHING_AND_RESTOCK_RULES).append("\n");
+        userPrompt.append(LocalGameRules.VILLAGER_WORKSTATION_PATHING_AND_RESTOCK_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.ANVIL_PENALTY_AND_BINARY_TREE_OPTIMIZER_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.ENCHANTMENT_COMPATIBILITY_AND_GEAR_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.CREATE_STRESS_CAPACITY_AND_KINETICS_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.PORTAL_PERMALOADER_AND_CHUNK_TICKING_RULES).append("\n");
         userPrompt.append("</canonical_rules>\n\n");
 
         userPrompt.append("<player_query>\n");

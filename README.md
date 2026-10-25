@@ -4,7 +4,33 @@
 
 ---
 
-## 🌟 核心特性（v1.9.0）
+## 🌟 核心特性（v2.0.0 里程碑）
+
+1. **铁砧附魔合并二叉树优化器与惩罚规避算法 (Anvil Enchantment Tree Optimizer & Prior Work Penalty Avoidance)**：
+   - **`AnvilOptimizer`**：
+     - **累积惩罚指数爆炸公式**：每次铁砧操作记录工作次数 $N$，附加消耗惩罚为 $2^N - 1$ 级（0, 1, 3, 7, 15, 31, 63...）；
+     - **规避【过于昂贵！(Too Expensive!)】**：生存模式单步铁砧消耗 $\ge 40$ 级即被彻底拒绝合成！线性依次敲 6~8 本书到第 5 步即突破 40 级导致装备报废；
+     - **二叉树对数级合并**：通过将多本书两两构建平衡二叉合并树（树高仅 $\lceil \log_2(N) ceil \le 3$），最后一次性将复合书拍上装备，最终装备惩罚仅为 3~4 次（7~15 级），全程单步消耗控制在 10~25 级以内，彻底规避 39 级上限！
+     - **附魔互斥与装备兼容性矩阵**：内置 37+ 种核心附魔属性、倍率与互斥对校验（精准采集 vs 时运、无限 vs 经验修补、四种保护互斥、三叉戟激流 vs 忠诚/引雷、1.21 重锤专属致密/破甲/风爆）；
+   - **`/hoshi anvil <装备名> [附魔1:等级] [附魔2:等级]...`**：生成步骤清晰的左槽/右槽锻造执行工序与等级消耗报告！
+
+2. **现代科技模组 Create 机械动力学应力与转速网络平衡引擎 (Create Stress Capacity & Gear Kinetics Analyzer)**：
+   - **`CreateKineticsAnalyzer`**：
+     - **转速应力守恒公式**：机器应力消耗遵循 $	ext{Impact}(SU) = \kappa 	imes 	ext{RPM}$。转速提升 2 倍，消耗同步翻倍；
+     - **机器冲击系数 $\kappa$ 注册库**：粉碎轮/辊压机/机械臂 $\kappa=8$，搅拌机/动力锯/流体泵/磨盘 $\kappa=4$，传动带 $\kappa=1$；
+     - **动力源阶梯**：小型水轮 (256 SU @ 8 RPM)、大型水轮 (512 SU @ 4 RPM)、风车轴承 (8~128 帆布，满级 8,192 SU @ 16 RPM)；
+     - **工业级蒸汽机矩阵**：锅炉等级 1~18 级（由加热等级：营火/烈焰人/烈焰饼超频 + 机械泵注水决定），9 级被动满产 147,456 SU，18 级超频最大释放 294,912 SU @ 64 RPM；
+     - **过载断裂诊断 (Overstressed Diagnostics)**：总消耗超过总容量时转速瞬间归零停摆；精准给出断裂缺口赤字、全线临界安全同步转速上限与齿轮比调谐/锅炉扩容方案；
+   - **`/hoshi create stress <动力源> [规模] [机器配置]`**：为科技自动化工业基地提供即时动力学平衡演算！
+
+3. **生电传送门常载网与 8:1 坐标对齐诊断器 (Portal Permaloader & Chunk Loading Grid)**：
+   - **`PortalChunkLoaderAnalyzer`**：
+     - **15.0 秒强加载时钟律**：实体穿越下界传送门产生持续 15 秒 (300 ticks) 的 Ticket 30 强加载票；精确校验投掷穿梭周期（安全黄金周期 8~12 秒），诊断超时引起的常载区块卸载停摆与死锁；
+     - **三阶辐射圈判定**：3x3 实体完全处理区 (Entity Ticking)、5x5 方块红石区 (Block Ticking)、7x7 懒惰区 (Lazy Chunks)；
+     - **8:1 坐标对齐与防串门 (Portal Bleed Diagnostics)**：主世界 $(X, Z)$ 对应下界 $(\lfloor X/8 floor, \lfloor Z/8 floor)$；精确解算欧氏空间漂移距离 $\Delta$，告警超过 16 格的安全容差门，严防单向串门撕裂并输出下界门精确迁址坐标！
+   - **`/hoshi chunkloader permaloader [周期秒数]`** 与 **`/hoshi chunkloader portal <主界X> <主界Z> <下界X> <下界Z>`**：一键生成生电常载网络诊断报告！
+
+4. **敌对生物生成动力学、清除球与刷怪塔诊断引擎 (Mob Spawning Dynamics & Despawn Spheres Analyzer)**
 
 1. **敌对生物生成动力学、清除球与刷怪塔诊断引擎 (Mob Spawning Dynamics & Despawn Spheres Analyzer)**：
    - **`MobFarmDynamics`**：
@@ -197,12 +223,12 @@ mc-agent-core/
 │   │   └── AsyncQueryDispatcher.java    # 整合缓存与限流的非阻塞异步分发器
 │   └── McAgentCore.java                 # 统一门面 Facade 入口
 ├── src/test/java/hoshi/mcagent/
-│   └── McAgentCoreTest.java             # Java 493 项全绿自动化回归测试
+│   └── McAgentCoreTest.java             # Java 579 项全绿自动化回归测试
 ├── mc_agent_core/                       # Python 仿真套件与原型（全模块 100% 对齐）
 │   ├── crafting.py                      # Python 版配方与合成充盈度
 │   ├── context.py                       # Python 版全维上下文快照
 │   └── ...
-└── tests/test_mc_agent_core.py          # Python 53 项端到端测试
+└── tests/test_mc_agent_core.py          # Python 59 项端到端测试
 ```
 
 ---
@@ -213,11 +239,11 @@ mc-agent-core/
 ```bash
 javac -encoding UTF-8 -d bin $(find src/main/java src/test/java -name '*.java')
 java -cp bin hoshi.mcagent.McAgentCoreTest
-# 🎉 All 493/493 Java tests passed successfully!
+# 🎉 All 579/579 Java tests passed successfully!
 ```
 
 ### Python 仿真套件
 ```bash
 PYTHONPATH=. uv run --with pytest pytest tests/ -v
-# 53 passed in 0.29s
+# 59 passed in 0.30s
 ```

@@ -1160,3 +1160,204 @@ def test_command_router_v19_mobfarm_and_villager():
     res_help = router.execute("Steve", "/hoshi help", None)
     assert "mobfarm" in res_help.message
     assert "villager" in res_help.message
+
+
+def test_anvil_optimizer_v20():
+    from mc_agent_core.anvil import optimize_anvil_tree, calculate_penalty, get_enchantment
+
+    # 1. Penalty math
+    assert calculate_penalty(0) == 0
+    assert calculate_penalty(1) == 1
+    assert calculate_penalty(2) == 3
+    assert calculate_penalty(3) == 7
+    assert calculate_penalty(4) == 15
+    assert calculate_penalty(5) == 31
+    assert calculate_penalty(6) == 63
+
+    # 2. Registry & conflicts
+    sharp = get_enchantment("sharpness")
+    assert sharp is not None
+    assert sharp.conflicts_with("smite")
+    assert sharp.conflicts_with("bane_of_arthropods")
+    assert not sharp.conflicts_with("unbreaking")
+    assert sharp.is_compatible_with_gear("netherite_sword")
+    assert not sharp.is_compatible_with_gear("bow")
+
+    fortune = get_enchantment("fortune")
+    assert fortune.conflicts_with("silk_touch")
+
+    mending = get_enchantment("mending")
+    assert mending.conflicts_with("infinity")
+
+    # 3. Binary tree merge
+    enchants = {
+        "sharpness": 5,
+        "unbreaking": 3,
+        "mending": 1,
+        "looting": 3,
+        "sweeping_edge": 3,
+    }
+    plan = optimize_anvil_tree("netherite_sword", enchants)
+    assert not plan.too_expensive
+    assert plan.max_step_cost < 40
+    assert plan.final_work_count <= 4
+    assert len(plan.steps) > 0
+    assert "二叉树优化已就绪" in plan.format_report()
+
+    # 4. Warnings on conflicts
+    bad_plan = optimize_anvil_tree("netherite_sword", {"sharpness": 5, "smite": 5, "feather_falling": 4})
+    assert len(bad_plan.warnings) > 0
+    rep = bad_plan.format_report()
+    assert "冲突警报" in rep
+    assert "通常不能直接赋予装备" in rep
+
+
+def test_create_kinetics_analyzer_v20():
+    from mc_agent_core.create_kinetics import analyze_create_network, MachineEntry, resolve_impact_factor
+
+    # 1. Capacities
+    r_water = analyze_create_network("water", 2)
+    assert r_water.total_capacity == 512.0
+
+    r_large = analyze_create_network("large_water", 2)
+    assert r_large.total_capacity == 1024.0
+
+    r_wind = analyze_create_network("windmill", 64)
+    assert r_wind.total_capacity == 4096.0
+
+    r_steam = analyze_create_network("steam", 9)
+    assert r_steam.total_capacity == 147456.0
+
+    r_steam18 = analyze_create_network("steam", 18)
+    assert r_steam18.total_capacity == 294912.0
+
+    # 2. Factors
+    assert resolve_impact_factor("crushing_wheel") == 8.0
+    assert resolve_impact_factor("mechanical_press") == 8.0
+    assert resolve_impact_factor("mechanical_mixer") == 4.0
+    assert resolve_impact_factor("belt") == 1.0
+
+    # 3. Overstressed
+    heavy = [MachineEntry("mechanical_press", 2, 64.0)]
+    r_over = analyze_create_network("water", 1, heavy)
+    assert r_over.is_overstressed
+    assert r_over.deficit_su == 768.0
+    assert "过载断裂" in r_over.format_report()
+
+    # 4. Safe
+    factory = [
+        MachineEntry("crushing_wheel", 4, 64.0),
+        MachineEntry("mechanical_press", 2, 64.0),
+    ]
+    r_safe = analyze_create_network("steam", 9, factory)
+    assert not r_safe.is_overstressed
+    assert r_safe.surplus_su > 140000.0
+    assert "动力裕度充沛" in r_safe.format_report()
+
+
+def test_portal_chunkloader_analyzer_v20():
+    from mc_agent_core.chunkload import evaluate_portal_alignment, analyze_permaloader
+
+    # 1. Alignment perfect
+    perf = evaluate_portal_alignment(800.0, 64.0, -1600.0, 100.0, 64.0, -200.0)
+    assert perf.is_perfect
+    assert perf.is_safe
+    assert not perf.is_bleed_risk
+    assert perf.drift_distance < 0.001
+    assert "1:1 双向绝对严格对称绑定" in perf.format_report()
+
+    # 2. Alignment drifted
+    drift = evaluate_portal_alignment(800.0, 64.0, -1600.0, 100.0, 64.0, -180.0)
+    assert not drift.is_safe
+    assert drift.is_bleed_risk
+    assert drift.drift_distance == 20.0
+    assert "单向串门撕裂" in drift.format_report()
+
+    # 3. Permaloader safe
+    pl_safe = analyze_permaloader(10.0, "hopper_cart")
+    assert pl_safe.is_valid
+    assert not pl_safe.is_expired
+    assert pl_safe.ticket_ticks_remaining == 100.0
+    assert "强加载时钟维持正常" in pl_safe.format_report()
+
+    # 4. Permaloader expired
+    pl_exp = analyze_permaloader(16.0, "hopper_cart")
+    assert pl_exp.is_expired
+    assert "Ticket 30 强加载票在实体到达前已彻底过期" in pl_exp.format_report()
+
+    # 5. Invalid
+    pl_inv = analyze_permaloader(-2.0, "hopper_cart")
+    assert not pl_inv.is_valid
+
+
+def test_fast_path_v20_rules():
+    from mc_agent_core.fast_path import FastPathResolver
+
+    r1 = FastPathResolver.try_resolve("神装怎么合最省经验")
+    assert r1 is not None
+    assert r1.category == "ANVIL_PENALTY_AND_BINARY_TREE_OPTIMIZER"
+    assert "二叉树合并对数降维" in r1.text_response
+
+    r2 = FastPathResolver.try_resolve("精准和时运能共存吗")
+    assert r2 is not None
+    assert r2.category == "ENCHANTMENT_COMPATIBILITY_AND_GEAR_RULES"
+    assert "精准采集 vs 时运" in r2.text_response
+
+    r3 = FastPathResolver.try_resolve("create应力过载怎么解决")
+    assert r3 is not None
+    assert r3.category == "CREATE_STRESS_CAPACITY_AND_KINETICS"
+    assert "过载断裂机制" in r3.text_response
+
+    r4 = FastPathResolver.try_resolve("传送门加载器permaloader怎么做")
+    assert r4 is not None
+    assert r4.category == "PORTAL_PERMALOADER_AND_CHUNK_TICKING"
+    assert "15秒时钟律" in r4.text_response
+
+
+def test_prompt_safety_fence_v20():
+    from mc_agent_core.fence import PromptSafetyFence
+
+    fenced = PromptSafetyFence.build("测试神装与Create机制", None)
+    assert "【铁砧累积惩罚与二叉树最优合并规避算法】" in fenced.user_prompt
+    assert "【附魔互斥矩阵与神装配方验证】" in fenced.user_prompt
+    assert "【Create 机械动力学应力网络与过载断裂力学】" in fenced.user_prompt
+    assert "【生电传送门常载网与 Ticket 30 强加载拓扑】" in fenced.user_prompt
+
+
+def test_command_router_v20_anvil_create_chunkloader():
+    from mc_agent_core.dispatcher import AsyncQueryDispatcher
+    from mc_agent_core.command import CommandRouter
+
+    dispatcher = AsyncQueryDispatcher()
+    router = CommandRouter(dispatcher)
+
+    # 1. anvil
+    r_anvil = router.execute("Steve", "/hoshi anvil netherite_sword sharpness:5 unbreaking:3 mending:1 looting:3", None)
+    assert r_anvil.is_success
+    assert r_anvil.action == "ANVIL"
+    assert "二叉树优化已就绪" in r_anvil.message
+    assert "锻造执行工序" in r_anvil.message
+
+    # 2. create
+    r_create = router.execute("Steve", "/hoshi create stress steam 9", None)
+    assert r_create.is_success
+    assert r_create.action == "CREATE"
+    assert "动力裕度充沛" in r_create.message
+
+    # 3. chunkloader permaloader
+    r_pl = router.execute("Steve", "/hoshi chunkloader permaloader 10.0", None)
+    assert r_pl.is_success
+    assert r_pl.action == "CHUNKLOADER"
+    assert "强加载时钟维持正常" in r_pl.message
+
+    # 4. chunkloader portal
+    r_portal = router.execute("Steve", "/hoshi chunkloader portal 800 -1600 100 -200", None)
+    assert r_portal.is_success
+    assert r_portal.action == "CHUNKLOADER"
+    assert "完美的 1:1 双向绝对严格对称绑定" in r_portal.message
+
+    # 5. Help
+    r_help = router.execute("Steve", "/hoshi help", None)
+    assert "anvil" in r_help.message
+    assert "create" in r_help.message
+    assert "chunkloader" in r_help.message

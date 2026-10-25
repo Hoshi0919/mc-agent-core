@@ -8,6 +8,9 @@ from .multiblock import find_blueprint, validate_inventory
 from .pipeline import analyze_smelting_array
 from .farm import evaluate_mob_farm, evaluate_spawner
 from .villager import diagnose_iron_farm, diagnose_breeder, diagnose_trading
+from .anvil import optimize_anvil_tree
+from .create_kinetics import analyze_create_network, MachineEntry
+from .chunkload import evaluate_portal_alignment, analyze_permaloader
 from .dispatcher import AsyncQueryDispatcher, QueryResult
 from .formatter import MinecraftTextFormatter
 from .paginator import ChatPaginator, PagedResult
@@ -164,6 +167,15 @@ class CommandRouter:
         elif sub in ("villager", "v"):
             type_name = tokens[arg_start + 1] if arg_start + 1 < len(tokens) else "iron"
             return self._handle_villager(player_id, type_name, tokens, arg_start)
+
+        elif sub in ("anvil", "enchant"):
+            return self._handle_anvil(player_id, tokens, arg_start)
+
+        elif sub in ("create", "kinetics"):
+            return self._handle_create(player_id, tokens, arg_start)
+
+        elif sub in ("chunkloader", "cl"):
+            return self._handle_chunkloader(player_id, tokens, arg_start)
 
         elif sub in ("nether", "portal"):
             return self._handle_nether(player_id, tokens, arg_start + 1, snapshot)
@@ -372,6 +384,81 @@ class CommandRouter:
         tellraw = TellrawJsonBuilder.to_json(comps)
         return CommandResult(status="SUCCESS", action="VILLAGER", message=paged.full_page_text, tellraw_json=tellraw, paged_result=paged)
 
+    def _handle_anvil(self, player_id: Optional[str], tokens: list[str], arg_start: int) -> CommandResult:
+        gear_name = tokens[arg_start + 1].lower() if arg_start + 1 < len(tokens) else "netherite_sword"
+        enchants = {}
+        if arg_start + 2 < len(tokens):
+            for token in tokens[arg_start + 2:]:
+                parts = token.replace("：", ":").split(":")
+                id_ = parts[0].lower()
+                lvl = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 1
+                enchants[id_] = lvl
+        else:
+            if "sword" in gear_name or "剑" in gear_name:
+                enchants = {"sharpness": 5, "unbreaking": 3, "mending": 1, "looting": 3, "sweeping_edge": 3}
+            elif "pickaxe" in gear_name or "镐" in gear_name:
+                enchants = {"efficiency": 5, "unbreaking": 3, "fortune": 3, "mending": 1}
+            elif "bow" in gear_name or "弓" in gear_name:
+                enchants = {"power": 5, "unbreaking": 3, "infinity": 1, "flame": 1}
+            else:
+                enchants = {"protection": 4, "unbreaking": 3, "mending": 1}
+
+        plan = optimize_anvil_tree(gear_name, enchants)
+        text = plan.format_report()
+        paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page")
+        self.session_manager.record_interaction(player_id, f"/hoshi anvil {gear_name}", text, "ANVIL", paged)
+        comps = MinecraftTextFormatter.parse_components(paged.full_page_text, f"/hoshi anvil {gear_name}")
+        tellraw = TellrawJsonBuilder.to_json(comps)
+        return CommandResult(status="SUCCESS", action="ANVIL", message=paged.full_page_text, tellraw_json=tellraw, paged_result=paged)
+
+    def _handle_create(self, player_id: Optional[str], tokens: list[str], arg_start: int) -> CommandResult:
+        source = "steam"
+        param = 9
+        if arg_start + 1 < len(tokens):
+            s = tokens[arg_start + 1].lower()
+            if s in ("stress", "kinetics"):
+                if arg_start + 2 < len(tokens):
+                    source = tokens[arg_start + 2]
+                if arg_start + 3 < len(tokens) and tokens[arg_start + 3].isdigit():
+                    param = int(tokens[arg_start + 3])
+            else:
+                source = s
+                if arg_start + 2 < len(tokens) and tokens[arg_start + 2].isdigit():
+                    param = int(tokens[arg_start + 2])
+
+        machines = [
+            MachineEntry("crushing_wheel", 4, 64.0),
+            MachineEntry("mechanical_press", 2, 64.0),
+            MachineEntry("mechanical_arm", 2, 32.0),
+            MachineEntry("fluid_pump", 4, 16.0),
+        ]
+        report = analyze_create_network(source, param, machines)
+        text = report.format_report()
+        paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page")
+        self.session_manager.record_interaction(player_id, f"/hoshi create {source}", text, "CREATE", paged)
+        comps = MinecraftTextFormatter.parse_components(paged.full_page_text, f"/hoshi create {source}")
+        tellraw = TellrawJsonBuilder.to_json(comps)
+        return CommandResult(status="SUCCESS", action="CREATE", message=paged.full_page_text, tellraw_json=tellraw, paged_result=paged)
+
+    def _handle_chunkloader(self, player_id: Optional[str], tokens: list[str], arg_start: int) -> CommandResult:
+        sub = tokens[arg_start + 1].lower() if arg_start + 1 < len(tokens) else "permaloader"
+        if sub in ("portal", "align", "coord"):
+            ow_x = float(tokens[arg_start + 2]) if arg_start + 2 < len(tokens) else 800.0
+            ow_z = float(tokens[arg_start + 3]) if arg_start + 3 < len(tokens) else -1600.0
+            n_x = float(tokens[arg_start + 4]) if arg_start + 4 < len(tokens) else 100.0
+            n_z = float(tokens[arg_start + 5]) if arg_start + 5 < len(tokens) else -200.0
+            text = evaluate_portal_alignment(ow_x, 64.0, ow_z, n_x, 64.0, n_z).format_report()
+        else:
+            interval = float(tokens[arg_start + 2]) if arg_start + 2 < len(tokens) else 10.0
+            trans = tokens[arg_start + 3] if arg_start + 3 < len(tokens) else "hopper_dropper_clock"
+            text = analyze_permaloader(interval, trans).format_report()
+
+        paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page")
+        self.session_manager.record_interaction(player_id, f"/hoshi chunkloader {sub}", text, "CHUNKLOADER", paged)
+        comps = MinecraftTextFormatter.parse_components(paged.full_page_text, f"/hoshi chunkloader {sub}")
+        tellraw = TellrawJsonBuilder.to_json(comps)
+        return CommandResult(status="SUCCESS", action="CHUNKLOADER", message=paged.full_page_text, tellraw_json=tellraw, paged_result=paged)
+
     def _handle_stats(self) -> CommandResult:
         cache_stats = str(self.dispatcher.cache.get_stats()) if self.dispatcher.cache else "N/A"
         active = self.session_manager.active_session_count
@@ -390,6 +477,9 @@ class CommandRouter:
             "▸ §e/hoshi villager <iron/breeder/trading>§r - 诊断刷铁机/繁殖/工作站死锁\n"
             "▸ §e/hoshi bom <方案> [数量]§r - 生成材料清单 (BOM)\n"
             "▸ §e/hoshi page <页码>§r - 翻页长篇内容\n"
+            "▸ §e/hoshi anvil <装备> [附魔:等级...]§r - 规划二叉树最优附魔工序规避过于昂贵\n"
+            "▸ §e/hoshi create stress <动力源> [规模]§r - 诊断 Create 模组动力网应力与过载转速\n"
+            "▸ §e/hoshi chunkloader <permaloader/portal>§r - 诊断生电传送门常载网与 8:1 坐标漂移\n"
             "▸ §e/hoshi nether [x y z]§r - 换算地狱传送门坐标\n"
             "▸ §e/hoshi clear§r - 清理会话与翻页缓存\n"
             "▸ §e/hoshi stats§r - 查看缓存与度量统计\n"
