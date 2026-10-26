@@ -83,7 +83,10 @@ public final class PromptSafetyFence {
         userPrompt.append(LocalGameRules.ANVIL_PENALTY_AND_BINARY_TREE_OPTIMIZER_RULES).append("\n\n");
         userPrompt.append(LocalGameRules.ENCHANTMENT_COMPATIBILITY_AND_GEAR_RULES).append("\n\n");
         userPrompt.append(LocalGameRules.CREATE_STRESS_CAPACITY_AND_KINETICS_RULES).append("\n\n");
-        userPrompt.append(LocalGameRules.PORTAL_PERMALOADER_AND_CHUNK_TICKING_RULES).append("\n");
+        userPrompt.append(LocalGameRules.PORTAL_PERMALOADER_AND_CHUNK_TICKING_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.CREATE_KINETIC_JAMMING_AND_TOPOLOGICAL_LOCK_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.HOPPER_CYCLE_DEADLOCK_AND_SORTER_BLEED_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.CRAFTER_SLOT_MASKING_AND_PULSE_SYNC_RULES).append("\n");
         userPrompt.append("</canonical_rules>\n\n");
 
         userPrompt.append("<player_query>\n");

@@ -174,6 +174,14 @@ class CommandRouter:
         elif sub in ("create", "kinetics"):
             return self._handle_create(player_id, tokens, arg_start)
 
+        elif sub in ("cluster", "topo"):
+            cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
+            if not cluster:
+                return CommandResult(status="SUCCESS", action="CLUSTER", message="§6【局部机器拓扑诊断】§r\n当前未提供机器集群数据。")
+            from mc_agent_core.cluster import KineticNetworkAnalyzer, HopperNetworkAnalyzer
+            kr = KineticNetworkAnalyzer.analyze(cluster)
+            hr = HopperNetworkAnalyzer.analyze(cluster)
+            return CommandResult(status="SUCCESS", action="CLUSTER", message=f"§6【拓扑诊断】§r\n动力：{kr.primary_diagnosis}\n物流：{hr.primary_diagnosis}")
         elif sub in ("chunkloader", "cl"):
             return self._handle_chunkloader(player_id, tokens, arg_start)
 
@@ -479,7 +487,7 @@ class CommandRouter:
             "▸ §e/hoshi page <页码>§r - 翻页长篇内容\n"
             "▸ §e/hoshi anvil <装备> [附魔:等级...]§r - 规划二叉树最优附魔工序规避过于昂贵\n"
             "▸ §e/hoshi create stress <动力源> [规模]§r - 诊断 Create 模组动力网应力与过载转速\n"
-            "▸ §e/hoshi chunkloader <permaloader/portal>§r - 诊断生电传送门常载网与 8:1 坐标漂移\n"
+            "▸ §e/hoshi cluster - 诊断局部机器拓扑\n▸ §e/hoshi chunkloader <permaloader/portal>§r - 诊断生电传送门常载网与 8:1 坐标漂移\n"
             "▸ §e/hoshi nether [x y z]§r - 换算地狱传送门坐标\n"
             "▸ §e/hoshi clear§r - 清理会话与翻页缓存\n"
             "▸ §e/hoshi stats§r - 查看缓存与度量统计\n"

@@ -10,8 +10,8 @@ from .rules import (
 @dataclass(frozen=True)
 class Resolution:
     text_response: str
-    suggested_command: Optional[str]
-    category: str
+    suggested_command: Optional[str] = None
+    category: str = ""
 
 
 class FastPathResolver:
@@ -20,6 +20,27 @@ class FastPathResolver:
         if not raw_query or not raw_query.strip():
             return None
         q = raw_query.strip().lower()
+
+        # 0.0 Cluster Diagnostics
+        if context and getattr(context, "machine_cluster", None):
+            cluster = context.machine_cluster
+            if any(k in q for k in ["齿轮卡死", "为什么不转", "动力冲突", "齿轮冲突"]):
+                from mc_agent_core.cluster import KineticNetworkAnalyzer
+                kr = KineticNetworkAnalyzer.analyze(cluster)
+                return Resolution(text_response=f"§6【局部机械动力网络拓扑诊断】§r\n▸ 核心诊断：{kr.primary_diagnosis}", category="MACHINE_CLUSTER_KINETICS")
+            if any(k in q for k in ["漏斗死锁", "为什么堵", "物流死锁", "分类器串线"]):
+                from mc_agent_core.cluster import HopperNetworkAnalyzer
+                hr = HopperNetworkAnalyzer.analyze(cluster)
+                return Resolution(text_response=f"§c【局部物流与漏斗流水线拓扑诊断】§r\n▸ 核心诊断：{hr.primary_diagnosis}", category="MACHINE_CLUSTER_LOGISTICS")
+
+        # Rules 51-53
+        if any(k in q for k in ["齿轮卡死", "动力冲突", "反向啮合", "kinetic jamming"]):
+            return Resolution(text_response="§6【Create 齿轮啮合动力冲突与拓扑锁死力学】\n▸ 齿轮卡死 (Kinetic Jamming)", category="CREATE_KINETIC_JAMMING_AND_TOPOLOGICAL_LOCK")
+        if any(k in q for k in ["漏斗死锁", "漏斗闭环", "分类器串线", "分类器炸箱"]):
+            return Resolution(text_response="§c【漏斗闭环死锁与物品分类器串线击穿动力学】\n▸ 41+1+1+1+1 防串线", category="HOPPER_CYCLE_DEADLOCK_AND_SORTER_BLEED")
+        if any(k in q for k in ["槽位死锁", "槽位遮罩", "slot masking", "合成器配比"]):
+            return Resolution(text_response="§d【1.21 自动合成器槽位遮罩与脉冲时钟闭环】\n▸ Slot Masking 槽位遮罩", category="CRAFTER_SLOT_MASKING_AND_PULSE_SYNC")
+
 
         # 0. Context-Aware Crosshair Target Block Mining
         if context and context.target_block and not context.target_block.is_air:
@@ -664,6 +685,13 @@ class FastPathResolver:
             )
             return Resolution(text_response=resp, suggested_command="/hoshi chunkloader permaloader 10.0", category="PORTAL_PERMALOADER_AND_CHUNK_TICKING")
 
+                # Rules 51-53
+        if any(k in q for k in ["齿轮卡死", "动力冲突", "反向啮合", "kinetic jamming"]):
+            return Resolution(text_response="§6【Create 齿轮啮合动力冲突与拓扑锁死力学】\n▸ 齿轮卡死 (Kinetic Jamming)", category="CREATE_KINETIC_JAMMING_AND_TOPOLOGICAL_LOCK")
+        if any(k in q for k in ["漏斗死锁", "漏斗闭环", "分类器串线", "分类器炸箱"]):
+            return Resolution(text_response="§c【漏斗闭环死锁与物品分类器串线击穿动力学】\n▸ 41+1+1+1+1 防串线", category="HOPPER_CYCLE_DEADLOCK_AND_SORTER_BLEED")
+        if any(k in q for k in ["槽位死锁", "槽位遮罩", "slot masking", "合成器配比"]):
+            return Resolution(text_response="§d【1.21 自动合成器槽位遮罩与脉冲时钟闭环】\n▸ Slot Masking 槽位遮罩", category="CRAFTER_SLOT_MASKING_AND_PULSE_SYNC")
         return None
 
     @staticmethod

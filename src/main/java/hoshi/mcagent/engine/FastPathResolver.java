@@ -5,6 +5,11 @@ import hoshi.mcagent.context.InventorySnapshot;
 import hoshi.mcagent.context.TargetBlock;
 import hoshi.mcagent.context.TargetEntity;
 import hoshi.mcagent.crafting.CraftingReadinessChecker;
+import hoshi.mcagent.cluster.KineticNetworkAnalyzer;
+import hoshi.mcagent.cluster.HopperNetworkAnalyzer;
+import hoshi.mcagent.cluster.CrafterPipelineAnalyzer;
+import hoshi.mcagent.cluster.LocalBlock;
+import hoshi.mcagent.cluster.LocalMachineCluster;
 
 import java.util.Optional;
 
@@ -25,6 +30,48 @@ public final class FastPathResolver {
             return Optional.empty();
         }
         String q = rawQuery.trim().toLowerCase();
+
+        // 0.0 Context-Aware Machine Cluster Topology Diagnostics
+        if (context != null && context.machineCluster() != null && !context.machineCluster().isEmpty()) {
+            LocalMachineCluster cluster = context.machineCluster();
+            if (q.contains("齿轮卡死") || q.contains("为什么不转") || q.contains("动力冲突") ||
+                    q.contains("齿轮冲突") || q.contains("动力网状态") || q.contains("传动冲突")) {
+                var kinetic = KineticNetworkAnalyzer.analyze(cluster);
+                StringBuilder sb = new StringBuilder();
+                sb.append("§6【局部机械动力网络拓扑诊断】§r\n");
+                sb.append(String.format("▸ 拓扑规模：%d 个动力传动组件\n", kinetic.totalComponents()));
+                sb.append(String.format("▸ 核心诊断：%s\n", kinetic.primaryDiagnosis()));
+                if (kinetic.isJammed()) {
+                    for (String conf : kinetic.conflicts()) {
+                        sb.append(String.format("  ✖ %s\n", conf));
+                    }
+                }
+                sb.append(String.format("▸ 调优建议：%s", kinetic.actionableRemediation()));
+                return Optional.of(new Resolution(sb.toString(), null, "MACHINE_CLUSTER_KINETICS"));
+            }
+
+            if (q.contains("漏斗死锁") || q.contains("为什么堵") || q.contains("物流死锁") ||
+                    q.contains("分类器串线") || q.contains("背压") || q.contains("漏斗闭环") || q.contains("物流回路")) {
+                var hopper = HopperNetworkAnalyzer.analyze(cluster);
+                StringBuilder sb = new StringBuilder();
+                sb.append("§c【局部物流与漏斗流水线拓扑诊断】§r\n");
+                sb.append(String.format("▸ 拓扑规模：%d 个漏斗组件\n", hopper.totalHoppers()));
+                sb.append(String.format("▸ 核心诊断：%s\n", hopper.primaryDiagnosis()));
+                if (hopper.hasDeadlock()) {
+                    for (String d : hopper.deadlocks()) {
+                        sb.append(String.format("  ⚡ %s\n", d));
+                    }
+                }
+                if (hopper.hasBleedRisk() || !hopper.warnings().isEmpty()) {
+                    for (String w : hopper.warnings()) {
+                        sb.append(String.format("  ⚠ %s\n", w));
+                    }
+                }
+                sb.append(String.format("▸ 调优建议：%s", hopper.actionableAdvice()));
+                return Optional.of(new Resolution(sb.toString(), null, "MACHINE_CLUSTER_LOGISTICS"));
+            }
+        }
+
 
         // 0. Context-Aware Crosshair Target Block Mining & Tool Compatibility
         if (context != null && context.targetBlock() != null && !context.targetBlock().isAir()) {
@@ -49,7 +96,7 @@ public final class FastPathResolver {
                 return Optional.of(new Resolution(sb.toString(), cmd, "TARGET_BLOCK_HARVEST"));
             }
 
-            TargetBlock.LogisticsReport log = context.targetBlock().evaluateLogisticsOrRedstone();
+        TargetBlock.LogisticsReport log = context.targetBlock().evaluateLogisticsOrRedstone();
             if (log.isLogisticsOrRedstone()) {
                 if (q.contains("为什么不漏") || q.contains("为什么不吸") || q.contains("漏斗锁") ||
                         q.contains("比较器模式") || q.contains("比较器怎么算") || q.contains("红石状态") ||
@@ -188,6 +235,15 @@ public final class FastPathResolver {
                     "▸ 获取途径：重型核心仅在试炼密室 (Trial Chamber) 的【不祥宝库】用不祥试炼钥匙开启获得\n" +
                     "▸ 核心特效：坠落攻击伤害随下落高度倍增，击中目标时完全免疫坠落伤害！";
             return Optional.of(new Resolution(resp, "/locate structure minecraft:trial_chambers", "MACE_1_21"));
+        }
+
+        // 53. Crafter Slot Masking & Pulse Sync
+        if (q.contains("槽位死锁") || q.contains("槽位遮罩") || q.contains("slot masking") || q.contains("脉冲闭环") || (q.contains("合成器") && (q.contains("死锁") || q.contains("配平") || q.contains("遮罩") || q.contains("时钟")))) {
+            String resp = "§d【1.21 自动合成器槽位遮罩与脉冲时钟闭环】\n" +
+                    "▸ §e槽位禁用 (Slot Masking)§r：非 9 格满配方（胸甲8格/镐5格/剑3格）必须手动点击红色禁用多余槽位，防止漏斗供料错位溢出破坏配方！\n" +
+                    "▸ §a比较器满格脉冲闭环§r：比较器输出信号等级 = 有物品槽位 + 禁用槽位总数 (0~9)。当信号达到 9 级时触发 1-tick 脉冲瞬间合成并弹出成品！\n" +
+                    "▸ §c多原料供料防死锁§r：多成分配方禁止用单漏斗无序混投，单一原料会抢占全部未填槽位造成永久死锁；建议采用投掷器按比例脉冲投料。";
+            return Optional.of(new Resolution(resp, null, "CRAFTER_SLOT_MASKING_AND_PULSE_SYNC"));
         }
 
         // 6. Crafter (1.21)
@@ -467,6 +523,24 @@ public final class FastPathResolver {
             return Optional.of(new Resolution(resp, "/locate structure minecraft:trial_chambers", "TRIAL_SPAWNER_BREEZE"));
         }
 
+        // 51. Create Kinetic Jamming & Topological Lock
+        if (q.contains("齿轮卡死") || q.contains("动力冲突") || q.contains("反向啮合") || q.contains("齿轮不转") || q.contains("kinetic jamming")) {
+            String resp = "§6【Create 齿轮啮合动力冲突与拓扑锁死力学】\n" +
+                    "▸ §e啮合转向守恒§r：小齿轮之间外切啮合转向严格反转 (ω2 = -ω1)；大齿轮与小齿轮外切啮合角速度放大 2 倍或缩小 1/2。\n" +
+                    "▸ §c齿轮卡死 (Kinetic Jamming)§r：若传动分支在闭环回路中汇合，且传递矩阵累乘转向为 -1 (奇数次啮合回环)，两齿轮在同一触点企图反向旋转，触发动力自锁完全停摆！\n" +
+                    "▸ §a排障对策§r：拆除回路中任一多余从动齿轮，或接入换向齿轮箱 (Gearbox) 进行相位配平！";
+            return Optional.of(new Resolution(resp, null, "CREATE_KINETIC_JAMMING_AND_TOPOLOGICAL_LOCK"));
+        }
+
+        // 52. Hopper Cycle Deadlock & Sorter Bleed
+        if (q.contains("漏斗死锁") || q.contains("漏斗闭环") || q.contains("分类器串线") || q.contains("分类器炸箱") || q.contains("信号击穿") || q.contains("背压停滞")) {
+            String resp = "§c【漏斗闭环死锁与物品分类器串线击穿动力学】\n" +
+                    "▸ §c闭环死循环 (Cycle Deadlock)§r：漏斗相互朝向 (A->B->A) 导致物品在环内无限循环无法流入仓储；需重定向至少一个漏斗朝向！\n" +
+                    "▸ §e防串线 41+1+1+1+1 铁律§r：容纳 45 物品时比较器输出恰好 2 级信号；若堆积达 46 物品 (或误用 64 堆叠)，信号升至 3 级击穿相邻切片红石线导致隔壁漏空！\n" +
+                    "▸ §a背压停滞 (Backpressure)§r：下游容器满仓或漏斗被红石充能锁定时，整条上游链路进入背压停滞。";
+            return Optional.of(new Resolution(resp, null, "HOPPER_CYCLE_DEADLOCK_AND_SORTER_BLEED"));
+        }
+
         // 35. Hopper Logistics & Anti-Spill Sorter
         if (q.contains("漏斗为什么不漏") || q.contains("漏斗不工作") || q.contains("漏斗锁了") ||
                 q.contains("41个") || q.contains("41 物品") || q.contains("防串线") ||
@@ -628,7 +702,7 @@ public final class FastPathResolver {
             return Optional.of(new Resolution(resp, "/hoshi chunkloader permaloader 10.0", "PORTAL_PERMALOADER_AND_CHUNK_TICKING"));
         }
 
-return Optional.empty();
+        return Optional.empty();
     }
 
     private static Resolution resolveCoordinates(ContextSnapshot ctx) {

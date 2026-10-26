@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import math
 
 
@@ -432,6 +432,7 @@ class ContextSnapshot:
     is_thundering: bool = False
     inventory: Optional[InventorySnapshot] = None
     target_entity: Optional[TargetEntity] = None
+    machine_cluster: Optional[Any] = None
 
     @property
     def is_overworld(self) -> bool:

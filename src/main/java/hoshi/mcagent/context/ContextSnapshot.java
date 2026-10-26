@@ -1,10 +1,14 @@
 package hoshi.mcagent.context;
 
+import hoshi.mcagent.cluster.KineticNetworkAnalyzer;
+import hoshi.mcagent.cluster.HopperNetworkAnalyzer;
+import hoshi.mcagent.cluster.LocalMachineCluster;
+
 import java.util.Collections;
 import java.util.List;
 
 /**
- * Immutable snapshot of player, inventory, targeted blocks/entities, and world state captured on the main tick thread.
+ * Immutable snapshot of player, inventory, targeted blocks/entities, local machine clusters, and world state captured on the main tick thread.
  */
 public record ContextSnapshot(
         String playerName,
@@ -25,7 +29,8 @@ public record ContextSnapshot(
         boolean isRaining,
         boolean isThundering,
         InventorySnapshot inventory,
-        TargetEntity targetEntity
+        TargetEntity targetEntity,
+        LocalMachineCluster machineCluster
 ) {
     public ContextSnapshot {
         if (activeEffects == null) {
@@ -44,7 +49,22 @@ public record ContextSnapshot(
     ) {
         this(playerName, dimension, x, y, z, yaw, pitch, biome, targetBlock,
                 mainHandItem, offHandItem, health, hunger, activeEffects, worldTimeTicks,
-                isRaining, isThundering, null, null);
+                isRaining, isThundering, null, null, null);
+    }
+
+    /**
+     * Backward-compatible 19-argument constructor.
+     */
+    public ContextSnapshot(
+            String playerName, String dimension, double x, double y, double z,
+            float yaw, float pitch, String biome, TargetBlock targetBlock,
+            String mainHandItem, String offHandItem, float health, int hunger,
+            List<String> activeEffects, long worldTimeTicks, boolean isRaining, boolean isThundering,
+            InventorySnapshot inventory, TargetEntity targetEntity
+    ) {
+        this(playerName, dimension, x, y, z, yaw, pitch, biome, targetBlock,
+                mainHandItem, offHandItem, health, hunger, activeEffects, worldTimeTicks,
+                isRaining, isThundering, inventory, targetEntity, null);
     }
 
     public static Builder builder() {
@@ -126,6 +146,17 @@ public record ContextSnapshot(
         if (targetEntity != null) {
             sb.append("Target Entity: ").append(targetEntity.toSummary()).append("\n");
         }
+        if (machineCluster != null && !machineCluster.isEmpty()) {
+            sb.append("Machine Cluster: ").append(machineCluster.toSummary()).append("\n");
+            var kinetic = KineticNetworkAnalyzer.analyze(machineCluster);
+            if (kinetic.isJammed()) {
+                sb.append("  ⚠ Kinetic Jamming: ").append(kinetic.primaryDiagnosis()).append("\n");
+            }
+            var hopper = HopperNetworkAnalyzer.analyze(machineCluster);
+            if (hopper.hasDeadlock() || hopper.hasBackpressure() || hopper.hasBleedRisk()) {
+                sb.append("  ⚠ Hopper Issue: ").append(hopper.primaryDiagnosis()).append("\n");
+            }
+        }
         sb.append("</player_context>");
         return sb.toString();
     }
@@ -147,6 +178,7 @@ public record ContextSnapshot(
         private boolean isThundering = false;
         private InventorySnapshot inventory = InventorySnapshot.empty();
         private TargetEntity targetEntity = null;
+        private LocalMachineCluster machineCluster = null;
 
         public Builder player(String name) { this.playerName = name; return this; }
         public Builder dimension(String dim) { this.dimension = dim; return this; }
@@ -162,11 +194,12 @@ public record ContextSnapshot(
         public Builder worldTime(long ticks) { this.worldTimeTicks = ticks; return this; }
         public Builder weather(boolean rain, boolean thunder) { this.isRaining = rain; this.isThundering = thunder; return this; }
         public Builder inventory(InventorySnapshot inv) { this.inventory = inv; return this; }
+        public Builder cluster(LocalMachineCluster cluster) { this.machineCluster = cluster; return this; }
 
         public ContextSnapshot build() {
             return new ContextSnapshot(playerName, dimension, x, y, z, yaw, pitch, biome,
                     targetBlock, mainHandItem, offHandItem, health, hunger, activeEffects,
-                    worldTimeTicks, isRaining, isThundering, inventory, targetEntity);
+                    worldTimeTicks, isRaining, isThundering, inventory, targetEntity, machineCluster);
         }
     }
 }

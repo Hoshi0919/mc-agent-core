@@ -4,13 +4,39 @@
 
 ---
 
+## 🌟 核心特性（v2.1.0 里程碑：局部机器拓扑分析与因果图流式推断）
+
+1. **Create 机械动力网络拓扑图论分析与齿轮卡死诊断 (Create Kinetic Network & Jamming Analyzer)**：
+   - **`KineticNetworkAnalyzer`**：
+     - **轴传动与啮合传递矩阵**：同轴直线刚性传递转向与转速完全恒定 ($\omega_2 = \omega_1$)；正齿轮外切啮合严格反向 ($\omega_2 = -\omega_1$)；大小齿轮 2:1 / 1:2 啮合转速加倍/减半且转向反转；
+     - **动力卡死冲突检测 (Kinetic Jamming & Ratio Mismatch Lock)**：当机械传动分支在闭环回路中汇合时，沿环路累乘传动矩阵。若累乘转向为 -1（奇数次啮合回环造成齿轮在同一接触面企图同时反向转动）或转速比矛盾（如 $2.0x 
+eq 1.0x$ 自相矛盾加速比），在 0ms 瞬间锁定冲突点坐标并报警；
+     - **`/hoshi cluster kinetics`**：诊断当前准星局部多方块动力传动网络，精确给出卡死齿轮位置与换向齿轮箱 (Gearbox) 配平建议！
+
+2. **生电漏斗物流有向图、闭环死锁与分类器串线击穿分析器 (Hopper Directed Graph & Item Sorter Bleed Analyzer)**：
+   - **`HopperNetworkAnalyzer`**：
+     - **有向环路死锁检测 (Hopper Cycle Deadlock)**：基于 DFS 递归栈检测漏斗互指闭环回路（$A 	o B 	o A$ 或复杂循环），精准定位卡住物料的死循环；
+     - **背压停滞全线回溯 (Backpressure Stall)**：下游容器满仓或漏斗被意外红石信号锁定（`enabled=false`）时，逆向追溯标记整条受阻停滞流水线；
+     - **分类器信号击穿与炸箱预警 (Item Sorter Overflow Bleed)**：精准读取过滤漏斗容纳物品数。当物品堆积达到 46 个时，比较器信号跳升至 3 级击穿相邻 1 格切片红石线导致隔壁箱子漏空！严格指导 41+1+1+1+1 防串线布局；
+     - **`/hoshi cluster hopper`**：一键生成漏斗物流流向与死锁诊断报告！
+
+3. **1.21 自动合成器流水线闭环诊断器 (Crafter Pipeline & Slot Masking Analyzer)**：
+   - **`CrafterPipelineAnalyzer`**：
+     - **槽位遮罩缺口诊断 (Slot Masking Deficit)**：针对非 9 格满配方（如胸甲需 8 格、镐需 5 格、剑需 3 格），检测是否点击禁用多余槽位，严防漏斗原料溢入破坏配方；
+     - **多原料混投抢占死锁 (Slot Saturation Deadlock)**：单漏斗给多原料配方（如木棍+铁锭合成剑）无序供料时，单一原料抢占全部空槽导致死锁；指导采用投掷器脉冲定量配平；
+     - **比较器满格脉冲闭环**：指导比较器信号与 1-tick 脉冲发生器的时钟同步；
+     - **`/hoshi cluster crafter`**：诊断当前自动合成器配置状态！
+
+---
+
 ## 🌟 核心特性（v2.0.0 里程碑）
 
 1. **铁砧附魔合并二叉树优化器与惩罚规避算法 (Anvil Enchantment Tree Optimizer & Prior Work Penalty Avoidance)**：
    - **`AnvilOptimizer`**：
      - **累积惩罚指数爆炸公式**：每次铁砧操作记录工作次数 $N$，附加消耗惩罚为 $2^N - 1$ 级（0, 1, 3, 7, 15, 31, 63...）；
      - **规避【过于昂贵！(Too Expensive!)】**：生存模式单步铁砧消耗 $\ge 40$ 级即被彻底拒绝合成！线性依次敲 6~8 本书到第 5 步即突破 40 级导致装备报废；
-     - **二叉树对数级合并**：通过将多本书两两构建平衡二叉合并树（树高仅 $\lceil \log_2(N) ceil \le 3$），最后一次性将复合书拍上装备，最终装备惩罚仅为 3~4 次（7~15 级），全程单步消耗控制在 10~25 级以内，彻底规避 39 级上限！
+     - **二叉树对数级合并**：通过将多本书两两构建平衡二叉合并树（树高仅 $\lceil \log_2(N) 
+ceil \le 3$），最后一次性将复合书拍上装备，最终装备惩罚仅为 3~4 次（7~15 级），全程单步消耗控制在 10~25 级以内，彻底规避 39 级上限！
      - **附魔互斥与装备兼容性矩阵**：内置 37+ 种核心附魔属性、倍率与互斥对校验（精准采集 vs 时运、无限 vs 经验修补、四种保护互斥、三叉戟激流 vs 忠诚/引雷、1.21 重锤专属致密/破甲/风爆）；
    - **`/hoshi anvil <装备名> [附魔1:等级] [附魔2:等级]...`**：生成步骤清晰的左槽/右槽锻造执行工序与等级消耗报告！
 
@@ -27,7 +53,9 @@
    - **`PortalChunkLoaderAnalyzer`**：
      - **15.0 秒强加载时钟律**：实体穿越下界传送门产生持续 15 秒 (300 ticks) 的 Ticket 30 强加载票；精确校验投掷穿梭周期（安全黄金周期 8~12 秒），诊断超时引起的常载区块卸载停摆与死锁；
      - **三阶辐射圈判定**：3x3 实体完全处理区 (Entity Ticking)、5x5 方块红石区 (Block Ticking)、7x7 懒惰区 (Lazy Chunks)；
-     - **8:1 坐标对齐与防串门 (Portal Bleed Diagnostics)**：主世界 $(X, Z)$ 对应下界 $(\lfloor X/8 floor, \lfloor Z/8 floor)$；精确解算欧氏空间漂移距离 $\Delta$，告警超过 16 格的安全容差门，严防单向串门撕裂并输出下界门精确迁址坐标！
+     - **8:1 坐标对齐与防串门 (Portal Bleed Diagnostics)**：主世界 $(X, Z)$ 对应下界 $(\lfloor X/8 
+floor, \lfloor Z/8 
+floor)$；精确解算欧氏空间漂移距离 $\Delta$，告警超过 16 格的安全容差门，严防单向串门撕裂并输出下界门精确迁址坐标！
    - **`/hoshi chunkloader permaloader [周期秒数]`** 与 **`/hoshi chunkloader portal <主界X> <主界Z> <下界X> <下界Z>`**：一键生成生电常载网络诊断报告！
 
 4. **敌对生物生成动力学、清除球与刷怪塔诊断引擎 (Mob Spawning Dynamics & Despawn Spheres Analyzer)**

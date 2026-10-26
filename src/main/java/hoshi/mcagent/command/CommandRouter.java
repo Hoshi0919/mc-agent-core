@@ -19,6 +19,10 @@ import hoshi.mcagent.bom.BlueprintBOM;
 import hoshi.mcagent.bom.MaterialCalculator;
 import hoshi.mcagent.context.ContextSnapshot;
 import hoshi.mcagent.context.TargetBlock;
+import hoshi.mcagent.cluster.KineticNetworkAnalyzer;
+import hoshi.mcagent.cluster.HopperNetworkAnalyzer;
+import hoshi.mcagent.cluster.CrafterPipelineAnalyzer;
+import hoshi.mcagent.cluster.LocalMachineCluster;
 import hoshi.mcagent.context.TargetEntity;
 import hoshi.mcagent.crafting.CraftingReadinessChecker;
 import hoshi.mcagent.format.ChatPaginator;
@@ -231,6 +235,10 @@ public class CommandRouter {
             case "cl": {
                 return handleChunkloader(playerId, tokens, argStart);
             }
+            case "cluster":
+            case "topo": {
+                return handleCluster(playerId, tokens, argStart, snapshot);
+            }
             case "nether":
             case "portal": {
                 return handleNether(playerId, tokens, argStart + 1, snapshot);
@@ -287,6 +295,19 @@ public class CommandRouter {
         if (te != null) {
             hasData = true;
             sb.append(String.format("▸ §d注视实体§r：%s\n", te.toSummary()));
+        }
+
+        if (snapshot.machineCluster() != null && !snapshot.machineCluster().isEmpty()) {
+            hasData = true;
+            sb.append(String.format("▸ §e机器拓扑集群§r：%s\n", snapshot.machineCluster().toSummary()));
+            var kinetic = KineticNetworkAnalyzer.analyze(snapshot.machineCluster());
+            if (kinetic.isJammed()) {
+                sb.append(String.format("  §c✖ 动力卡死：%s§r\n", kinetic.primaryDiagnosis()));
+            }
+            var hopper = HopperNetworkAnalyzer.analyze(snapshot.machineCluster());
+            if (hopper.hasDeadlock() || hopper.hasBackpressure() || hopper.hasBleedRisk()) {
+                sb.append(String.format("  §c⚠ 物流异常：%s§r\n", hopper.primaryDiagnosis()));
+            }
         }
 
         if (snapshot.inventory() != null) {
@@ -624,6 +645,48 @@ public class CommandRouter {
         return CommandResult.success("STATS", msg, null, null, null);
     }
 
+    private CommandResult handleCluster(String playerId, String[] tokens, int argStart, ContextSnapshot snapshot) {
+        String sub = argStart + 1 < tokens.length ? tokens[argStart + 1].toLowerCase() : "all";
+        LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
+
+        if (cluster == null || cluster.isEmpty()) {
+            String msg = "§6【局部机器拓扑诊断】§r\n" +
+                    "当前准星未捕捉到局部多方块机器集群数据。\n" +
+                    "支持子诊断：\n" +
+                    "▸ §e/hoshi cluster kinetics§r - 诊断 Create 机械动力齿轮卡死与反向啮合\n" +
+                    "▸ §e/hoshi cluster hopper§r - 诊断漏斗流水线死锁环路、背压与分类器串线\n" +
+                    "▸ §e/hoshi cluster crafter§r - 诊断 1.21 自动合成器槽位遮罩与脉冲时钟";
+            return CommandResult.success("CLUSTER", msg, null, null, null);
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(String.format("§6【局部机器集群拓扑诊断 (%s)】§r\n", sub.toUpperCase()));
+        sb.append(String.format("▸ 集群中心：%s | 包含方块：%d 个\n", cluster.origin(), cluster.size()));
+
+        if ("kinetics".equals(sub) || "all".equals(sub)) {
+            var k = KineticNetworkAnalyzer.analyze(cluster);
+            sb.append(String.format("▸ 动力状态：%s\n", k.primaryDiagnosis()));
+            if (k.isJammed()) {
+                for (String c : k.conflicts()) sb.append("  ✖ ").append(c).append("\n");
+                sb.append("  建议：").append(k.actionableRemediation()).append("\n");
+            }
+        }
+
+        if ("hopper".equals(sub) || "all".equals(sub)) {
+            var h = HopperNetworkAnalyzer.analyze(cluster);
+            sb.append(String.format("▸ 物流状态：%s\n", h.primaryDiagnosis()));
+            if (h.hasDeadlock()) {
+                for (String d : h.deadlocks()) sb.append("  ⚡ ").append(d).append("\n");
+            }
+            if (!h.warnings().isEmpty()) {
+                for (String w : h.warnings()) sb.append("  ⚠ ").append(w).append("\n");
+            }
+            sb.append("  建议：").append(h.actionableAdvice()).append("\n");
+        }
+
+        return CommandResult.success("CLUSTER", sb.toString().trim(), null, null, null);
+    }
+
     private CommandResult handleHelp() {
         String text = "§6【Hoshi 智能问答指令帮助】§r\n" +
                 "▸ §e/hoshi ask <问题>§r - 咨询游戏机制与攻略\n" +
@@ -638,6 +701,7 @@ public class CommandRouter {
                 "▸ §e/hoshi anvil <装备> [附魔:等级...]§r - 规划二叉树最优附魔工序规避过于昂贵\n" +
                 "▸ §e/hoshi create stress <动力源> [规模]§r - 诊断 Create 模组动力网应力与过载转速\n" +
                 "▸ §e/hoshi chunkloader <permaloader/portal>§r - 诊断生电传送门常载网与 8:1 坐标漂移\n" +
+                "▸ §e/hoshi cluster [kinetics/hopper/crafter]§r - 诊断局部机器拓扑、齿轮卡死与漏斗回路\n" +
                 "▸ §e/hoshi nether [x y z]§r - 换算地狱传送门坐标\n" +
                 "▸ §e/hoshi clear§r - 清理会话与翻页缓存\n" +
                 "▸ §e/hoshi stats§r - 查看缓存与度量统计\n" +

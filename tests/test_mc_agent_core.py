@@ -1361,3 +1361,94 @@ def test_command_router_v20_anvil_create_chunkloader():
     assert "anvil" in r_help.message
     assert "create" in r_help.message
     assert "chunkloader" in r_help.message
+
+
+def test_v21_cluster_kinetics_hopper_crafter():
+    from mc_agent_core.cluster import (
+        BlockPos,
+        LocalMachineCluster,
+        KineticNetworkAnalyzer,
+        HopperNetworkAnalyzer,
+        CrafterPipelineAnalyzer,
+        LocalBlock,
+    )
+    from mc_agent_core.context import ContextSnapshot
+    from mc_agent_core.fast_path import FastPathResolver
+    from mc_agent_core.command import CommandRouter
+    from mc_agent_core.dispatcher import AsyncQueryDispatcher
+
+    # 1. BlockPos & Neighbors
+    p = BlockPos(10, 64, -20)
+    assert p.offset(facing="up").y == 65
+    assert p.manhattan_distance(BlockPos(11, 64, -20)) == 1
+    assert len(p.get_direct_neighbors()) == 6
+
+    # 2. Kinetic Jamming
+    jammed_cluster = (
+        LocalMachineCluster(BlockPos(0, 64, 0))
+        .add(0, 64, 0, "create:large_cogwheel", {"axis": "y"})
+        .add(0, 65, 0, "create:large_cogwheel", {"axis": "y"})
+        .add(1, 64, 0, "create:cogwheel", {"axis": "y"})
+        .add(1, 65, 0, "create:large_cogwheel", {"axis": "y"})
+    )
+    kr = KineticNetworkAnalyzer.analyze(jammed_cluster)
+    assert kr.is_jammed
+    assert not kr.is_healthy
+    assert len(kr.conflicts) > 0
+    assert "动力网卡死" in kr.primary_diagnosis
+
+    # 3. Hopper Deadlock & Bleed
+    deadlock_cluster = (
+        LocalMachineCluster(BlockPos(0, 64, 0))
+        .add(0, 64, 0, "minecraft:hopper", {"facing": "east"})
+        .add(1, 64, 0, "minecraft:hopper", {"facing": "west"})
+    )
+    hr = HopperNetworkAnalyzer.analyze(deadlock_cluster)
+    assert hr.has_deadlock
+    assert not hr.is_healthy
+    assert len(hr.deadlocks) > 0
+
+    bleed_cluster = (
+        LocalMachineCluster(BlockPos(0, 64, 0))
+        .add(0, 64, 0, "minecraft:hopper", {"facing": "down", "item_count": "50"})
+        .add(0, 64, -1, "minecraft:comparator", {"facing": "north"})
+    )
+    hr_bleed = HopperNetworkAnalyzer.analyze(bleed_cluster)
+    assert hr_bleed.has_bleed_risk
+    assert len(hr_bleed.warnings) > 0
+
+    # 4. Crafter Pipeline
+    crafter = LocalBlock(BlockPos(0, 64, 0), "minecraft:crafter", {"disabled_slots": "0", "filled_slots": "5"})
+    cr = CrafterPipelineAnalyzer.analyze(crafter, None, "diamond_chestplate")
+    assert cr.has_masking_deficit
+    assert not cr.is_healthy
+
+    # 5. FastPath context resolution
+    ctx = ContextSnapshot(player_name="Steve", dimension="overworld", x=0, y=64, z=0, machine_cluster=jammed_cluster)
+    res_k = FastPathResolver.try_resolve("为什么齿轮卡死不转了", ctx)
+    assert res_k is not None
+    assert res_k.category == "MACHINE_CLUSTER_KINETICS"
+
+    # 6. General rules
+    r51 = FastPathResolver.try_resolve("Create齿轮卡死怎么解决")
+    assert r51 is not None
+    assert r51.category == "CREATE_KINETIC_JAMMING_AND_TOPOLOGICAL_LOCK"
+
+    r52 = FastPathResolver.try_resolve("漏斗死锁回路怎么解决")
+    assert r52 is not None
+    assert r52.category == "HOPPER_CYCLE_DEADLOCK_AND_SORTER_BLEED"
+
+    r53 = FastPathResolver.try_resolve("自动合成器槽位死锁怎么解决")
+    assert r53 is not None
+    assert r53.category == "CRAFTER_SLOT_MASKING_AND_PULSE_SYNC"
+
+    # 7. CommandRouter
+    dispatcher = AsyncQueryDispatcher()
+    router = CommandRouter(dispatcher)
+    res_cmd = router.execute("Steve", "/hoshi cluster", ctx)
+    assert res_cmd.is_success
+    assert res_cmd.action == "CLUSTER"
+    assert "动力网卡死" in res_cmd.message
+
+    help_cmd = router.execute("Steve", "/hoshi help", None)
+    assert "cluster" in help_cmd.message

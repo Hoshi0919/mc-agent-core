@@ -34,6 +34,12 @@ import hoshi.mcagent.anvil.AnvilPlan;
 import hoshi.mcagent.anvil.EnchantmentEntry;
 import hoshi.mcagent.create.CreateKineticsAnalyzer;
 import hoshi.mcagent.chunkload.PortalChunkLoaderAnalyzer;
+import hoshi.mcagent.cluster.BlockPos;
+import hoshi.mcagent.cluster.LocalBlock;
+import hoshi.mcagent.cluster.LocalMachineCluster;
+import hoshi.mcagent.cluster.KineticNetworkAnalyzer;
+import hoshi.mcagent.cluster.HopperNetworkAnalyzer;
+import hoshi.mcagent.cluster.CrafterPipelineAnalyzer;
 import java.util.LinkedHashMap;
 import java.util.ArrayList;
 
@@ -118,6 +124,13 @@ public class McAgentCoreTest {
         testFastPathV20Rules();
         testPromptSafetyFenceV20();
         testCommandRouterV20AnvilCreateChunkloader();
+        testBlockPosAndClusterDataStructures();
+        testKineticNetworkAnalyzerJammingAndMesh();
+        testHopperNetworkAnalyzerDeadlockAndBleed();
+        testCrafterPipelineAnalyzerMaskingAndSync();
+        testFastPathResolverV21ClusterAndRules();
+        testPromptSafetyFenceV21();
+        testCommandRouterV21ClusterCommand();
 
         System.out.println(String.format("\n🎉 All %d/%d Java tests passed successfully!", testsPassed, testsRun));
     }
@@ -1495,4 +1508,226 @@ public class McAgentCoreTest {
         assertTrue(helpRes.getMessage().contains("chunkloader"), "Help mentions chunkloader");
     }
 
+
+    private static void testBlockPosAndClusterDataStructures() {
+        BlockPos p1 = new BlockPos(10, 64, -20);
+        assertTrue(p1.x() == 10 && p1.y() == 64 && p1.z() == -20, "BlockPos coords match");
+        BlockPos pUp = p1.offset("up");
+        assertTrue(pUp.y() == 65, "Offset up increases Y");
+        BlockPos pNorth = p1.offset("north");
+        assertTrue(pNorth.z() == -21, "Offset north decreases Z");
+        assertTrue(p1.manhattanDistance(pUp) == 1, "Manhattan distance is 1");
+        assertTrue(p1.getDirectNeighbors().size() == 6, "Has 6 direct neighbors");
+
+        LocalBlock gear = LocalBlock.of(10, 64, -20, "create:cogwheel", Map.of("axis", "y"));
+        assertTrue(gear.isCreateKinetics(), "Gear is create kinetics");
+        assertTrue(gear.isCogwheel(), "Gear is small cogwheel");
+        assertTrue(!gear.isLargeCogwheel(), "Gear is not large cogwheel");
+        assertTrue("y".equals(gear.axis()), "Gear axis is y");
+
+        LocalMachineCluster cluster = LocalMachineCluster.builder(10, 64, -20)
+                .add(gear)
+                .add(11, 64, -20, "create:cogwheel", Map.of("axis", "y"))
+                .add(10, 63, -20, "minecraft:hopper", Map.of("facing", "down"))
+                .build();
+        assertTrue(cluster.size() == 3, "Cluster contains 3 blocks");
+        assertTrue(cluster.originBlock().isPresent(), "Origin block present");
+        assertTrue(cluster.getConnectedKinetics().size() == 2, "2 kinetic components");
+        assertTrue(cluster.getConnectedHoppers().size() == 1, "1 hopper component");
+        assertTrue(cluster.toSummary().contains("Cluster centered at"), "Summary contains header");
+    }
+
+    private static void testKineticNetworkAnalyzerJammingAndMesh() {
+        // 1. Healthy axial shaft connection
+        LocalMachineCluster shaftLine = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "create:shaft", Map.of("axis", "x"))
+                .add(1, 64, 0, "create:shaft", Map.of("axis", "x"))
+                .add(2, 64, 0, "create:shaft", Map.of("axis", "x"))
+                .build();
+        var report1 = KineticNetworkAnalyzer.analyze(shaftLine);
+        assertTrue(report1.isHealthy(), "Shaft line is healthy");
+        assertTrue(!report1.isJammed(), "Shaft line not jammed");
+        assertTrue(report1.totalComponents() == 3, "3 components in shaft line");
+
+        // 2. Healthy pair of spur gears (small to small, opposite rotation)
+        LocalMachineCluster gearPair = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "create:cogwheel", Map.of("axis", "y"))
+                .add(1, 64, 0, "create:cogwheel", Map.of("axis", "y"))
+                .build();
+        var report2 = KineticNetworkAnalyzer.analyze(gearPair);
+        assertTrue(report2.isHealthy(), "Gear pair is healthy");
+        assertTrue(!report2.isJammed(), "Gear pair not jammed");
+
+        // 3. Ratio mismatch conflict (2x multiplier in closed loop)
+        LocalMachineCluster jammedNet = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "create:large_cogwheel", Map.of("axis", "y"))
+                .add(0, 65, 0, "create:large_cogwheel", Map.of("axis", "y"))
+                .add(1, 64, 0, "create:cogwheel", Map.of("axis", "y"))
+                .add(1, 65, 0, "create:large_cogwheel", Map.of("axis", "y"))
+                .build();
+        var report3 = KineticNetworkAnalyzer.analyze(jammedNet);
+        assertTrue(report3.isJammed(), "Ratio mismatch conflict triggers jammed");
+        assertTrue(!report3.isHealthy(), "Jammed net is not healthy");
+        assertTrue(!report3.conflicts().isEmpty(), "Conflicts list populated");
+        assertTrue(report3.primaryDiagnosis().contains("动力网卡死"), "Mentions jammed in diagnosis");
+        assertTrue(report3.actionableRemediation().contains("齿轮箱"), "Advises gearbox or removing gear");
+    }
+
+    private static void testHopperNetworkAnalyzerDeadlockAndBleed() {
+        // 1. Healthy linear hopper line
+        LocalMachineCluster linear = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "minecraft:hopper", Map.of("facing", "east"))
+                .add(1, 64, 0, "minecraft:hopper", Map.of("facing", "down"))
+                .add(1, 63, 0, "minecraft:chest", Map.of("full", "false"))
+                .build();
+        var r1 = HopperNetworkAnalyzer.analyze(linear);
+        assertTrue(r1.isHealthy(), "Linear hopper line is healthy");
+        assertTrue(!r1.hasDeadlock(), "No deadlock in linear");
+        assertTrue(!r1.hasBackpressure(), "No backpressure in linear");
+
+        // 2. Circular deadlock (A -> B, B -> A)
+        LocalMachineCluster deadlock = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "minecraft:hopper", Map.of("facing", "east"))
+                .add(1, 64, 0, "minecraft:hopper", Map.of("facing", "west"))
+                .build();
+        var r2 = HopperNetworkAnalyzer.analyze(deadlock);
+        assertTrue(!r2.isHealthy(), "Deadlock is not healthy");
+        assertTrue(r2.hasDeadlock(), "Deadlock detected");
+        assertTrue(!r2.deadlocks().isEmpty(), "Deadlocks list populated");
+        assertTrue(r2.primaryDiagnosis().contains("漏斗死锁"), "Diagnosis mentions deadlock");
+        assertTrue(r2.actionableAdvice().contains("重定向"), "Advises redirecting hopper");
+
+        // 3. Backpressure from full container
+        LocalMachineCluster fullStall = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "minecraft:hopper", Map.of("facing", "down"))
+                .add(0, 63, 0, "minecraft:barrel", Map.of("full", "true"))
+                .build();
+        var r3 = HopperNetworkAnalyzer.analyze(fullStall);
+        assertTrue(r3.hasBackpressure(), "Full container triggers backpressure");
+        assertTrue(!r3.stalledHoppers().isEmpty(), "Stalled hoppers populated");
+
+        // 4. Sorter bleed risk (item_count >= 46)
+        LocalMachineCluster sorterBleed = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "minecraft:hopper", Map.of("facing", "down", "item_count", "48"))
+                .add(0, 64, -1, "minecraft:comparator", Map.of("facing", "north"))
+                .build();
+        var r4 = HopperNetworkAnalyzer.analyze(sorterBleed);
+        assertTrue(r4.hasBleedRisk(), "Item count 48 triggers bleed risk");
+        assertTrue(!r4.warnings().isEmpty(), "Warnings populated for bleed");
+        assertTrue(r4.actionableAdvice().contains("41+1+1+1+1"), "Advises 41+1+1+1+1 layout");
+    }
+
+    private static void testCrafterPipelineAnalyzerMaskingAndSync() {
+        // 1. Unmasked chestplate (needs 8 slots, but 0 disabled)
+        LocalBlock crafter1 = LocalBlock.of(0, 64, 0, "minecraft:crafter", Map.of("disabled_slots", "0", "filled_slots", "5"));
+        var r1 = CrafterPipelineAnalyzer.analyze(crafter1, null, "diamond_chestplate");
+        assertTrue(r1.hasMaskingDeficit(), "Chestplate with 0 disabled has masking deficit");
+        assertTrue(!r1.isHealthy(), "Unmasked crafter is not healthy");
+        assertTrue(!r1.issues().isEmpty(), "Issues populated");
+
+        // 2. Fully masked and ready chestplate (1 disabled slot, 8 required)
+        LocalBlock crafter2 = LocalBlock.of(0, 64, 0, "minecraft:crafter", Map.of("disabled_slots", "1", "filled_slots", "8"));
+        var r2 = CrafterPipelineAnalyzer.analyze(crafter2, null, "diamond_chestplate");
+        assertTrue(r2.isHealthy(), "Chestplate with 1 disabled slot is healthy");
+        assertTrue(!r2.hasMaskingDeficit(), "No masking deficit");
+
+        // 3. Multicomponent saturation deadlock risk (single hopper feeding sword)
+        LocalMachineCluster clusterWithFeeder = LocalMachineCluster.builder(0, 64, 0)
+                .add(crafter1)
+                .add(0, 65, 0, "minecraft:hopper", Map.of("facing", "down"))
+                .build();
+        var r3 = CrafterPipelineAnalyzer.analyze(crafter1, clusterWithFeeder, "diamond_sword");
+        assertTrue(r3.hasDeadlockRisk(), "Single hopper feeding sword triggers deadlock risk");
+        assertTrue(r3.actionableAdvice().contains("投掷器"), "Advises dropper pulse feeding");
+    }
+
+    private static void testFastPathResolverV21ClusterAndRules() {
+        // Context-aware cluster kinetics resolution
+        LocalMachineCluster jammedNet = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "create:large_cogwheel", Map.of("axis", "y"))
+                .add(0, 65, 0, "create:large_cogwheel", Map.of("axis", "y"))
+                .add(1, 64, 0, "create:cogwheel", Map.of("axis", "y"))
+                .add(1, 65, 0, "create:large_cogwheel", Map.of("axis", "y"))
+                .build();
+
+        ContextSnapshot ctxKinetics = ContextSnapshot.builder()
+                .cluster(jammedNet)
+                .build();
+
+        var resKinetics = FastPathResolver.tryResolve("为什么齿轮卡死不转了", ctxKinetics);
+        assertTrue(resKinetics.isPresent(), "Resolved cluster kinetics fast path");
+        assertTrue(resKinetics.get().category().equals("MACHINE_CLUSTER_KINETICS"), "Category is MACHINE_CLUSTER_KINETICS");
+        assertTrue(resKinetics.get().textResponse().contains("动力网卡死"), "Text reports jammed");
+
+        // Context-aware cluster hopper deadlock resolution
+        LocalMachineCluster deadlockHoppers = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "minecraft:hopper", Map.of("facing", "east"))
+                .add(1, 64, 0, "minecraft:hopper", Map.of("facing", "west"))
+                .build();
+        ContextSnapshot ctxHopper = ContextSnapshot.builder()
+                .cluster(deadlockHoppers)
+                .build();
+
+        var resHopper = FastPathResolver.tryResolve("漏斗死锁堵住了怎么办", ctxHopper);
+        assertTrue(resHopper.isPresent(), "Resolved cluster hopper deadlock");
+        assertTrue(resHopper.get().category().equals("MACHINE_CLUSTER_LOGISTICS"), "Category is MACHINE_CLUSTER_LOGISTICS");
+        assertTrue(resHopper.get().textResponse().contains("漏斗死锁"), "Text reports hopper deadlock");
+
+        // General Rules 51, 52, 53 without context
+        var r51 = FastPathResolver.tryResolve("Create齿轮卡死怎么解决", null);
+        assertTrue(r51.isPresent(), "Resolved rule 51");
+        assertTrue(r51.get().category().equals("CREATE_KINETIC_JAMMING_AND_TOPOLOGICAL_LOCK"), "Category rule 51");
+        assertTrue(r51.get().textResponse().contains("Kinetic Jamming"), "Mentions Kinetic Jamming");
+
+        var r52 = FastPathResolver.tryResolve("漏斗闭环死锁与分类器串线怎么破", null);
+        assertTrue(r52.isPresent(), "Resolved rule 52");
+        assertTrue(r52.get().category().equals("HOPPER_CYCLE_DEADLOCK_AND_SORTER_BLEED"), "Category rule 52");
+        assertTrue(r52.get().textResponse().contains("41+1+1+1+1"), "Mentions 41+1+1+1+1");
+
+        var r53 = FastPathResolver.tryResolve("1.21自动合成器槽位死锁怎么解决", null);
+        assertTrue(r53.isPresent(), "Resolved rule 53");
+        assertTrue(r53.get().category().equals("CRAFTER_SLOT_MASKING_AND_PULSE_SYNC"), "Category rule 53");
+        assertTrue(r53.get().textResponse().contains("Slot Masking"), "Mentions Slot Masking");
+    }
+
+    private static void testPromptSafetyFenceV21() {
+        var fenced = PromptSafetyFence.build("测试自动化机器与流水线拓扑", null);
+        assertTrue(fenced.userPrompt().contains("【Create 齿轮啮合动力冲突与拓扑锁死力学】"), "Injected rule 51");
+        assertTrue(fenced.userPrompt().contains("【漏斗闭环死锁与物品分类器串线击穿动力学】"), "Injected rule 52");
+        assertTrue(fenced.userPrompt().contains("【1.21 自动合成器槽位遮罩与脉冲时钟闭环】"), "Injected rule 53");
+    }
+
+    private static void testCommandRouterV21ClusterCommand() {
+        McAgentCore core = new McAgentCore();
+        PlayerSessionManager sm = new PlayerSessionManager();
+        CommandRouter router = new CommandRouter(core, sm);
+
+        // 1. Cluster help fallback without cluster
+        var res1 = router.execute("Steve", "/hoshi cluster", null);
+        assertTrue(res1.isSuccess(), "Cluster command succeeded");
+        assertTrue(res1.getAction().equals("CLUSTER"), "Action is CLUSTER");
+        assertTrue(res1.getMessage().contains("局部机器拓扑诊断"), "Help message returned");
+
+        // 2. Cluster kinetics inspection with jammed net
+        LocalMachineCluster jammedNet = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "create:large_cogwheel", Map.of("axis", "y"))
+                .add(0, 65, 0, "create:large_cogwheel", Map.of("axis", "y"))
+                .add(1, 64, 0, "create:cogwheel", Map.of("axis", "y"))
+                .add(1, 65, 0, "create:large_cogwheel", Map.of("axis", "y"))
+                .build();
+        ContextSnapshot ctx = ContextSnapshot.builder().cluster(jammedNet).build();
+
+        var res2 = router.execute("Steve", "/hoshi cluster kinetics", ctx);
+        assertTrue(res2.isSuccess(), "Cluster kinetics command succeeded");
+        assertTrue(res2.getMessage().contains("动力网卡死"), "Reports jammed");
+
+        // 3. Inspect with cluster data
+        var res3 = router.execute("Steve", "/hoshi inspect", ctx);
+        assertTrue(res3.isSuccess(), "Inspect succeeded");
+        assertTrue(res3.getMessage().contains("机器拓扑集群"), "Inspect includes cluster section");
+
+        // 4. Help mentions cluster command
+        var helpRes = router.execute("Steve", "/hoshi help", null);
+        assertTrue(helpRes.getMessage().contains("cluster"), "Help mentions cluster");
+    }
 }
