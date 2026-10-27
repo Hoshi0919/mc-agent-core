@@ -1,3 +1,5 @@
+from typing import Optional, Any
+from .spatial import SpatialDirectivePacket, SpatialDirectiveGenerator
 import math
 from dataclasses import dataclass
 from typing import Optional
@@ -26,10 +28,15 @@ class CommandResult:
     command_suggestion: Optional[str] = None
     tellraw_json: Optional[str] = None
     paged_result: Optional[PagedResult] = None
+    spatial_directive: Optional[Any] = None
 
     @property
     def is_success(self) -> bool:
         return self.status == "SUCCESS"
+
+    @property
+    def has_spatial_directive(self) -> bool:
+        return self.spatial_directive is not None and not self.spatial_directive.is_empty()
 
 
 class CommandRouter:
@@ -181,7 +188,14 @@ class CommandRouter:
             from mc_agent_core.cluster import KineticNetworkAnalyzer, HopperNetworkAnalyzer
             kr = KineticNetworkAnalyzer.analyze(cluster)
             hr = HopperNetworkAnalyzer.analyze(cluster)
-            return CommandResult(status="SUCCESS", action="CLUSTER", message=f"§6【拓扑诊断】§r\n动力：{kr.primary_diagnosis}\n物流：{hr.primary_diagnosis}")
+            pkt = None
+            if kr.is_jammed:
+                pkt = SpatialDirectiveGenerator.generate_kinetic_overlay(cluster, kr)
+            elif hr.has_deadlock or hr.has_backpressure or hr.has_bleed_risk:
+                pkt = SpatialDirectiveGenerator.generate_hopper_overlay(cluster, hr)
+            return CommandResult(status="SUCCESS", action="CLUSTER", message=f"§6【拓扑诊断】§r\n动力：{kr.primary_diagnosis}\n物流：{hr.primary_diagnosis}", spatial_directive=pkt)
+        elif sub in ("highlight", "hl"):
+            return self._handle_highlight(player_id, tokens, arg_start, snapshot)
         elif sub in ("chunkloader", "cl"):
             return self._handle_chunkloader(player_id, tokens, arg_start)
 
@@ -472,6 +486,61 @@ class CommandRouter:
         active = self.session_manager.active_session_count
         msg = f"§b【Hoshi AI 运行时度量】§r\n▸ 缓存统计: §a{cache_stats}§r\n▸ 活跃会话数: §e{active}§r\n▸ 响应状态: §a正常运行§r"
         return CommandResult(status="SUCCESS", action="STATS", message=msg)
+
+    def _handle_highlight(self, player_id: Optional[str], tokens: list, arg_start: int, snapshot: Optional[ContextSnapshot]) -> CommandResult:
+        sub = tokens[arg_start + 1].lower() if arg_start + 1 < len(tokens) else "help"
+
+        if sub in ("clear", "reset"):
+            pkt = SpatialDirectivePacket.clear("ALL")
+            return CommandResult(status="SUCCESS", action="HIGHLIGHT", message="§a[Hoshi] 已发送清除所有空间高亮覆盖层指令。", spatial_directive=pkt)
+
+        if sub in ("kinetics", "create", "gear"):
+            cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
+            if not cluster or cluster.is_empty:
+                return CommandResult(status="ERROR", action="HIGHLIGHT", message="§c准星未捕捉到局部机械动力组件，无法投射动力高亮。")
+            from mc_agent_core.cluster import KineticNetworkAnalyzer
+            k = KineticNetworkAnalyzer.analyze(cluster)
+            pkt = SpatialDirectiveGenerator.generate_kinetic_overlay(cluster, k)
+            return CommandResult(status="SUCCESS", action="HIGHLIGHT", message=f"§a[Hoshi 3D 高亮] {pkt.hud_title}", spatial_directive=pkt)
+
+        if sub in ("hopper", "pipe"):
+            cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
+            if not cluster or cluster.is_empty:
+                return CommandResult(status="ERROR", action="HIGHLIGHT", message="§c准星未捕捉到漏斗物流组件，无法投射物流高亮。")
+            from mc_agent_core.cluster import HopperNetworkAnalyzer
+            h = HopperNetworkAnalyzer.analyze(cluster)
+            pkt = SpatialDirectiveGenerator.generate_hopper_overlay(cluster, h)
+            return CommandResult(status="SUCCESS", action="HIGHLIGHT", message=f"§a[Hoshi 3D 高亮] {pkt.hud_title}", spatial_directive=pkt)
+
+        if sub in ("mobfarm", "spheres"):
+            px = snapshot.x if snapshot else 0.0
+            py = snapshot.y if snapshot else 64.0
+            pz = snapshot.z if snapshot else 0.0
+            pkt = SpatialDirectiveGenerator.generate_mob_farm_overlay(px, py, pz)
+            return CommandResult(status="SUCCESS", action="HIGHLIGHT", message=f"§a[Hoshi 3D 高亮] {pkt.hud_title}", spatial_directive=pkt)
+
+        if sub in ("multiblock", "mb", "ghost"):
+            query = tokens[arg_start + 2] if arg_start + 2 < len(tokens) else "conduit"
+            bp = find_blueprint(query)
+            if not bp:
+                return CommandResult(status="ERROR", action="HIGHLIGHT", message=f"§c未识别的多方块蓝图: {query}")
+            from .cluster import BlockPos
+            if snapshot and snapshot.target_block and not snapshot.target_block.is_air:
+                center = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z)
+            elif snapshot:
+                center = BlockPos(int(snapshot.x), int(snapshot.y), int(snapshot.z))
+            else:
+                center = BlockPos(0, 64, 0)
+            pkt = SpatialDirectiveGenerator.generate_multiblock_ghost_overlay(bp, center)
+            return CommandResult(status="SUCCESS", action="HIGHLIGHT", message=f"§a[Hoshi 3D 虚影] {pkt.hud_title}", spatial_directive=pkt)
+
+        msg = ("§6【Hoshi 3D 空间全息高亮指令】§r\n"
+               "▸ §e/hoshi highlight kinetics§r - 在游戏世界高亮冲突齿轮与流向\n"
+               "▸ §e/hoshi highlight hopper§r - 投射漏斗死锁环路与物流方向箭头\n"
+               "▸ §e/hoshi highlight multiblock <名称>§r - 在准星位置投射多方块虚影蓝图\n"
+               "▸ §e/hoshi highlight mobfarm§r - 以自身为中心投射 24/32/128m 刷怪动力学清除圈\n"
+               "▸ §e/hoshi highlight clear§r - 清除所有世界高亮与全息虚影")
+        return CommandResult(status="SUCCESS", action="HIGHLIGHT", message=msg)
 
     def _handle_help(self) -> CommandResult:
         text = (

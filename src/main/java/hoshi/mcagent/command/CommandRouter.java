@@ -1,5 +1,8 @@
 package hoshi.mcagent.command;
 
+import hoshi.mcagent.cluster.BlockPos;
+import hoshi.mcagent.spatial.SpatialDirectiveGenerator;
+import hoshi.mcagent.spatial.SpatialDirectivePacket;
 import hoshi.mcagent.McAgentCore;
 import hoshi.mcagent.async.AsyncQueryDispatcher;
 import hoshi.mcagent.multiblock.MultiblockBlueprint;
@@ -239,6 +242,10 @@ public class CommandRouter {
             case "topo": {
                 return handleCluster(playerId, tokens, argStart, snapshot);
             }
+            case "highlight":
+            case "hl": {
+                return handleHighlight(playerId, tokens, argStart, snapshot);
+            }
             case "nether":
             case "portal": {
                 return handleNether(playerId, tokens, argStart + 1, snapshot);
@@ -431,7 +438,17 @@ public class CommandRouter {
 
         var comps = MinecraftTextFormatter.parseComponents(paged.fullPageText(), "/hoshi multiblock " + bp.id());
         String tellraw = TellrawJsonBuilder.toJson(comps);
-        return CommandResult.success("MULTIBLOCK", paged.fullPageText(), "/hoshi multiblock " + bp.id(), tellraw, paged);
+
+        BlockPos center;
+        if (snapshot != null && snapshot.targetBlock() != null && !snapshot.targetBlock().isAir()) {
+            center = new BlockPos(snapshot.targetBlock().x(), snapshot.targetBlock().y(), snapshot.targetBlock().z());
+        } else if (snapshot != null) {
+            center = new BlockPos((int) Math.floor(snapshot.x()), (int) Math.floor(snapshot.y()), (int) Math.floor(snapshot.z()));
+        } else {
+            center = new BlockPos(0, 64, 0);
+        }
+        var ghostPacket = SpatialDirectiveGenerator.generateMultiblockGhostOverlay(bp, center);
+        return CommandResult.success("MULTIBLOCK", paged.fullPageText(), "/hoshi multiblock " + bp.id(), tellraw, paged, ghostPacket);
     }
 
     private CommandResult handlePipeline(String playerId, String machine, int count, String transport) {
@@ -684,7 +701,89 @@ public class CommandRouter {
             sb.append("  建议：").append(h.actionableAdvice()).append("\n");
         }
 
-        return CommandResult.success("CLUSTER", sb.toString().trim(), null, null, null);
+        SpatialDirectivePacket packet = null;
+        if ("kinetics".equals(sub)) {
+            var k = KineticNetworkAnalyzer.analyze(cluster);
+            packet = SpatialDirectiveGenerator.generateKineticOverlay(cluster, k);
+        } else if ("hopper".equals(sub)) {
+            var h = HopperNetworkAnalyzer.analyze(cluster);
+            packet = SpatialDirectiveGenerator.generateHopperOverlay(cluster, h);
+        } else if ("all".equals(sub)) {
+            var k = KineticNetworkAnalyzer.analyze(cluster);
+            if (k.isJammed()) {
+                packet = SpatialDirectiveGenerator.generateKineticOverlay(cluster, k);
+            } else {
+                var h = HopperNetworkAnalyzer.analyze(cluster);
+                if (h.hasDeadlock() || h.hasBackpressure() || h.hasBleedRisk()) {
+                    packet = SpatialDirectiveGenerator.generateHopperOverlay(cluster, h);
+                }
+            }
+        }
+
+        return CommandResult.success("CLUSTER", sb.toString().trim(), null, null, null, packet);
+    }
+
+    private CommandResult handleHighlight(String playerId, String[] tokens, int argStart, ContextSnapshot snapshot) {
+        String sub = argStart + 1 < tokens.length ? tokens[argStart + 1].toLowerCase() : "help";
+
+        if ("clear".equals(sub) || "reset".equals(sub)) {
+            var clearPacket = SpatialDirectivePacket.clear("ALL");
+            return CommandResult.success("HIGHLIGHT", "§a[Hoshi] 已发送清除所有空间高亮覆盖层指令。", null, clearPacket.toTellrawFallback(), null, clearPacket);
+        }
+
+        if ("kinetics".equals(sub) || "create".equals(sub) || "gear".equals(sub)) {
+            LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
+            if (cluster == null || cluster.isEmpty()) {
+                return CommandResult.error("HIGHLIGHT", "§c准星未捕捉到局部机械动力组件，无法投射动力高亮。");
+            }
+            var k = KineticNetworkAnalyzer.analyze(cluster);
+            var packet = SpatialDirectiveGenerator.generateKineticOverlay(cluster, k);
+            return CommandResult.success("HIGHLIGHT", "§a[Hoshi 3D 高亮] " + packet.hudTitle(), null, packet.toTellrawFallback(), null, packet);
+        }
+
+        if ("hopper".equals(sub) || "pipe".equals(sub)) {
+            LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
+            if (cluster == null || cluster.isEmpty()) {
+                return CommandResult.error("HIGHLIGHT", "§c准星未捕捉到漏斗物流组件，无法投射物流高亮。");
+            }
+            var h = HopperNetworkAnalyzer.analyze(cluster);
+            var packet = SpatialDirectiveGenerator.generateHopperOverlay(cluster, h);
+            return CommandResult.success("HIGHLIGHT", "§a[Hoshi 3D 高亮] " + packet.hudTitle(), null, packet.toTellrawFallback(), null, packet);
+        }
+
+        if ("mobfarm".equals(sub) || "spheres".equals(sub)) {
+            double px = snapshot != null ? snapshot.x() : 0.0;
+            double py = snapshot != null ? snapshot.y() : 64.0;
+            double pz = snapshot != null ? snapshot.z() : 0.0;
+            var packet = SpatialDirectiveGenerator.generateMobFarmOverlay(px, py, pz);
+            return CommandResult.success("HIGHLIGHT", "§a[Hoshi 3D 高亮] " + packet.hudTitle(), null, packet.toTellrawFallback(), null, packet);
+        }
+
+        if ("multiblock".equals(sub) || "mb".equals(sub) || "ghost".equals(sub)) {
+            String query = argStart + 2 < tokens.length ? tokens[argStart + 2] : "conduit";
+            var bpOpt = MultiblockValidator.findBlueprint(query);
+            if (bpOpt.isEmpty()) {
+                return CommandResult.error("HIGHLIGHT", "§c未识别的多方块蓝图: " + query);
+            }
+            BlockPos center;
+            if (snapshot != null && snapshot.targetBlock() != null && !snapshot.targetBlock().isAir()) {
+                center = new BlockPos(snapshot.targetBlock().x(), snapshot.targetBlock().y(), snapshot.targetBlock().z());
+            } else if (snapshot != null) {
+                center = new BlockPos((int) Math.floor(snapshot.x()), (int) Math.floor(snapshot.y()), (int) Math.floor(snapshot.z()));
+            } else {
+                center = new BlockPos(0, 64, 0);
+            }
+            var packet = SpatialDirectiveGenerator.generateMultiblockGhostOverlay(bpOpt.get(), center);
+            return CommandResult.success("HIGHLIGHT", "§a[Hoshi 3D 虚影] " + packet.hudTitle(), null, packet.toTellrawFallback(), null, packet);
+        }
+
+        String msg = "§6【Hoshi 3D 空间全息高亮指令】§r\n" +
+                "▸ §e/hoshi highlight kinetics§r - 在游戏世界高亮冲突齿轮与流向\n" +
+                "▸ §e/hoshi highlight hopper§r - 投射漏斗死锁环路与物流方向箭头\n" +
+                "▸ §e/hoshi highlight multiblock <名称>§r - 在准星位置投射多方块虚影蓝图\n" +
+                "▸ §e/hoshi highlight mobfarm§r - 以自身为中心投射 24/32/128m 刷怪动力学清除圈\n" +
+                "▸ §e/hoshi highlight clear§r - 清除所有世界高亮与全息虚影";
+        return CommandResult.success("HIGHLIGHT", msg, null, null, null);
     }
 
     private CommandResult handleHelp() {
@@ -702,6 +801,7 @@ public class CommandRouter {
                 "▸ §e/hoshi create stress <动力源> [规模]§r - 诊断 Create 模组动力网应力与过载转速\n" +
                 "▸ §e/hoshi chunkloader <permaloader/portal>§r - 诊断生电传送门常载网与 8:1 坐标漂移\n" +
                 "▸ §e/hoshi cluster [kinetics/hopper/crafter]§r - 诊断局部机器拓扑、齿轮卡死与漏斗回路\n" +
+                "▸ §e/hoshi highlight [kinetics/hopper/multiblock/mobfarm/clear]§r - 投射 3D 空间高亮与全息虚影\n" +
                 "▸ §e/hoshi nether [x y z]§r - 换算地狱传送门坐标\n" +
                 "▸ §e/hoshi clear§r - 清理会话与翻页缓存\n" +
                 "▸ §e/hoshi stats§r - 查看缓存与度量统计\n" +

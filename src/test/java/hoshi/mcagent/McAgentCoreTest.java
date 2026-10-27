@@ -1,5 +1,9 @@
 package hoshi.mcagent;
 
+import hoshi.mcagent.spatial.SpatialColor;
+import hoshi.mcagent.spatial.SpatialPrimitive;
+import hoshi.mcagent.spatial.SpatialDirectivePacket;
+import hoshi.mcagent.spatial.SpatialDirectiveGenerator;
 import hoshi.mcagent.async.AsyncQueryDispatcher;
 import hoshi.mcagent.context.ContextSnapshot;
 import hoshi.mcagent.context.TargetBlock;
@@ -131,6 +135,7 @@ public class McAgentCoreTest {
         testFastPathResolverV21ClusterAndRules();
         testPromptSafetyFenceV21();
         testCommandRouterV21ClusterCommand();
+        testSpatialVisualOverlayProtocol();
 
         System.out.println(String.format("\n🎉 All %d/%d Java tests passed successfully!", testsPassed, testsRun));
     }
@@ -1730,4 +1735,113 @@ public class McAgentCoreTest {
         var helpRes = router.execute("Steve", "/hoshi help", null);
         assertTrue(helpRes.getMessage().contains("cluster"), "Help mentions cluster");
     }
+
+    private static void testSpatialVisualOverlayProtocol() {
+        // 1. SpatialColor tests
+        SpatialColor cRed = SpatialColor.RED;
+        assertTrue(cRed.toHex().equals("#FF3C3CB4"), "Red hex is #FF3C3CB4");
+        assertTrue(cRed.toJson().contains("255"), "Red JSON has 255");
+        SpatialColor cCustom = SpatialColor.fromHex("#123456");
+        assertTrue(cCustom.red() == 0x12 && cCustom.green() == 0x34 && cCustom.blue() == 0x56, "Hex parsed rgb");
+        assertTrue(cRed.withAlpha(255).alpha() == 255, "Alpha replaced");
+
+        // 2. SpatialPrimitive tests
+        BlockPos bp = new BlockPos(10, 64, 20);
+        SpatialPrimitive box = SpatialPrimitive.boxOutline(bp, SpatialColor.RED, "JAMMED", 200);
+        assertTrue(box.type() == SpatialPrimitive.PrimitiveType.BOX_OUTLINE, "Box type");
+        assertTrue(box.pos().equals(bp), "Box pos");
+        assertTrue(box.toJson().contains("BOX_OUTLINE"), "Box JSON type");
+        assertTrue(box.toJson().contains("JAMMED"), "Box JSON label");
+
+        SpatialPrimitive arrow = SpatialPrimitive.flowArrow(bp, bp.offset("east"), SpatialColor.CYAN, "FLOW", 300);
+        assertTrue(arrow.type() == SpatialPrimitive.PrimitiveType.FLOW_ARROW, "Arrow type");
+        assertTrue(arrow.toJson().contains("from"), "Arrow JSON from");
+
+        SpatialPrimitive sphere = SpatialPrimitive.sphereBoundary(0.0, 120.0, 0.0, 24.0, SpatialColor.RED, "NO_SPAWN", 400);
+        assertTrue(sphere.type() == SpatialPrimitive.PrimitiveType.SPHERE_BOUNDARY, "Sphere type");
+        assertTrue(sphere.toJson().contains("24.0"), "Sphere radius JSON");
+
+        // 3. Kinetic jamming overlay generator
+        LocalMachineCluster jammedNet = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "create:large_cogwheel", Map.of("axis", "y"))
+                .add(0, 65, 0, "create:large_cogwheel", Map.of("axis", "y"))
+                .add(1, 64, 0, "create:cogwheel", Map.of("axis", "y"))
+                .add(1, 65, 0, "create:large_cogwheel", Map.of("axis", "y"))
+                .build();
+        var kReport = KineticNetworkAnalyzer.analyze(jammedNet);
+        assertTrue(kReport.isJammed(), "Report is jammed");
+
+        SpatialDirectivePacket kPacket = SpatialDirectiveGenerator.generateKineticOverlay(jammedNet, kReport);
+        assertTrue(!kPacket.isEmpty(), "Kinetic packet not empty");
+        assertTrue(kPacket.category().equals("KINETIC_JAM"), "Category is KINETIC_JAM");
+        assertTrue(kPacket.size() >= 2, "Has conflict boxes and arrows");
+        assertTrue(kPacket.toJson().contains("JAMMED"), "Packet JSON contains JAMMED");
+
+        // 4. Hopper deadlock overlay generator
+        LocalMachineCluster hopperLoop = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "minecraft:hopper", Map.of("facing", "east", "enabled", "true"))
+                .add(1, 64, 0, "minecraft:hopper", Map.of("facing", "south", "enabled", "true"))
+                .add(1, 64, 1, "minecraft:hopper", Map.of("facing", "west", "enabled", "true"))
+                .add(0, 64, 1, "minecraft:hopper", Map.of("facing", "north", "enabled", "true"))
+                .build();
+        var hReport = HopperNetworkAnalyzer.analyze(hopperLoop);
+        assertTrue(hReport.hasDeadlock(), "Hopper report has deadlock");
+
+        SpatialDirectivePacket hPacket = SpatialDirectiveGenerator.generateHopperOverlay(hopperLoop, hReport);
+        assertTrue(!hPacket.isEmpty(), "Hopper packet not empty");
+        assertTrue(hPacket.category().equals("HOPPER_DIAGNOSTICS"), "Category is HOPPER_DIAGNOSTICS");
+        assertTrue(hPacket.toJson().contains("DEADLOCK"), "Contains DEADLOCK");
+
+        // 5. Multiblock ghost overlay (Conduit 5x5x5)
+        var conduitOpt = MultiblockValidator.findBlueprint("conduit");
+        assertTrue(conduitOpt.isPresent(), "Conduit blueprint found");
+        SpatialDirectivePacket mbPacket = SpatialDirectiveGenerator.generateMultiblockGhostOverlay(conduitOpt.get(), new BlockPos(100, 60, -200));
+        assertTrue(mbPacket.category().equals("MULTIBLOCK_GHOST"), "Category is MULTIBLOCK_GHOST");
+        assertTrue(mbPacket.size() >= 40, "Over 40 ghost blocks projected");
+        assertTrue(mbPacket.toJson().contains("minecraft:prismarine"), "Contains prismarine ghost blocks");
+        assertTrue(mbPacket.toJson().contains("minecraft:conduit"), "Contains conduit core ghost block");
+
+        // 6. Mob farm spheres overlay
+        SpatialDirectivePacket mfPacket = SpatialDirectiveGenerator.generateMobFarmOverlay(0.0, 120.0, 0.0);
+        assertTrue(mfPacket.category().equals("MOB_FARM_SPHERES"), "Category is MOB_FARM_SPHERES");
+        assertTrue(mfPacket.size() == 4, "3 spheres + 1 billboard");
+        assertTrue(mfPacket.toJson().contains("24.0"), "Contains 24.0 radius");
+        assertTrue(mfPacket.toJson().contains("128.0"), "Contains 128.0 radius");
+
+        // 7. Portal alignment overlay
+        SpatialDirectivePacket portalPacket = SpatialDirectiveGenerator.generatePortalAlignmentOverlay(800, -1600, 120, -180, 100, -200);
+        assertTrue(portalPacket.category().equals("PORTAL_ALIGNMENT"), "Category is PORTAL_ALIGNMENT");
+        assertTrue(portalPacket.toJson().contains("8:1"), "Contains 8:1 target");
+
+        // 8. Tellraw fallback
+        String tellraw = kPacket.toTellrawFallback();
+        assertTrue(tellraw.contains("HOSHI OVERLAY"), "Tellraw fallback contains header");
+        assertTrue(tellraw.contains("suggest_command"), "Tellraw fallback contains clickable suggest_command");
+
+        // 9. CommandRouter /hoshi highlight commands
+        McAgentCore core = new McAgentCore();
+        PlayerSessionManager sm = new PlayerSessionManager();
+        CommandRouter router = new CommandRouter(core, sm);
+        ContextSnapshot ctx = ContextSnapshot.builder().cluster(jammedNet).build();
+
+        var resK = router.execute("Steve", "/hoshi highlight kinetics", ctx);
+        assertTrue(resK.isSuccess(), "Highlight kinetics success");
+        assertTrue(resK.hasSpatialDirective(), "Result has spatial directive");
+        assertTrue(resK.getSpatialDirective().category().equals("KINETIC_JAM"), "Directive is KINETIC_JAM");
+
+        var resClear = router.execute("Steve", "/hoshi highlight clear", null);
+        assertTrue(resClear.isSuccess(), "Highlight clear success");
+        assertTrue(resClear.hasSpatialDirective(), "Clear has spatial directive");
+        assertTrue(resClear.getSpatialDirective().id().startsWith("clear-"), "Clear ID matches");
+
+        var resMb = router.execute("Steve", "/hoshi highlight multiblock conduit", ctx);
+        assertTrue(resMb.isSuccess(), "Highlight multiblock success");
+        assertTrue(resMb.hasSpatialDirective(), "Multiblock has spatial directive");
+        assertTrue(resMb.getSpatialDirective().category().equals("MULTIBLOCK_GHOST"), "Directive is MULTIBLOCK_GHOST");
+
+        // 10. Help command mentions highlight
+        var helpRes = router.execute("Steve", "/hoshi help", null);
+        assertTrue(helpRes.getMessage().contains("highlight"), "Help mentions highlight");
+    }
+
 }

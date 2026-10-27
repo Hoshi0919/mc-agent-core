@@ -1452,3 +1452,114 @@ def test_v21_cluster_kinetics_hopper_crafter():
 
     help_cmd = router.execute("Steve", "/hoshi help", None)
     assert "cluster" in help_cmd.message
+
+
+def test_v22_spatial_visual_overlay_protocol():
+    from mc_agent_core.spatial import (
+        SpatialColor,
+        SpatialPrimitive,
+        PrimitiveType,
+        SpatialDirectivePacket,
+        SpatialDirectiveGenerator,
+    )
+    from mc_agent_core.cluster import (
+        BlockPos,
+        LocalBlock,
+        LocalMachineCluster,
+        KineticNetworkAnalyzer,
+        HopperNetworkAnalyzer,
+    )
+    from mc_agent_core.multiblock import find_blueprint
+    from mc_agent_core.context import ContextSnapshot
+    from mc_agent_core.command import CommandRouter
+    from mc_agent_core.dispatcher import AsyncQueryDispatcher
+
+    # 1. SpatialColor tests
+    c_red = SpatialColor.RED
+    assert c_red.to_hex() == "#FF3C3CB4"
+    assert "r" in c_red.to_dict()
+    assert c_red.with_alpha(255).alpha == 255
+
+    # 2. SpatialPrimitive tests
+    bp = BlockPos(10, 64, 20)
+    box = SpatialPrimitive.box_outline(bp, SpatialColor.RED, label="JAMMED", duration_ticks=200)
+    assert box.type == PrimitiveType.BOX_OUTLINE
+    assert box.pos == bp
+    d_box = box.to_dict()
+    assert d_box["label"] == "JAMMED"
+    assert d_box["pos"]["x"] == 10
+
+    # 3. Kinetic jamming overlay generation
+    jammed_cluster = (
+        LocalMachineCluster(BlockPos(0, 64, 0))
+        .add(0, 64, 0, "create:large_cogwheel", {"axis": "y"})
+        .add(0, 65, 0, "create:large_cogwheel", {"axis": "y"})
+        .add(1, 64, 0, "create:cogwheel", {"axis": "y"})
+        .add(1, 65, 0, "create:large_cogwheel", {"axis": "y"})
+    )
+    k_report = KineticNetworkAnalyzer.analyze(jammed_cluster)
+    assert k_report.is_jammed
+
+    k_pkt = SpatialDirectiveGenerator.generate_kinetic_overlay(jammed_cluster, k_report)
+    assert not k_pkt.is_empty()
+    assert k_pkt.category == "KINETIC_JAM"
+    assert k_pkt.size() >= 2
+    json_str = k_pkt.to_json()
+    assert "JAMMED" in json_str
+
+    # 4. Hopper deadlock overlay generation
+    hopper_loop = (
+        LocalMachineCluster(BlockPos(0, 64, 0))
+        .add(0, 64, 0, "minecraft:hopper", {"facing": "east", "enabled": "true"})
+        .add(1, 64, 0, "minecraft:hopper", {"facing": "south", "enabled": "true"})
+        .add(1, 64, 1, "minecraft:hopper", {"facing": "west", "enabled": "true"})
+        .add(0, 64, 1, "minecraft:hopper", {"facing": "north", "enabled": "true"})
+    )
+    h_report = HopperNetworkAnalyzer.analyze(hopper_loop)
+    assert h_report.has_deadlock
+
+    h_pkt = SpatialDirectiveGenerator.generate_hopper_overlay(hopper_loop, h_report)
+    assert not h_pkt.is_empty()
+    assert h_pkt.category == "HOPPER_DIAGNOSTICS"
+    types = [p.type for p in h_pkt.primitives]
+    assert PrimitiveType.FLOW_ARROW in types
+    assert PrimitiveType.BOX_OUTLINE in types
+
+    # 5. Multiblock Ghost Overlay (Conduit)
+    conduit_bp = find_blueprint("conduit")
+    assert conduit_bp is not None
+    mb_pkt = SpatialDirectiveGenerator.generate_multiblock_ghost_overlay(conduit_bp, BlockPos(100, 60, -200))
+    assert mb_pkt.category == "MULTIBLOCK_GHOST"
+    assert mb_pkt.size() >= 40
+    # verify ghost block blockId
+    ghost_ids = [p.block_id for p in mb_pkt.primitives if p.block_id]
+    assert "minecraft:prismarine" in ghost_ids
+    assert "minecraft:conduit" in ghost_ids
+
+    # 6. Mob Farm Despawn Spheres Overlay
+    mf_pkt = SpatialDirectiveGenerator.generate_mob_farm_overlay(0.0, 120.0, 0.0)
+    assert mf_pkt.category == "MOB_FARM_SPHERES"
+    spheres = [p for p in mf_pkt.primitives if p.type == PrimitiveType.SPHERE_BOUNDARY]
+    assert len(spheres) == 3
+    radii = {p.radius for p in spheres}
+    assert radii == {24.0, 32.0, 128.0}
+
+    # 7. CommandRouter /hoshi highlight tests
+    dispatcher = AsyncQueryDispatcher()
+    router = CommandRouter(dispatcher)
+
+    ctx_jam = ContextSnapshot(player_name="Steve", dimension="overworld", x=0, y=64, z=0, machine_cluster=jammed_cluster)
+    res_hl_k = router.execute("Steve", "/hoshi highlight kinetics", ctx_jam)
+    assert res_hl_k.is_success
+    assert res_hl_k.has_spatial_directive
+    assert res_hl_k.spatial_directive.category == "KINETIC_JAM"
+
+    res_hl_clear = router.execute("Steve", "/hoshi highlight clear", None)
+    assert res_hl_clear.is_success
+    assert res_hl_clear.has_spatial_directive
+    assert res_hl_clear.spatial_directive.id.startswith("clear-")
+
+    res_hl_mb = router.execute("Steve", "/hoshi highlight multiblock conduit", ctx_jam)
+    assert res_hl_mb.is_success
+    assert res_hl_mb.has_spatial_directive
+    assert res_hl_mb.spatial_directive.category == "MULTIBLOCK_GHOST"

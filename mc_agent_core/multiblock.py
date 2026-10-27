@@ -68,6 +68,13 @@ _BLUEPRINTS: Dict[str, MultiblockBlueprint] = {
         name="潮涌核心满级三环 (Conduit 3-Ring Frame)",
         width_x=5, height_y=5, depth_z=5,
         required_blocks={"minecraft:prismarine": 42, "minecraft:conduit": 1},
+        layer_schematics=[
+            ["  #  ", " ### ", "#####", " ### ", "  #  "],
+            [" # # ", "#   #", "#   #", "#   #", " # # "],
+            ["##C##", "#   #", "# C #", "#   #", "##C##"],
+            [" # # ", "#   #", "#   #", "#   #", " # # "],
+            ["  #  ", " ### ", "#####", " ### ", "  #  "]
+        ],
         core_activation_condition="中心潮涌核心必须被 3x3x3 范围内的水体（水源/流水/含水方块）完全包裹；外部海晶石框架不可接触空气",
         perks_and_range="满级 42 块海晶石激活：潮涌能量范围达到最大 96 格半径（水下呼吸、夜视、极速挖掘），且对 8 格内敌对生物每 2 秒施加 4 点电击伤害"
     ),

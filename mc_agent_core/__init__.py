@@ -1,3 +1,10 @@
+from .spatial import (
+    SpatialColor,
+    SpatialPrimitive,
+    PrimitiveType,
+    SpatialDirectivePacket,
+    SpatialDirectiveGenerator,
+)
 from .cluster import (
     BlockPos,
     LocalBlock,

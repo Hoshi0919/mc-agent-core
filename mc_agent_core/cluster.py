@@ -101,6 +101,10 @@ class LocalMachineCluster:
     def size(self) -> int:
         return len(self.blocks)
 
+    @property
+    def is_empty(self) -> bool:
+        return len(self.blocks) == 0
+
     def to_summary(self) -> str:
         return f"Cluster centered at {self.origin} with {self.size} blocks (Kinetics: {len(self.get_connected_kinetics())}, Hoppers: {len(self.get_connected_hoppers())})"
 

@@ -4,6 +4,36 @@
 
 ---
 
+## 🌟 核心特性（v2.2.0 里程碑：世界内 3D 空间视觉指令与全息幽灵覆盖层协议）
+
+彻底跳出“AI 助手只能在聊天框倾倒枯燥文字”的陈旧范式，开创**局部因果拓扑诊断 + 游戏世界内 3D 空间全息指引（In-World Spatial Overlay & Holographic Ghost Protocol）**：
+
+1. **五大空间视觉渲染原语 (`SpatialPrimitive`)**：
+   - **`BOX_OUTLINE`（方块线框高亮）**：单方块/区域多方块高亮，带自定义半透明 RGBA 色彩与持续时间（如冲突红、健康绿、背压橙）；
+   - **`GHOST_BLOCK`（全息虚影方块）**：在真实世界坐标投射半透明幽灵方块（包含完整 `blockId` 与方块状态），让玩家直观看到缺失构件；
+   - **`FLOW_ARROW`（3D 方向流向箭头）**：在物流/动力拓扑节点间连线渲染带标签的定向流向箭头（如传动冲突向量、漏斗死锁回环、传送门迁址建议）；
+   - **`SPHERE_BOUNDARY`（空间球体边界圈）**：动态投射生成动力学生物清除球（24m 禁刷红圈、32m 黄金高产绿圈、128m 瞬间蒸发青色界）；
+   - **`BILLBOARD`（空间 3D 浮动文字标签）**：在世界方块上方悬浮渲染诊断标签与排查提示。
+
+2. **跨版本网络传输包与原版无缝降级 (`SpatialDirectivePacket`)**：
+   - **紧凑 JSON 协议**：对接 Fabric / NeoForge 客户端 CustomPayload 网络通道（`hoshi:spatial_overlay`），0 反射，极低网络负载；
+   - **原版 Tellraw 智能降级 (`toTellrawFallback`)**：若玩家客户端未安装渲染模组，自动转换为带可点击 `/tp` 传送坐标的 Minecraft 原版富文本提示，兼顾极致视觉与绝对兼容性！
+
+3. **高阶全息生成引擎 (`SpatialDirectiveGenerator`)**：
+   - **Create 机械动力卡死高亮**：精准锁定反向啮合/速比矛盾的齿轮对，红色线框闪烁并在冲突齿轮间拉出红色冲突箭头；
+   - **漏斗死锁与物流拓扑高亮**：将有向环路死锁漏斗串联成闭环流动箭头，背压与分类器击穿漏洞标红预警；
+   - **多方块蓝图全息投影 (`generateMultiblockGhostOverlay`)**：在准星指定位置完整投影潮涌核心 5x5x5 三环框架虚影（42 海晶石 + 1 核心）或信标金字塔，玩家直接“对着虚影贴方块”，搭建零失误；
+   - **生电刷怪清除球空间投影 (`generateMobFarmOverlay`)**：以玩家挂机坐标实时投射 24m/32m/128m 空间同心边界圈！
+
+4. **游戏内交互指令升级**：
+   - **`/hoshi highlight kinetics`**：游戏内世界高亮动力网卡死齿轮与传动流向；
+   - **`/hoshi highlight hopper`**：投射漏斗物流流向与死锁回路；
+   - **`/hoshi highlight multiblock <名称>`**：准星投射全息多方块虚影蓝图；
+   - **`/hoshi highlight mobfarm`**：以自身为中心投射 24/32/128m 清除球圈；
+   - **`/hoshi highlight clear`**：一键清除当前世界所有覆盖层！
+
+---
+
 ## 🌟 核心特性（v2.1.0 里程碑：局部机器拓扑分析与因果图流式推断）
 
 1. **Create 机械动力网络拓扑图论分析与齿轮卡死诊断 (Create Kinetic Network & Jamming Analyzer)**：
