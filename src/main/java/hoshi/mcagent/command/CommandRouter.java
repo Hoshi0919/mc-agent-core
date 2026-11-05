@@ -1,5 +1,6 @@
 package hoshi.mcagent.command;
 
+import hoshi.mcagent.cluster.Ae2NetworkAnalyzer;
 import hoshi.mcagent.cluster.BlockPos;
 import hoshi.mcagent.spatial.SpatialDirectiveGenerator;
 import hoshi.mcagent.spatial.SpatialDirectivePacket;
@@ -237,6 +238,10 @@ public class CommandRouter {
             case "chunkloader":
             case "cl": {
                 return handleChunkloader(playerId, tokens, argStart);
+            }
+                        case "ae2":
+            case "me": {
+                return handleAe2(playerId, tokens, argStart, snapshot);
             }
             case "cluster":
             case "topo": {
@@ -662,6 +667,25 @@ public class CommandRouter {
         return CommandResult.success("STATS", msg, null, null, null);
     }
 
+    
+    private CommandResult handleAe2(String playerId, String[] tokens, int argStart, ContextSnapshot snapshot) {
+        LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
+        if (cluster == null || cluster.isEmpty()) {
+            String msg = "§b【AE2 数字化网络诊断】§r\n" +
+                    "当前准星未捕捉到局部 AE2 机器或线缆集群。\n" +
+                    "请将准星对准 ME 控制器、线缆、驱动器或终端方块，然后再次输入 `/hoshi ae2` 触发实时图论与频道分析！";
+            return CommandResult.success("AE2", msg, null, null, null);
+        }
+        var report = Ae2NetworkAnalyzer.analyze(cluster);
+        String text = report.formatReport();
+        ChatPaginator.PagedResult paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page");
+        sessionManager.recordInteraction(playerId, "/hoshi ae2", text, "AE2", paged);
+        var comps = MinecraftTextFormatter.parseComponents(paged.fullPageText(), "/hoshi ae2");
+        String tellraw = TellrawJsonBuilder.toJson(comps);
+        var packet = SpatialDirectiveGenerator.generateAe2Overlay(cluster, report);
+        return CommandResult.success("AE2", paged.fullPageText(), null, tellraw, paged, packet);
+    }
+
     private CommandResult handleCluster(String playerId, String[] tokens, int argStart, ContextSnapshot snapshot) {
         String sub = argStart + 1 < tokens.length ? tokens[argStart + 1].toLowerCase() : "all";
         LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
@@ -689,6 +713,17 @@ public class CommandRouter {
             }
         }
 
+                if ("ae2".equals(sub) || "all".equals(sub)) {
+            var a = Ae2NetworkAnalyzer.analyze(cluster);
+            if (a.totalControllers() > 0 || a.totalCables() > 0 || a.totalDevices() > 0) {
+                sb.append(String.format("▸ AE2 网络：%s\n", a.primaryDiagnosis()));
+                if (!a.issues().isEmpty()) {
+                    for (String iss : a.issues()) sb.append("  ✖ ").append(iss).append("\n");
+                }
+                sb.append("  建议：").append(a.actionableRemediation()).append("\n");
+            }
+        }
+
         if ("hopper".equals(sub) || "all".equals(sub)) {
             var h = HopperNetworkAnalyzer.analyze(cluster);
             sb.append(String.format("▸ 物流状态：%s\n", h.primaryDiagnosis()));
@@ -705,6 +740,9 @@ public class CommandRouter {
         if ("kinetics".equals(sub)) {
             var k = KineticNetworkAnalyzer.analyze(cluster);
             packet = SpatialDirectiveGenerator.generateKineticOverlay(cluster, k);
+                } else if ("ae2".equals(sub)) {
+            var a = Ae2NetworkAnalyzer.analyze(cluster);
+            packet = SpatialDirectiveGenerator.generateAe2Overlay(cluster, a);
         } else if ("hopper".equals(sub)) {
             var h = HopperNetworkAnalyzer.analyze(cluster);
             packet = SpatialDirectiveGenerator.generateHopperOverlay(cluster, h);
@@ -738,6 +776,16 @@ public class CommandRouter {
             }
             var k = KineticNetworkAnalyzer.analyze(cluster);
             var packet = SpatialDirectiveGenerator.generateKineticOverlay(cluster, k);
+            return CommandResult.success("HIGHLIGHT", "§a[Hoshi 3D 高亮] " + packet.hudTitle(), null, packet.toTellrawFallback(), null, packet);
+        }
+
+                if ("ae2".equals(sub) || "me".equals(sub)) {
+            LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
+            if (cluster == null || cluster.isEmpty()) {
+                return CommandResult.error("HIGHLIGHT", "§c准星未捕捉到局部 AE2 数字化网络组件，无法投射 AE2 高亮。");
+            }
+            var a = Ae2NetworkAnalyzer.analyze(cluster);
+            var packet = SpatialDirectiveGenerator.generateAe2Overlay(cluster, a);
             return CommandResult.success("HIGHLIGHT", "§a[Hoshi 3D 高亮] " + packet.hudTitle(), null, packet.toTellrawFallback(), null, packet);
         }
 
@@ -800,6 +848,8 @@ public class CommandRouter {
                 "▸ §e/hoshi anvil <装备> [附魔:等级...]§r - 规划二叉树最优附魔工序规避过于昂贵\n" +
                 "▸ §e/hoshi create stress <动力源> [规模]§r - 诊断 Create 模组动力网应力与过载转速\n" +
                 "▸ §e/hoshi chunkloader <permaloader/portal>§r - 诊断生电传送门常载网与 8:1 坐标漂移\n" +
+                                "▸ §e/hoshi ae2§r - 诊断准星 AE2 数字化网络拓扑、控制器合法性与 8/32 频道溢出\n" +
+                "▸ §e/hoshi highlight ae2§r - 投射 AE2 频道过载红线与掉线设备 3D 空间全息覆盖层\n" +
                 "▸ §e/hoshi cluster [kinetics/hopper/crafter]§r - 诊断局部机器拓扑、齿轮卡死与漏斗回路\n" +
                 "▸ §e/hoshi highlight [kinetics/hopper/multiblock/mobfarm/clear]§r - 投射 3D 空间高亮与全息虚影\n" +
                 "▸ §e/hoshi nether [x y z]§r - 换算地狱传送门坐标\n" +

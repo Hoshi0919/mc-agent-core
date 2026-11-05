@@ -369,3 +369,39 @@ class SpatialDirectiveGenerator:
             hud_title="生电清除球与生成动力学视界",
             hud_description="红色=24m禁刷，绿色=32m黄金活动区，青色=128m瞬间清除界"
         )
+
+
+    @classmethod
+    def generate_ae2_overlay(cls, cluster: Optional[Any], report: Optional[Any]) -> SpatialDirectivePacket:
+        if not report or (report.total_controllers == 0 and report.total_cables == 0 and report.total_devices == 0):
+            return SpatialDirectivePacket.empty()
+
+        primitives: List[SpatialPrimitive] = []
+        duration = 300
+
+        for pos in report.illegal_interior_controllers:
+            primitives.append(SpatialPrimitive.box_outline(pos, SpatialColor.RED, "ILLEGAL INTERIOR", duration))
+            primitives.append(SpatialPrimitive.billboard(pos.offset("up"), "⚠ 控制器实心内部违规方块", SpatialColor.RED, duration))
+
+        for pos in report.overloaded_cables:
+            primitives.append(SpatialPrimitive.box_outline(pos, SpatialColor.ORANGE, "CABLE OVERLOAD", duration))
+            primitives.append(SpatialPrimitive.billboard(pos.offset("up"), "⚠ 频道过载线缆", SpatialColor.ORANGE, duration))
+
+        for pos in report.offline_devices:
+            primitives.append(SpatialPrimitive.box_outline(pos, SpatialColor.YELLOW, "MISSING CHANNEL", duration))
+            primitives.append(SpatialPrimitive.ghost_block(pos, "ae2:missing_channel", {"state": "offline"}, SpatialColor.YELLOW, duration))
+            primitives.append(SpatialPrimitive.billboard(pos.offset("up"), "⚠ 频道耗尽离线", SpatialColor.YELLOW, duration))
+
+        if report.is_healthy and report.total_devices > 0:
+            if cluster and getattr(cluster, "origin", None):
+                org = cluster.origin
+                primitives.append(SpatialPrimitive.box_outline(org, SpatialColor.CYAN, "AE2 OK", duration))
+                primitives.append(SpatialPrimitive.billboard(org.offset("up"), f"✔ AE2 在线: {report.online_devices}台", SpatialColor.CYAN, duration))
+
+        return SpatialDirectivePacket(
+            id=f"ae2-network-{int(time.time()*1000)}",
+            category="AE2_NETWORK",
+            primitives=primitives,
+            hud_title=report.primary_diagnosis,
+            hud_description=report.actionable_remediation
+        )

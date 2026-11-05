@@ -68,15 +68,22 @@ public record LocalMachineCluster(
                 .collect(Collectors.toList());
     }
 
+    public List<LocalBlock> getConnectedAe2() {
+        return blocks.values().stream()
+                .filter(LocalBlock::isAe2)
+                .collect(Collectors.toList());
+    }
+
     public String toSummary() {
         if (isEmpty()) {
             return "EmptyCluster (0 blocks)";
         }
-        return String.format("Cluster centered at %s with %d blocks (Kinetics: %d, Hoppers: %d, Containers: %d)",
+        return String.format("Cluster centered at %s with %d blocks (Kinetics: %d, Hoppers: %d, AE2: %d, Containers: %d)",
                 origin,
                 blocks.size(),
                 getConnectedKinetics().size(),
                 getConnectedHoppers().size(),
+                getConnectedAe2().size(),
                 getBlocksByType("chest").size() + getBlocksByType("barrel").size() + getBlocksByType("crafter").size());
     }
 
@@ -106,7 +113,7 @@ public record LocalMachineCluster(
         }
 
         public LocalMachineCluster build() {
-            return new LocalMachineCluster(origin, Collections.unmodifiableMap(new HashMap<>(map)));
+            return new LocalMachineCluster(origin, Collections.unmodifiableMap(map));
         }
     }
 }

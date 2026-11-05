@@ -38,6 +38,7 @@ import hoshi.mcagent.anvil.AnvilPlan;
 import hoshi.mcagent.anvil.EnchantmentEntry;
 import hoshi.mcagent.create.CreateKineticsAnalyzer;
 import hoshi.mcagent.chunkload.PortalChunkLoaderAnalyzer;
+import hoshi.mcagent.cluster.Ae2NetworkAnalyzer;
 import hoshi.mcagent.cluster.BlockPos;
 import hoshi.mcagent.cluster.LocalBlock;
 import hoshi.mcagent.cluster.LocalMachineCluster;
@@ -136,6 +137,7 @@ public class McAgentCoreTest {
         testPromptSafetyFenceV21();
         testCommandRouterV21ClusterCommand();
         testSpatialVisualOverlayProtocol();
+        testAe2NetworkAnalyzerAndSpatialProtocol();
 
         System.out.println(String.format("\n🎉 All %d/%d Java tests passed successfully!", testsPassed, testsRun));
     }
@@ -1842,6 +1844,200 @@ public class McAgentCoreTest {
         // 10. Help command mentions highlight
         var helpRes = router.execute("Steve", "/hoshi help", null);
         assertTrue(helpRes.getMessage().contains("highlight"), "Help mentions highlight");
+    }
+
+
+    private static void testAe2NetworkAnalyzerAndSpatialProtocol() throws Exception {
+        // 1. Empty cluster returns empty report
+        LocalMachineCluster emptyCluster = LocalMachineCluster.empty(new BlockPos(0, 64, 0));
+        var repEmpty = Ae2NetworkAnalyzer.analyze(emptyCluster);
+        assertTrue(repEmpty.isHealthy(), "Empty cluster is healthy");
+        assertTrue(repEmpty.totalControllers() == 0, "0 controllers in empty");
+        assertTrue(repEmpty.totalDevices() == 0, "0 devices in empty");
+
+        // 2. Healthy Controller Network (1 controller, 2 cables, 4 devices)
+        var healthyBuilder = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "ae2:controller")
+                .add(1, 64, 0, "ae2:fluix_glass_cable")
+                .add(2, 64, 0, "ae2:fluix_glass_cable")
+                .add(2, 65, 0, "ae2:me_drive")
+                .add(2, 63, 0, "ae2:crafting_terminal")
+                .add(3, 64, 0, "ae2:storage_bus")
+                .add(2, 64, 1, "ae2:export_bus");
+        var healthyRep = Ae2NetworkAnalyzer.analyze(healthyBuilder.build());
+        assertTrue(healthyRep.isHealthy(), "Healthy AE2 network is healthy");
+        assertTrue(healthyRep.onlineDevices() == 4, "All 4 devices online");
+        assertTrue(healthyRep.missingChannelDevices() == 0, "0 missing channels");
+        assertTrue(healthyRep.totalCables() == 2, "2 regular cables");
+
+        // 3. Controller Oversized Multiblock (8x1x1 > 7)
+        var oversizedBuilder = LocalMachineCluster.builder(0, 64, 0);
+        for (int x = 0; x < 8; x++) {
+            oversizedBuilder.add(x, 64, 0, "ae2:controller");
+        }
+        var oversizedRep = Ae2NetworkAnalyzer.analyze(oversizedBuilder.build());
+        assertTrue(!oversizedRep.isHealthy(), "Oversized controller is unhealthy");
+        assertTrue(oversizedRep.hasMultiblockError(), "Triggers multiblock error");
+        assertTrue(oversizedRep.issues().get(0).contains("尺寸超限"), "Issues mention dimension limit");
+
+        // 4. Controller Solid Core Violation (3x3x3 cube, center [1, 65, 1] fully enclosed)
+        var solidBuilder = LocalMachineCluster.builder(1, 65, 1);
+        for (int x = 0; x < 3; x++) {
+            for (int y = 64; y < 67; y++) {
+                for (int z = 0; z < 3; z++) {
+                    solidBuilder.add(x, y, z, "ae2:controller");
+                }
+            }
+        }
+        var solidRep = Ae2NetworkAnalyzer.analyze(solidBuilder.build());
+        assertTrue(!solidRep.isHealthy(), "Solid controller is unhealthy");
+        assertTrue(solidRep.hasMultiblockError(), "Triggers multiblock error for solid");
+        assertTrue(!solidRep.illegalInteriorControllers().isEmpty(), "Identifies illegal interior blocks");
+        assertTrue(solidRep.illegalInteriorControllers().contains(new BlockPos(1, 65, 1)), "Center block [1, 65, 1] flagged as illegal solid interior");
+
+        // 5. Disconnected Controllers Violation (two isolated controller groups)
+        var splitBuilder = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "ae2:controller")
+                .add(5, 64, 0, "ae2:controller"); // disconnected
+        var splitRep = Ae2NetworkAnalyzer.analyze(splitBuilder.build());
+        assertTrue(!splitRep.isHealthy(), "Disconnected controllers unhealthy");
+        assertTrue(splitRep.hasMultiblockError(), "Multiblock error for split controllers");
+        assertTrue(splitRep.issues().get(0).contains("多结构冲突"), "Issue mentions multi-structure conflict");
+
+        // 6. Ad-hoc network channel cap (No controller, 9 devices on cables)
+        var adhocBuilder = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "ae2:fluix_glass_cable");
+        for (int i = 1; i <= 9; i++) {
+            adhocBuilder.add(i, 64, 0, "ae2:me_drive");
+        }
+        var adhocRep = Ae2NetworkAnalyzer.analyze(adhocBuilder.build());
+        assertTrue(!adhocRep.isHealthy(), "9-device ad-hoc is unhealthy");
+        assertTrue(adhocRep.hasChannelOverload(), "Adhoc triggers channel overload");
+        assertTrue(adhocRep.missingChannelDevices() == 1, "1 device missing channel");
+        assertTrue(adhocRep.onlineDevices() == 8, "8 devices online in ad-hoc");
+
+        // 7. Regular Cable Overload (Controller -> 1 regular cable -> 9 devices)
+        var cableOverloadBuilder = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "ae2:controller")
+                .add(1, 64, 0, "ae2:fluix_glass_cable");
+        for (int i = 1; i <= 9; i++) {
+            cableOverloadBuilder.add(1, 64, i, "ae2:me_drive");
+        }
+        var cableRep = Ae2NetworkAnalyzer.analyze(cableOverloadBuilder.build());
+        assertTrue(!cableRep.isHealthy(), "Cable overload is unhealthy");
+        assertTrue(cableRep.hasChannelOverload(), "Triggers channel overload");
+        assertTrue(!cableRep.overloadedCables().isEmpty(), "Overloaded cable flagged");
+        assertTrue(cableRep.missingChannelDevices() >= 1, "At least 1 device starved of channel");
+
+        // 8. Dense Cable Capacity (Controller -> connected dense cable line -> 32 devices vs 33 devices)
+        var denseBuilder = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "ae2:controller");
+        for (int x = 1; x <= 8; x++) {
+            denseBuilder.add(x, 64, 0, "ae2:dense_smart_cable");
+        }
+        // Attach 4 devices per dense cable block (x=1..8, 8*4 = 32 devices)
+        for (int x = 1; x <= 8; x++) {
+            denseBuilder.add(x, 65, 0, "ae2:me_drive");
+            denseBuilder.add(x, 63, 0, "ae2:me_drive");
+            denseBuilder.add(x, 64, 1, "ae2:me_drive");
+            denseBuilder.add(x, 64, -1, "ae2:me_drive");
+        }
+        var denseRep32 = Ae2NetworkAnalyzer.analyze(denseBuilder.build());
+        assertTrue(denseRep32.isHealthy(), "32 devices on dense cable is healthy");
+        assertTrue(denseRep32.onlineDevices() == 32, "All 32 devices online on dense cable");
+
+        // Add 33rd device at x=8, y=66 (attached to me_drive or extend dense cable to x=9)
+        denseBuilder.add(9, 64, 0, "ae2:dense_smart_cable");
+        denseBuilder.add(9, 65, 0, "ae2:me_drive");
+        var denseRep33 = Ae2NetworkAnalyzer.analyze(denseBuilder.build());
+        assertTrue(!denseRep33.isHealthy(), "33 devices on dense cable triggers overload");
+        assertTrue(denseRep33.hasChannelOverload(), "Dense cable channel overload");
+
+        // 9. P2P recursive loop detection
+        var p2pBuilder = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "ae2:controller")
+                .add(1, 64, 0, "ae2:fluix_glass_cable")
+                .add(2, 64, 0, "ae2:me_p2p_tunnel", Map.of("frequency", "carrier"))
+                .add(3, 64, 0, "ae2:me_p2p_tunnel", Map.of("frequency", "carrier"));
+        var p2pRep = Ae2NetworkAnalyzer.analyze(p2pBuilder.build());
+        assertTrue(!p2pRep.isHealthy(), "P2P loop is unhealthy");
+        assertTrue(p2pRep.hasP2pLoop(), "P2P recursive loop flagged");
+
+        // 10. Spatial Overlay Directive Generation for AE2
+        var solidCluster = solidBuilder.build();
+        var solidOverlay = SpatialDirectiveGenerator.generateAe2Overlay(solidCluster, solidRep);
+        assertTrue(solidOverlay.category().equals("AE2_NETWORK"), "Overlay category is AE2_NETWORK");
+        assertTrue(solidOverlay.size() >= 2, "Contains boxes and billboards for illegal interior");
+        assertTrue(solidOverlay.toJson().contains("ILLEGAL INTERIOR"), "JSON contains ILLEGAL INTERIOR");
+
+        var cableOverlay = SpatialDirectiveGenerator.generateAe2Overlay(cableOverloadBuilder.build(), cableRep);
+        assertTrue(cableOverlay.toJson().contains("CABLE OVERLOAD"), "JSON contains CABLE OVERLOAD");
+        assertTrue(cableOverlay.toJson().contains("MISSING CHANNEL"), "JSON contains MISSING CHANNEL");
+
+        // 11. TargetBlock Logistics Evaluation for AE2
+        TargetBlock controllerBlock = new TargetBlock("ae2:controller", 10, 64, 10, 0, 15, 5.0f, "pickaxe", Map.of());
+        var ctrlLog = controllerBlock.evaluateLogisticsOrRedstone();
+        assertTrue(ctrlLog.isLogisticsOrRedstone(), "Controller is logistics/redstone");
+        assertTrue(ctrlLog.componentType().equals("AE2_CONTROLLER"), "Type is AE2_CONTROLLER");
+        assertTrue(ctrlLog.actionableAdvice().contains("7x7x7"), "Advice mentions 7x7x7");
+
+        TargetBlock denseBlock = new TargetBlock("ae2:dense_smart_cable", 11, 64, 10, 0, 15, 1.0f, "pickaxe", Map.of());
+        var denseLog = denseBlock.evaluateLogisticsOrRedstone();
+        assertTrue(denseLog.componentType().equals("AE2_DENSE_CABLE"), "Type is AE2_DENSE_CABLE");
+        assertTrue(denseLog.stateDetails().contains("32 频道"), "Details mention 32 channels");
+
+        TargetBlock glassBlock = new TargetBlock("ae2:fluix_glass_cable", 12, 64, 10, 0, 15, 1.0f, "pickaxe", Map.of());
+        var glassLog = glassBlock.evaluateLogisticsOrRedstone();
+        assertTrue(glassLog.componentType().equals("AE2_CABLE"), "Type is AE2_CABLE");
+        assertTrue(glassLog.stateDetails().contains("8 频道"), "Details mention 8 channels");
+
+        // 12. Fast Path Query Resolution for AE2 Rules 54, 55, 56
+        McAgentCore core = new McAgentCore();
+        var qCtrl = core.query("Steve", "AE2控制器多方块实心怎么办？", null).get();
+        assertTrue(qCtrl.isFastPath(), "Fast path for AE2 controller query");
+        assertTrue(qCtrl.category().equals("AE2_CONTROLLER_MULTIBLOCK_AND_SOLID"), "Category is AE2_CONTROLLER_MULTIBLOCK_AND_SOLID");
+        assertTrue(qCtrl.rawAnswer().contains("7x7x7"), "Response contains 7x7x7");
+
+        var qCh = core.query("Alex", "AE2线缆设备掉线 missing channel 怎么办？", null).get();
+        assertTrue(qCh.isFastPath(), "Fast path for AE2 channel query");
+        assertTrue(qCh.category().equals("AE2_CHANNEL_ROUTING_AND_STARVATION"), "Category is AE2_CHANNEL_ROUTING_AND_STARVATION");
+        assertTrue(qCh.rawAnswer().contains("致密线缆"), "Response mentions dense cable");
+
+        var qP2p = core.query("Miner", "AE2 P2P隧道回环死锁如何解决？", null).get(); 
+        assertTrue(qP2p.isFastPath(), "Fast path for AE2 P2P loop query");
+        assertTrue(qP2p.category().equals("AE2_P2P_TUNNEL_COMPRESSION_AND_LOOP"), "Category is AE2_P2P_TUNNEL_COMPRESSION_AND_LOOP");
+        assertTrue(qP2p.rawAnswer().contains("内存卡"), "Response mentions memory card");
+
+        // 13. CommandRouter End-to-End Commands
+        PlayerSessionManager sm = new PlayerSessionManager();
+        CommandRouter router = new CommandRouter(core, sm);
+
+        // /hoshi ae2 with empty cluster
+        var resAe2Empty = router.execute("Steve", "/hoshi ae2", null);
+        assertTrue(resAe2Empty.isSuccess(), "AE2 empty command succeeds");
+        assertTrue(resAe2Empty.getMessage().contains("当前准星未捕捉到局部 AE2"), "Reports no AE2 cluster targeted");
+
+        // /hoshi ae2 with healthy network
+        ContextSnapshot healthyCtx = ContextSnapshot.builder().cluster(healthyBuilder.build()).build();
+        var resAe2Healthy = router.execute("Steve", "/hoshi ae2", healthyCtx);
+        assertTrue(resAe2Healthy.isSuccess(), "AE2 command succeeds on cluster");
+        assertTrue(resAe2Healthy.getMessage().contains("网络工况健康"), "Message confirms healthy network");
+        assertTrue(resAe2Healthy.hasSpatialDirective(), "AE2 result has spatial directive");
+
+        // /hoshi cluster ae2
+        var resClusterAe2 = router.execute("Steve", "/hoshi cluster ae2", healthyCtx);
+        assertTrue(resClusterAe2.isSuccess(), "Cluster ae2 succeeds");
+        assertTrue(resClusterAe2.getMessage().contains("AE2 网络"), "Message contains AE2 summary");
+
+        // /hoshi highlight ae2
+        var resHlAe2 = router.execute("Steve", "/hoshi highlight ae2", healthyCtx);
+        assertTrue(resHlAe2.isSuccess(), "Highlight ae2 succeeds");
+        assertTrue(resHlAe2.hasSpatialDirective(), "Highlight ae2 has spatial directive");
+        assertTrue(resHlAe2.getSpatialDirective().category().equals("AE2_NETWORK"), "Directive is AE2_NETWORK");
+
+        // /hoshi help mentions ae2
+        var resHelp = router.execute("Steve", "/hoshi help", null);
+        assertTrue(resHelp.getMessage().contains("/hoshi ae2"), "Help mentions /hoshi ae2");
     }
 
 }

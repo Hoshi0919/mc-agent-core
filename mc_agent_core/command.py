@@ -181,6 +181,8 @@ class CommandRouter:
         elif sub in ("create", "kinetics"):
             return self._handle_create(player_id, tokens, arg_start)
 
+        elif sub in ("ae2", "me"):
+            return self._handle_ae2(player_id, tokens, arg_start, snapshot)
         elif sub in ("cluster", "topo"):
             cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
             if not cluster:
@@ -487,6 +489,24 @@ class CommandRouter:
         msg = f"§b【Hoshi AI 运行时度量】§r\n▸ 缓存统计: §a{cache_stats}§r\n▸ 活跃会话数: §e{active}§r\n▸ 响应状态: §a正常运行§r"
         return CommandResult(status="SUCCESS", action="STATS", message=msg)
 
+
+    def _handle_ae2(self, player_id: Optional[str], tokens: list, arg_start: int, snapshot: Optional[ContextSnapshot]) -> CommandResult:
+        cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
+        if not cluster or cluster.is_empty:
+            msg = ("§b【AE2 数字化网络诊断】§r\n"
+                   "当前准星未捕捉到局部 AE2 机器或线缆集群。\n"
+                   "请将准星对准 ME 控制器、线缆、驱动器或终端方块，然后再次输入 `/hoshi ae2` 触发实时图论与频道分析！")
+            return CommandResult(status="SUCCESS", action="AE2", message=msg)
+        from mc_agent_core.cluster import Ae2NetworkAnalyzer
+        report = Ae2NetworkAnalyzer.analyze(cluster)
+        text = report.format_report()
+        paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page")
+        self.session_manager.record_interaction(player_id, "/hoshi ae2", text, "AE2", paged)
+        comps = MinecraftTextFormatter.parse_components(paged.full_page_text, "/hoshi ae2")
+        tellraw = TellrawJsonBuilder.to_json(comps)
+        pkt = SpatialDirectiveGenerator.generate_ae2_overlay(cluster, report)
+        return CommandResult(status="SUCCESS", action="AE2", message=paged.full_page_text, tellraw_json=tellraw, paged_result=paged, spatial_directive=pkt)
+
     def _handle_highlight(self, player_id: Optional[str], tokens: list, arg_start: int, snapshot: Optional[ContextSnapshot]) -> CommandResult:
         sub = tokens[arg_start + 1].lower() if arg_start + 1 < len(tokens) else "help"
 
@@ -501,6 +521,15 @@ class CommandRouter:
             from mc_agent_core.cluster import KineticNetworkAnalyzer
             k = KineticNetworkAnalyzer.analyze(cluster)
             pkt = SpatialDirectiveGenerator.generate_kinetic_overlay(cluster, k)
+            return CommandResult(status="SUCCESS", action="HIGHLIGHT", message=f"§a[Hoshi 3D 高亮] {pkt.hud_title}", spatial_directive=pkt)
+
+        if sub in ("ae2", "me"):
+            cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
+            if not cluster or cluster.is_empty:
+                return CommandResult(status="ERROR", action="HIGHLIGHT", message="§c准星未捕捉到局部 AE2 数字化网络组件，无法投射 AE2 高亮。")
+            from mc_agent_core.cluster import Ae2NetworkAnalyzer
+            a = Ae2NetworkAnalyzer.analyze(cluster)
+            pkt = SpatialDirectiveGenerator.generate_ae2_overlay(cluster, a)
             return CommandResult(status="SUCCESS", action="HIGHLIGHT", message=f"§a[Hoshi 3D 高亮] {pkt.hud_title}", spatial_directive=pkt)
 
         if sub in ("hopper", "pipe"):
@@ -556,6 +585,8 @@ class CommandRouter:
             "▸ §e/hoshi page <页码>§r - 翻页长篇内容\n"
             "▸ §e/hoshi anvil <装备> [附魔:等级...]§r - 规划二叉树最优附魔工序规避过于昂贵\n"
             "▸ §e/hoshi create stress <动力源> [规模]§r - 诊断 Create 模组动力网应力与过载转速\n"
+            "▸ §e/hoshi ae2§r - 诊断准星 AE2 数字化网络拓扑、控制器合法性与 8/32 频道溢出\n"
+            "▸ §e/hoshi highlight ae2§r - 投射 AE2 频道过载红线与掉线设备 3D 空间全息覆盖层\n"
             "▸ §e/hoshi cluster - 诊断局部机器拓扑\n▸ §e/hoshi chunkloader <permaloader/portal>§r - 诊断生电传送门常载网与 8:1 坐标漂移\n"
             "▸ §e/hoshi nether [x y z]§r - 换算地狱传送门坐标\n"
             "▸ §e/hoshi clear§r - 清理会话与翻页缓存\n"

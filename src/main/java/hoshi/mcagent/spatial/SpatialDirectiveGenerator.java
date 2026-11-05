@@ -1,5 +1,6 @@
 package hoshi.mcagent.spatial;
 
+import hoshi.mcagent.cluster.Ae2NetworkAnalyzer;
 import hoshi.mcagent.cluster.BlockPos;
 import hoshi.mcagent.cluster.HopperNetworkAnalyzer;
 import hoshi.mcagent.cluster.KineticNetworkAnalyzer;
@@ -316,6 +317,50 @@ public final class SpatialDirectiveGenerator {
                 "传送门 8:1 欧氏空间对齐引导",
                 String.format("当前漂移下界门位于 [%d, %d]，建议迁至 [%d, %d] 消除串门风险",
                         currentNetherX, currentNetherZ, idealNetherX, idealNetherZ)
+        );
+    }
+
+    /**
+     * Generates in-world holographic overlays for Applied Energistics 2 (AE2) networks.
+     */
+    public static SpatialDirectivePacket generateAe2Overlay(LocalMachineCluster cluster, Ae2NetworkAnalyzer.Ae2Report report) {
+        if (report == null || (report.totalControllers() == 0 && report.totalCables() == 0 && report.totalDevices() == 0)) {
+            return SpatialDirectivePacket.empty();
+        }
+
+        List<SpatialPrimitive> primitives = new ArrayList<>();
+        int duration = 300; // 15 seconds
+
+        for (BlockPos pos : report.illegalInteriorControllers()) {
+            primitives.add(SpatialPrimitive.boxOutline(pos, SpatialColor.RED, "ILLEGAL INTERIOR", duration));
+            primitives.add(SpatialPrimitive.billboard(pos.offset("up"), "⚠ 控制器实心内部违规方块", SpatialColor.RED, duration));
+        }
+
+        for (BlockPos pos : report.overloadedCables()) {
+            primitives.add(SpatialPrimitive.boxOutline(pos, SpatialColor.ORANGE, "CABLE OVERLOAD", duration));
+            primitives.add(SpatialPrimitive.billboard(pos.offset("up"), "⚠ 频道过载线缆", SpatialColor.ORANGE, duration));
+        }
+
+        for (BlockPos pos : report.offlineDevices()) {
+            primitives.add(SpatialPrimitive.boxOutline(pos, SpatialColor.YELLOW, "MISSING CHANNEL", duration));
+            primitives.add(SpatialPrimitive.ghostBlock(pos, "ae2:missing_channel", Map.of("state", "offline"), SpatialColor.YELLOW, duration));
+            primitives.add(SpatialPrimitive.billboard(pos.offset("up"), "⚠ 频道耗尽离线", SpatialColor.YELLOW, duration));
+        }
+
+        if (report.isHealthy() && report.totalDevices() > 0) {
+            if (cluster != null && cluster.originBlock().isPresent()) {
+                BlockPos org = cluster.origin();
+                primitives.add(SpatialPrimitive.boxOutline(org, SpatialColor.CYAN, "AE2 OK", duration));
+                primitives.add(SpatialPrimitive.billboard(org.offset("up"), String.format("✔ AE2 在线: %d台", report.onlineDevices()), SpatialColor.CYAN, duration));
+            }
+        }
+
+        return SpatialDirectivePacket.of(
+                "ae2-network-" + System.currentTimeMillis(),
+                "AE2_NETWORK",
+                primitives,
+                report.primaryDiagnosis(),
+                report.actionableRemediation()
         );
     }
 }

@@ -450,5 +450,24 @@ public final class LocalGameRules {
             "2. 比较器满格脉冲闭环：比较器输出信号等级 = 有物品槽位 + 禁用槽位总数 (0~9)。当信号达到 9 级时触发 1-tick 脉冲瞬间合成并弹出成品；\n" +
             "3. 多原料供料配比：多成分配方禁止用单漏斗无序混投，单一原料会抢占全部未填槽位造成死锁；建议采用投掷器按比例脉冲投料。";
 
-        private LocalGameRules() {}
+        
+    public static final String AE2_CONTROLLER_MULTIBLOCK_AND_SOLID_RULES =
+            "【AE2 控制器多方块规范与实心禁忌】\n" +
+            "1. 外框尺寸红线：控制器整体外包围盒跨度严禁超过 7x7x7 方块；\n" +
+            "2. 实心内部禁忌 (No Solid 2x2x2 Core)：严禁出现任何内部实心立方体，即任何控制器方块在全部 6 个面均不得被控制器封闭包围，必须拥有至少 1~2 个外部暴露面，否则整网闪红瘫痪！\n" +
+            "3. 单一网络规则：全网只能有唯一连通的控制器组，严禁两组独立控制器挂载于同一线缆网络。";
+
+    public static final String AE2_CHANNEL_ROUTING_AND_STARVATION_RULES =
+            "【AE2 8/32 频道路由树与设备离线抢占修复】\n" +
+            "1. 线缆容量阶梯：普通线缆（福鲁伊克斯/智能/包层）上限 8 频道；致密线缆 (Dense Cable) 上限 32 频道；\n" +
+            "2. 最短跳数贪心抢占与掉线 (Missing Channel)：当线缆下游设备数超过其容量上限时，沿最短路径优先分配，距控制器最远的末端设备将失去频道变灰离线；\n" +
+            "3. 修复方案：将骨干过载线缆升级为致密线缆，或由控制器多个暴露面分别引出独立支线。";
+
+    public static final String AE2_P2P_TUNNEL_COMPRESSION_AND_LOOP_RULES =
+            "【AE2 P2P 隧道点对点压缩与防回环配置】\n" +
+            "1. 频道透传与压缩：P2P 隧道在载体线缆上仅消耗 1 个频道，但可透传承载多达 32 个频道；\n" +
+            "2. 严防自引用递归回环：禁止将 P2P 隧道的输出端接回到运送其自身的载体线缆网络中，否则造成拓扑递归死锁与网络高频震荡闪烁！\n" +
+            "3. 频率配对法则：手持内存卡对输入端 (Input) Shift+右键保存频率，再对输出端 (Output) 右键复制频率完成绑定。";
+
+    private LocalGameRules() {}
 }

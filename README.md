@@ -4,6 +4,35 @@
 
 ---
 
+## 🌟 核心特性（v2.3.0 里程碑：AE2 数字化网络频道拓扑、控制器多方块与 3D 全息诊断）
+
+针对现代大型科技整合包（ATM9, Create: Astral, FTB, GregTech, Enigmatica）中应用能源 2（Applied Energistics 2 / AE2）网络搭建难题，提供 0ms 纯确定性图论拓扑分析与 3D 空间全息诊断：
+
+1. **控制器多方块完整性核验 (Controller Multiblock Validation)**：
+   - **外框尺寸红线**：严格核算整体外包围盒跨度，严禁超过 7x7x7 方块规范；
+   - **实心内部禁忌 (No Solid 2x2x2 Core)**：检测全封闭立方体核心方块（6 个正交相邻面全为控制器方块），精准识别并报错内部违规坐标，杜绝整网闪红瘫痪；
+   - **单连通性校验**：通过 BFS 验证全网控制器是否连通为单一整体，拦截分裂多控制器挂载冲突。
+
+2. **8/32 频道路由树与贪心抢占掉线模拟 (Channel Flow & Starvation Simulation)**：
+   - 区分普通线缆 (8 频道) 与致密线缆 (32 频道)；
+   - 沿控制器到终端设备的最短曼哈顿跳数自底向上聚合频道需求树；
+   - 识别线缆频道超载（如普通线缆汇集 9+ 需求），精准定位由于贪心抢占失败而失去频道 (Missing Channel) 变灰掉线的末端设备；
+   - 诊断 P2P 隧道自引用回环死锁 (Recursive P2P Loop)。
+
+3. **3D 空间全息诊断覆盖层整合 (`generateAe2Overlay`)**：
+   - 违规内部控制器方块：红色线框高亮 (`ILLEGAL INTERIOR`) + 上方悬浮告警标签；
+   - 频道超载线缆：橙色线框高亮 (`CABLE OVERLOAD`) + 流向箭头标出溢出量；
+   - 频道耗尽掉线设备：黄色线框高亮 (`MISSING CHANNEL`) + 半透明掉线虚影方块；
+   - 0 渲染模组时自动智能降级为原生 `/tellraw` 带坐标建议富文本。
+
+4. **游戏内交互指令与问答接入**：
+   - **`/hoshi ae2`**：一键对准星局域 AE2 网络输出完整拓扑与频道诊断报告；
+   - **`/hoshi cluster ae2`**：局部机器集群子图专属 AE2 分析；
+   - **`/hoshi highlight ae2`**：向客户端投射 3D 全息覆盖层；
+   - 快速问答路径收录规则 54（控制器多方块）、规则 55（8/32 频道路由）、规则 56（P2P 隧道防回环）。
+
+---
+
 ## 🌟 核心特性（v2.2.0 里程碑：世界内 3D 空间视觉指令与全息幽灵覆盖层协议）
 
 彻底跳出“AI 助手只能在聊天框倾倒枯燥文字”的陈旧范式，开创**局部因果拓扑诊断 + 游戏世界内 3D 空间全息指引（In-World Spatial Overlay & Holographic Ghost Protocol）**：
@@ -297,11 +326,11 @@ mc-agent-core/
 ```bash
 javac -encoding UTF-8 -d bin $(find src/main/java src/test/java -name '*.java')
 java -cp bin hoshi.mcagent.McAgentCoreTest
-# 🎉 All 579/579 Java tests passed successfully!
+# 🎉 All 756/756 Java tests passed successfully!
 ```
 
 ### Python 仿真套件
 ```bash
 PYTHONPATH=. uv run --with pytest pytest tests/ -v
-# 59 passed in 0.30s
+# 62 passed in 0.37s
 ```

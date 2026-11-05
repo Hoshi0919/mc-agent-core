@@ -1,3 +1,4 @@
+from .cluster import BlockPos, LocalBlock, LocalMachineCluster, KineticNetworkAnalyzer, HopperNetworkAnalyzer, CrafterPipelineAnalyzer, Ae2Report, Ae2NetworkAnalyzer
 from .spatial import (
     SpatialColor,
     SpatialPrimitive,
@@ -154,6 +155,8 @@ __all__ = [
     "PermaloaderReport",
     "evaluate_portal_alignment",
     "analyze_permaloader",
+    "Ae2Report",
+    "Ae2NetworkAnalyzer",
 ]
 
-__version__ = "2.0.0"
+__version__ = "2.3.0"

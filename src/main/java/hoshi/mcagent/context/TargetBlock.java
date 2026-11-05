@@ -275,6 +275,23 @@ public record TargetBlock(
             return new LogisticsReport(true, isDispenser ? "DISPENSER" : "DROPPER", state, advice);
         }
 
+                // 10. AE2 Controller
+        if (id.contains("controller") && (id.contains("ae2") || id.contains("appliedenergistics2"))) {
+            String state = "⚡ [ME 控制器 (ME Controller)] 数字化网络算力中枢";
+            String advice = "规则红线：外框最大 7x7x7；严禁 2x2x2 内部实心核心（全封闭方块使整网崩溃）；单网络只能有一个控制器组；每外表面提供最多 32 频道。";
+            return new LogisticsReport(true, "AE2_CONTROLLER", state, advice);
+        }
+
+        // 11. AE2 Cable
+        if ((id.contains("cable") || id.contains("glass")) && (id.contains("ae2") || id.contains("appliedenergistics2") || id.contains("fluix") || id.contains("smart"))) {
+            boolean isDense = id.contains("dense");
+            String state = isDense ? "⚡ [ME 致密线缆 (Dense Cable)] 32 频道骨干" : "✔ [ME 普通线缆 (Glass/Smart Cable)] 8 频道支线";
+            String advice = isDense
+                    ? "单线承载上限 32 频道。适合从控制器引出作为主干道连接 P2P 隧道或分线器。"
+                    : "单线承载上限 8 频道。若挂载 >8 个设备，距控制器最远的末端设备将失去频道 (Missing Channel) 掉线！";
+            return new LogisticsReport(true, isDense ? "AE2_DENSE_CABLE" : "AE2_CABLE", state, advice);
+        }
+
         return LogisticsReport.none();
     }
 

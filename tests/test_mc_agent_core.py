@@ -1563,3 +1563,181 @@ def test_v22_spatial_visual_overlay_protocol():
     assert res_hl_mb.is_success
     assert res_hl_mb.has_spatial_directive
     assert res_hl_mb.spatial_directive.category == "MULTIBLOCK_GHOST"
+
+
+def test_v23_ae2_network_analyzer_and_spatial_overlay():
+    from mc_agent_core.cluster import BlockPos, LocalMachineCluster, Ae2NetworkAnalyzer
+    from mc_agent_core.spatial import SpatialDirectiveGenerator, SpatialColor, PrimitiveType
+    from mc_agent_core.context import TargetBlock, ContextSnapshot
+    from mc_agent_core.fast_path import FastPathResolver
+    from mc_agent_core.command import CommandRouter
+    from mc_agent_core.dispatcher import AsyncQueryDispatcher
+
+    # 1. Empty cluster
+    rep_empty = Ae2NetworkAnalyzer.analyze(LocalMachineCluster(BlockPos(0, 64, 0)))
+    assert rep_empty.is_healthy
+    assert rep_empty.total_controllers == 0
+    assert rep_empty.total_devices == 0
+
+    # 2. Healthy controller network
+    healthy = (
+        LocalMachineCluster(BlockPos(0, 64, 0))
+        .add(0, 64, 0, "ae2:controller")
+        .add(1, 64, 0, "ae2:fluix_glass_cable")
+        .add(2, 64, 0, "ae2:fluix_glass_cable")
+        .add(2, 65, 0, "ae2:me_drive")
+        .add(2, 63, 0, "ae2:crafting_terminal")
+        .add(3, 64, 0, "ae2:storage_bus")
+        .add(2, 64, 1, "ae2:export_bus")
+    )
+    rep_healthy = Ae2NetworkAnalyzer.analyze(healthy)
+    assert rep_healthy.is_healthy
+    assert rep_healthy.online_devices == 4
+    assert rep_healthy.missing_channel_devices == 0
+    assert rep_healthy.total_cables == 2
+
+    # 3. Oversized controller (8x1x1 > 7)
+    oversized = LocalMachineCluster(BlockPos(0, 64, 0))
+    for x in range(8):
+        oversized.add(x, 64, 0, "ae2:controller")
+    rep_over = Ae2NetworkAnalyzer.analyze(oversized)
+    assert not rep_over.is_healthy
+    assert rep_over.has_multiblock_error
+    assert "尺寸超限" in rep_over.issues[0]
+
+    # 4. Solid core violation (3x3x3 cube, center [1, 65, 1] enclosed)
+    solid = LocalMachineCluster(BlockPos(1, 65, 1))
+    for x in range(3):
+        for y in range(64, 67):
+            for z in range(3):
+                solid.add(x, y, z, "ae2:controller")
+    rep_solid = Ae2NetworkAnalyzer.analyze(solid)
+    assert not rep_solid.is_healthy
+    assert rep_solid.has_multiblock_error
+    assert BlockPos(1, 65, 1) in rep_solid.illegal_interior_controllers
+
+    # 5. Disconnected controllers
+    split = (
+        LocalMachineCluster(BlockPos(0, 64, 0))
+        .add(0, 64, 0, "ae2:controller")
+        .add(5, 64, 0, "ae2:controller")
+    )
+    rep_split = Ae2NetworkAnalyzer.analyze(split)
+    assert not rep_split.is_healthy
+    assert rep_split.has_multiblock_error
+    assert "多结构冲突" in rep_split.issues[0]
+
+    # 6. Ad-hoc network (no controller, 9 devices)
+    adhoc = LocalMachineCluster(BlockPos(0, 64, 0)).add(0, 64, 0, "ae2:fluix_glass_cable")
+    for i in range(1, 10):
+        adhoc.add(i, 64, 0, "ae2:me_drive")
+    rep_adhoc = Ae2NetworkAnalyzer.analyze(adhoc)
+    assert not rep_adhoc.is_healthy
+    assert rep_adhoc.has_channel_overload
+    assert rep_adhoc.missing_channel_devices == 1
+    assert rep_adhoc.online_devices == 8
+
+    # 7. Regular cable overload (Controller -> 1 cable -> 9 devices)
+    over_cable = (
+        LocalMachineCluster(BlockPos(0, 64, 0))
+        .add(0, 64, 0, "ae2:controller")
+        .add(1, 64, 0, "ae2:fluix_glass_cable")
+    )
+    for i in range(1, 10):
+        over_cable.add(1, 64, i, "ae2:me_drive")
+    rep_cb = Ae2NetworkAnalyzer.analyze(over_cable)
+    assert not rep_cb.is_healthy
+    assert rep_cb.has_channel_overload
+    assert len(rep_cb.overloaded_cables) >= 1
+    assert rep_cb.missing_channel_devices >= 1
+
+    # 8. Dense cable capacity (Controller -> dense cable -> 32 vs 33 devices)
+    dense_net = LocalMachineCluster(BlockPos(0, 64, 0)).add(0, 64, 0, "ae2:controller")
+    for x in range(1, 9):
+        dense_net.add(x, 64, 0, "ae2:dense_smart_cable")
+        dense_net.add(x, 65, 0, "ae2:me_drive")
+        dense_net.add(x, 63, 0, "ae2:me_drive")
+        dense_net.add(x, 64, 1, "ae2:me_drive")
+        dense_net.add(x, 64, -1, "ae2:me_drive")
+    rep_dense32 = Ae2NetworkAnalyzer.analyze(dense_net)
+    assert rep_dense32.is_healthy
+    assert rep_dense32.online_devices == 32
+
+    dense_net.add(9, 64, 0, "ae2:dense_smart_cable").add(9, 65, 0, "ae2:me_drive")
+    rep_dense33 = Ae2NetworkAnalyzer.analyze(dense_net)
+    assert not rep_dense33.is_healthy
+    assert rep_dense33.has_channel_overload
+
+    # 9. P2P recursive loop
+    p2p_net = (
+        LocalMachineCluster(BlockPos(0, 64, 0))
+        .add(0, 64, 0, "ae2:controller")
+        .add(1, 64, 0, "ae2:fluix_glass_cable")
+        .add(2, 64, 0, "ae2:me_p2p_tunnel", {"frequency": "carrier"})
+        .add(3, 64, 0, "ae2:me_p2p_tunnel", {"frequency": "carrier"})
+    )
+    rep_p2p = Ae2NetworkAnalyzer.analyze(p2p_net)
+    assert not rep_p2p.is_healthy
+    assert rep_p2p.has_p2p_loop
+
+    # 10. Spatial overlay generation
+    solid_pkt = SpatialDirectiveGenerator.generate_ae2_overlay(solid, rep_solid)
+    assert solid_pkt.category == "AE2_NETWORK"
+    assert "ILLEGAL INTERIOR" in solid_pkt.to_json()
+
+    cable_pkt = SpatialDirectiveGenerator.generate_ae2_overlay(over_cable, rep_cb)
+    assert "CABLE OVERLOAD" in cable_pkt.to_json()
+    assert "MISSING CHANNEL" in cable_pkt.to_json()
+
+    # 11. TargetBlock logistics evaluation
+    tb_ctrl = TargetBlock("ae2:controller", 10, 64, 10, properties={})
+    log_ctrl = tb_ctrl.evaluate_logistics_or_redstone()
+    assert log_ctrl.is_logistics_or_redstone
+    assert log_ctrl.component_type == "AE2_CONTROLLER"
+    assert "7x7x7" in log_ctrl.actionable_advice
+
+    tb_dense = TargetBlock("ae2:dense_smart_cable", 11, 64, 10, properties={})
+    log_dense = tb_dense.evaluate_logistics_or_redstone()
+    assert log_dense.component_type == "AE2_DENSE_CABLE"
+    assert "32 频道" in log_dense.state_details
+
+    tb_cable = TargetBlock("ae2:fluix_glass_cable", 12, 64, 10, properties={})
+    log_cable = tb_cable.evaluate_logistics_or_redstone()
+    assert log_cable.component_type == "AE2_CABLE"
+    assert "8 频道" in log_cable.state_details
+
+    # 12. FastPath Rules 54, 55, 56
+    r54 = FastPathResolver.try_resolve("AE2控制器多方块实心怎么办？")
+    assert r54 is not None
+    assert r54.category == "AE2_CONTROLLER_MULTIBLOCK_AND_SOLID"
+    assert "7x7x7" in r54.text_response
+
+    r55 = FastPathResolver.try_resolve("AE2线缆设备掉线 missing channel 怎么办？")
+    assert r55 is not None
+    assert r55.category == "AE2_CHANNEL_ROUTING_AND_STARVATION"
+    assert "致密线缆" in r55.text_response
+
+    r56 = FastPathResolver.try_resolve("AE2 P2P隧道回环死锁如何解决？")
+    assert r56 is not None
+    assert r56.category == "AE2_P2P_TUNNEL_COMPRESSION_AND_LOOP"
+    assert "内存卡" in r56.text_response
+
+    # 13. CommandRouter /hoshi ae2 & /hoshi highlight ae2
+    router = CommandRouter(AsyncQueryDispatcher())
+    r_empty = router.execute("Steve", "/hoshi ae2", None)
+    assert r_empty.is_success
+    assert "当前准星未捕捉到局部 AE2" in r_empty.message
+
+    ctx_healthy = ContextSnapshot("Steve", "overworld", 0.0, 64.0, 0.0, machine_cluster=healthy)
+    r_ae2 = router.execute("Steve", "/hoshi ae2", ctx_healthy)
+    assert r_ae2.is_success
+    assert "网络工况健康" in r_ae2.message
+    assert r_ae2.has_spatial_directive
+
+    r_hl = router.execute("Steve", "/hoshi highlight ae2", ctx_healthy)
+    assert r_hl.is_success
+    assert r_hl.has_spatial_directive
+    assert r_hl.spatial_directive.category == "AE2_NETWORK"
+
+    r_help = router.execute("Steve", "/hoshi help", None)
+    assert "/hoshi ae2" in r_help.message

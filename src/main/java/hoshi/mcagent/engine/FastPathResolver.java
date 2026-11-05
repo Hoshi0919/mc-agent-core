@@ -237,6 +237,34 @@ public final class FastPathResolver {
             return Optional.of(new Resolution(resp, "/locate structure minecraft:trial_chambers", "MACE_1_21"));
         }
 
+        
+        // 54. AE2 Controller Multiblock Rules
+        if (q.contains("ae2控制器") || (q.contains("控制器") && (q.contains("多方块") || q.contains("7x7") || q.contains("实心") || q.contains("中空") || q.contains("红灯") || q.contains("瘫痪") || q.contains("ae2")))) {
+            String resp = "§b【AE2 控制器多方块规范与实心禁忌】§r\n" +
+                    "▸ §c外框尺寸红线§r：控制器外包围盒跨度严禁超过 7x7x7 方块！\n" +
+                    "▸ §4实心内部禁忌 (No Solid 2x2x2)§r：严禁任何内部实心立方体！方块在全部 6 个面不得全被封闭包围，必须留有外表面暴露，否则整网闪红瘫痪！\n" +
+                    "▸ §e单一网络连通§r：全网只能有唯一连通的控制器组，禁止两组未连接的控制器挂在同一网络上。";
+            return Optional.of(new Resolution(resp, null, "AE2_CONTROLLER_MULTIBLOCK_AND_SOLID"));
+        }
+
+        // 55. AE2 Channel Routing & Starvation
+        if (q.contains("ae2频道") || q.contains("missing channel") || q.contains("设备变灰") || q.contains("没有频道") || (q.contains("线缆") && (q.contains("8频道") || q.contains("32频道") || q.contains("致密") || q.contains("掉线")))) {
+            String resp = "§e【AE2 8/32 频道路由树与设备离线抢占修复】§r\n" +
+                    "▸ §6线缆容量上限§r：普通线缆（福鲁伊克斯/智能/包层）上限 8 频道；致密线缆 (Dense Cable) 上限 32 频道！\n" +
+                    "▸ §c最短跳数贪心抢占§r：当下游设备总数 > 线缆容量时，优先保证近端设备，距控制器最远的末端设备将失去频道 (Missing Channel) 变灰掉线！\n" +
+                    "▸ §a整改方案§r：将主干普通线缆替换为致密线缆（32 频道），或利用控制器多个外暴露面引出多条独立普通线缆分流。";
+            return Optional.of(new Resolution(resp, null, "AE2_CHANNEL_ROUTING_AND_STARVATION"));
+        }
+
+        // 56. AE2 P2P Tunnel Compression & Loop
+        if (q.contains("p2p") && (q.contains("隧道") || q.contains("回环") || q.contains("死锁") || q.contains("压缩") || q.contains("频率"))) {
+            String resp = "§d【AE2 P2P 隧道点对点压缩与防回环配置】§r\n" +
+                    "▸ §a频道透传与压缩§r：P2P 隧道在载体线缆上仅占 1 个频道，但内部可透传承载最多 32 个频道！\n" +
+                    "▸ §c防自引用递归死锁§r：严禁将 P2P 隧道的输出端接回到运送其自身的载体线缆上，否则造成拓扑递归死锁与全网震荡狂闪！\n" +
+                    "▸ §b配对绑定秘籍§r：手持内存卡对输入端 Shift+右键保存频率，再对输出端右键复制频率完成通道打通。";
+            return Optional.of(new Resolution(resp, null, "AE2_P2P_TUNNEL_COMPRESSION_AND_LOOP"));
+        }
+
         // 53. Crafter Slot Masking & Pulse Sync
         if (q.contains("槽位死锁") || q.contains("槽位遮罩") || q.contains("slot masking") || q.contains("脉冲闭环") || (q.contains("合成器") && (q.contains("死锁") || q.contains("配平") || q.contains("遮罩") || q.contains("时钟")))) {
             String resp = "§d【1.21 自动合成器槽位遮罩与脉冲时钟闭环】\n" +
