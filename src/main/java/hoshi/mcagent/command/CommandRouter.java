@@ -1,6 +1,7 @@
 package hoshi.mcagent.command;
 
 import hoshi.mcagent.cluster.Ae2NetworkAnalyzer;
+import hoshi.mcagent.cluster.PistonRedstoneAnalyzer;
 import hoshi.mcagent.cluster.BlockPos;
 import hoshi.mcagent.spatial.SpatialDirectiveGenerator;
 import hoshi.mcagent.spatial.SpatialDirectivePacket;
@@ -242,6 +243,11 @@ public class CommandRouter {
                         case "ae2":
             case "me": {
                 return handleAe2(playerId, tokens, argStart, snapshot);
+            }
+            case "piston":
+            case "qc":
+            case "bud": {
+                return handlePiston(playerId, tokens, argStart, snapshot);
             }
             case "cluster":
             case "topo": {
@@ -668,6 +674,24 @@ public class CommandRouter {
     }
 
     
+    private CommandResult handlePiston(String playerId, String[] tokens, int argStart, ContextSnapshot snapshot) {
+        LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
+        if (cluster == null || cluster.isEmpty() || cluster.getConnectedPistons().isEmpty()) {
+            String msg = "§e【红石活塞与准连接 (QC) 诊断】§r\n" +
+                    "当前准星未捕捉到局部活塞或红石机械集群。\n" +
+                    "请将准星对准活塞、粘性活塞或其相邻红石方块，然后再次输入 `/hoshi piston` 触发准连接 (QC) 与推块链动力学诊断！";
+            return CommandResult.success("PISTON", msg, null, null, null);
+        }
+        var report = PistonRedstoneAnalyzer.analyze(cluster);
+        String text = report.formatReport();
+        ChatPaginator.PagedResult paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page");
+        sessionManager.recordInteraction(playerId, "/hoshi piston", text, "PISTON", paged);
+        var comps = MinecraftTextFormatter.parseComponents(paged.fullPageText(), "/hoshi piston");
+        String tellraw = TellrawJsonBuilder.toJson(comps);
+        var packet = SpatialDirectiveGenerator.generatePistonOverlay(cluster, report);
+        return CommandResult.success("PISTON", paged.fullPageText(), null, tellraw, paged, packet);
+    }
+
     private CommandResult handleAe2(String playerId, String[] tokens, int argStart, ContextSnapshot snapshot) {
         LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
         if (cluster == null || cluster.isEmpty()) {
@@ -724,6 +748,17 @@ public class CommandRouter {
             }
         }
 
+        if ("piston".equals(sub) || "qc".equals(sub) || "all".equals(sub)) {
+            var p = PistonRedstoneAnalyzer.analyze(cluster);
+            if (!cluster.getConnectedPistons().isEmpty()) {
+                sb.append(String.format("▸ 活塞动力：%s\n", p.primaryDiagnosis()));
+                if (!p.issues().isEmpty()) {
+                    for (String iss : p.issues()) sb.append("  ✖ ").append(iss).append("\n");
+                }
+                sb.append("  建议：").append(p.actionableAdvice()).append("\n");
+            }
+        }
+
         if ("hopper".equals(sub) || "all".equals(sub)) {
             var h = HopperNetworkAnalyzer.analyze(cluster);
             sb.append(String.format("▸ 物流状态：%s\n", h.primaryDiagnosis()));
@@ -743,6 +778,9 @@ public class CommandRouter {
                 } else if ("ae2".equals(sub)) {
             var a = Ae2NetworkAnalyzer.analyze(cluster);
             packet = SpatialDirectiveGenerator.generateAe2Overlay(cluster, a);
+        } else if ("piston".equals(sub) || "qc".equals(sub)) {
+            var p = PistonRedstoneAnalyzer.analyze(cluster);
+            packet = SpatialDirectiveGenerator.generatePistonOverlay(cluster, p);
         } else if ("hopper".equals(sub)) {
             var h = HopperNetworkAnalyzer.analyze(cluster);
             packet = SpatialDirectiveGenerator.generateHopperOverlay(cluster, h);
@@ -789,6 +827,16 @@ public class CommandRouter {
             return CommandResult.success("HIGHLIGHT", "§a[Hoshi 3D 高亮] " + packet.hudTitle(), null, packet.toTellrawFallback(), null, packet);
         }
 
+        if ("piston".equals(sub) || "qc".equals(sub) || "bud".equals(sub)) {
+            LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
+            if (cluster == null || cluster.isEmpty() || cluster.getConnectedPistons().isEmpty()) {
+                return CommandResult.error("HIGHLIGHT", "§c准星未捕捉到局部活塞机械组件，无法投射活塞动力高亮。");
+            }
+            var p = PistonRedstoneAnalyzer.analyze(cluster);
+            var packet = SpatialDirectiveGenerator.generatePistonOverlay(cluster, p);
+            return CommandResult.success("HIGHLIGHT", "§a[Hoshi 3D 高亮] " + packet.hudTitle(), null, packet.toTellrawFallback(), null, packet);
+        }
+
         if ("hopper".equals(sub) || "pipe".equals(sub)) {
             LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
             if (cluster == null || cluster.isEmpty()) {
@@ -830,6 +878,7 @@ public class CommandRouter {
                 "▸ §e/hoshi highlight hopper§r - 投射漏斗死锁环路与物流方向箭头\n" +
                 "▸ §e/hoshi highlight multiblock <名称>§r - 在准星位置投射多方块虚影蓝图\n" +
                 "▸ §e/hoshi highlight mobfarm§r - 以自身为中心投射 24/32/128m 刷怪动力学清除圈\n" +
+                "▸ §e/hoshi highlight piston§r - 投射准连接 QC 隔电源、BUD 锁定与推块超载\n" +
                 "▸ §e/hoshi highlight clear§r - 清除所有世界高亮与全息虚影";
         return CommandResult.success("HIGHLIGHT", msg, null, null, null);
     }
@@ -850,6 +899,7 @@ public class CommandRouter {
                 "▸ §e/hoshi chunkloader <permaloader/portal>§r - 诊断生电传送门常载网与 8:1 坐标漂移\n" +
                                 "▸ §e/hoshi ae2§r - 诊断准星 AE2 数字化网络拓扑、控制器合法性与 8/32 频道溢出\n" +
                 "▸ §e/hoshi highlight ae2§r - 投射 AE2 频道过载红线与掉线设备 3D 空间全息覆盖层\n" +
+                "▸ §e/hoshi piston§r - 诊断准星活塞准连接 (QC)、BUD 锁定与推块链超载\n" +
                 "▸ §e/hoshi cluster [kinetics/hopper/crafter]§r - 诊断局部机器拓扑、齿轮卡死与漏斗回路\n" +
                 "▸ §e/hoshi highlight [kinetics/hopper/multiblock/mobfarm/clear]§r - 投射 3D 空间高亮与全息虚影\n" +
                 "▸ §e/hoshi nether [x y z]§r - 换算地狱传送门坐标\n" +

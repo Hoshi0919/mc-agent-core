@@ -412,6 +412,16 @@ class TargetBlock:
             advice = "单线承载上限 32 频道。适合从控制器引出作为主干道连接 P2P 隧道或分线器。" if is_dense else "单线承载上限 8 频道。若挂载 >8 个设备，距控制器最远的末端设备将失去频道 (Missing Channel) 掉线！"
             return LogisticsReport(True, "AE2_DENSE_CABLE" if is_dense else "AE2_CABLE", state, advice)
 
+        # 12. Piston & Sticky Piston
+        if "piston" in s and "piston_head" not in s:
+            is_sticky = "sticky" in s
+            extended_str = self.properties.get("extended", "false")
+            extended = extended_str.lower() == "true"
+            facing = self.properties.get("facing", "up")
+            state = f"{'🟩 [粘性活塞 (Sticky Piston)]' if is_sticky else '🟫 [普通活塞 (Piston)]'} [朝向: {facing.upper()} | 状态: {'伸出 (EXTENDED)' if extended else '收回 (RETRACTED)'}]"
+            advice = "Java版特性：支持准连接 (QC) 隔空充能与 BUD 检测；推块上限严格为 12 块；粘液块与蜜蜂块不互粘；1-tick 极短脉冲可使粘性活塞丢出/拉回方块。输入 `/hoshi piston` 进行因果诊断。"
+            return LogisticsReport(True, "STICKY_PISTON" if is_sticky else "PISTON", state, advice)
+
         return LogisticsReport.none()
 
     def to_summary(self) -> str:

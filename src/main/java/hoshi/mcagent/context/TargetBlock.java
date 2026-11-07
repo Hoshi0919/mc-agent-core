@@ -292,6 +292,20 @@ public record TargetBlock(
             return new LogisticsReport(true, isDense ? "AE2_DENSE_CABLE" : "AE2_CABLE", state, advice);
         }
 
+        // 12. Piston & Sticky Piston
+        if (id.contains("piston") && !id.contains("piston_head")) {
+            boolean isSticky = id.contains("sticky");
+            String extendedStr = properties.getOrDefault("extended", "false");
+            boolean extended = "true".equalsIgnoreCase(extendedStr);
+            String facing = properties.getOrDefault("facing", "up");
+            String state = String.format("%s [朝向: %s | 状态: %s]",
+                    isSticky ? "🟩 [粘性活塞 (Sticky Piston)]" : "🟫 [普通活塞 (Piston)]",
+                    facing.toUpperCase(),
+                    extended ? "伸出 (EXTENDED)" : "收回 (RETRACTED)");
+            String advice = "Java版特性：支持准连接 (QC) 隔空充能与 BUD 检测；推块上限严格为 12 块；粘液块与蜜蜂块不互粘；1-tick 极短脉冲可使粘性活塞丢出/拉回方块。输入 `/hoshi piston` 进行因果诊断。";
+            return new LogisticsReport(true, isSticky ? "STICKY_PISTON" : "PISTON", state, advice);
+        }
+
         return LogisticsReport.none();
     }
 

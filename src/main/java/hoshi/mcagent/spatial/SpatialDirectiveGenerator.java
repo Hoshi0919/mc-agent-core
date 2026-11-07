@@ -1,6 +1,7 @@
 package hoshi.mcagent.spatial;
 
 import hoshi.mcagent.cluster.Ae2NetworkAnalyzer;
+import hoshi.mcagent.cluster.PistonRedstoneAnalyzer;
 import hoshi.mcagent.cluster.BlockPos;
 import hoshi.mcagent.cluster.HopperNetworkAnalyzer;
 import hoshi.mcagent.cluster.KineticNetworkAnalyzer;
@@ -361,6 +362,68 @@ public final class SpatialDirectiveGenerator {
                 primitives,
                 report.primaryDiagnosis(),
                 report.actionableRemediation()
+        );
+    }
+
+
+    /**
+     * Generates in-world holographic overlays for Minecraft Java Edition Piston,
+     * Quasi-Connectivity (QC), BUD locks, and push limit overloads.
+     */
+    public static SpatialDirectivePacket generatePistonOverlay(LocalMachineCluster cluster, PistonRedstoneAnalyzer.PistonReport report) {
+        if (report == null || "unknown".equals(report.pistonFacing())) {
+            return SpatialDirectivePacket.empty();
+        }
+
+        List<SpatialPrimitive> primitives = new ArrayList<>();
+        int duration = 300; // 15 seconds
+        BlockPos pPos = report.pistonPos();
+
+        // 1. Highlight Piston itself
+        if (report.isBudLocked()) {
+            primitives.add(SpatialPrimitive.boxOutline(pPos, SpatialColor.YELLOW, "BUD LOCK", duration));
+            primitives.add(SpatialPrimitive.billboard(pPos.offset("up"), "⚠ BUD 锁定：需方块更新复位", SpatialColor.YELLOW, duration));
+        } else if (report.isBudPending()) {
+            primitives.add(SpatialPrimitive.boxOutline(pPos, SpatialColor.CYAN, "BUD ARMED", duration));
+            primitives.add(SpatialPrimitive.billboard(pPos.offset("up"), "ℹ BUD 待命：等待更新触发", SpatialColor.CYAN, duration));
+        } else if (!report.isHealthy()) {
+            primitives.add(SpatialPrimitive.boxOutline(pPos, SpatialColor.RED, "PISTON STALLED", duration));
+        } else {
+            primitives.add(SpatialPrimitive.boxOutline(pPos, SpatialColor.GREEN, "PISTON OK", duration));
+        }
+
+        // 2. Quasi-Connectivity (QC) sources: Cyan box outline and flow arrows to the piston
+        for (BlockPos qp : report.qcPowerSources()) {
+            primitives.add(SpatialPrimitive.boxOutline(qp, SpatialColor.CYAN, "QC POWER SOURCE", duration));
+            primitives.add(SpatialPrimitive.flowArrow(qp, pPos, SpatialColor.CYAN, "QUASI-CONNECTIVITY (QC)", duration));
+            primitives.add(SpatialPrimitive.billboard(qp.offset("up"), "⚡ 隔空准连接电源", SpatialColor.CYAN, duration));
+        }
+
+        // 3. Immovable obstacles: Purple box outlines
+        for (BlockPos ip : report.immovableBlocks()) {
+            primitives.add(SpatialPrimitive.boxOutline(ip, SpatialColor.PURPLE, "IMMOVABLE BLOCK", duration));
+            primitives.add(SpatialPrimitive.billboard(ip.offset("up"), "✖ 不可推动障碍", SpatialColor.PURPLE, duration));
+        }
+
+        // 4. Push chain and push limit overloads
+        if (report.isPushLimitExceeded()) {
+            for (int i = 0; i < report.pushChain().size(); i++) {
+                BlockPos bPos = report.pushChain().get(i);
+                if (i >= 12) {
+                    primitives.add(SpatialPrimitive.boxOutline(bPos, SpatialColor.RED, "PUSH LIMIT (MAX 12)", duration));
+                    primitives.add(SpatialPrimitive.billboard(bPos.offset("up"), String.format("✖ 超载方块 (#%d)", i + 1), SpatialColor.RED, duration));
+                } else {
+                    primitives.add(SpatialPrimitive.boxOutline(bPos, SpatialColor.ORANGE, String.format("BLOCK #%d", i + 1), duration));
+                }
+            }
+        }
+
+        return SpatialDirectivePacket.of(
+                "piston-dynamics-" + System.currentTimeMillis(),
+                "PISTON_DYNAMICS",
+                primitives,
+                report.primaryDiagnosis(),
+                report.actionableAdvice()
         );
     }
 }

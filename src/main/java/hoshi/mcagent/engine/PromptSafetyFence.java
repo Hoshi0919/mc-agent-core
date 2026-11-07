@@ -89,7 +89,10 @@ public final class PromptSafetyFence {
         userPrompt.append(LocalGameRules.CRAFTER_SLOT_MASKING_AND_PULSE_SYNC_RULES).append("\n");
         userPrompt.append(LocalGameRules.AE2_CONTROLLER_MULTIBLOCK_AND_SOLID_RULES).append("\n\n");
         userPrompt.append(LocalGameRules.AE2_CHANNEL_ROUTING_AND_STARVATION_RULES).append("\n\n");
-        userPrompt.append(LocalGameRules.AE2_P2P_TUNNEL_COMPRESSION_AND_LOOP_RULES).append("\n");
+        userPrompt.append(LocalGameRules.AE2_P2P_TUNNEL_COMPRESSION_AND_LOOP_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.PISTON_QUASI_CONNECTIVITY_AND_BUD_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.PISTON_PUSH_LIMIT_AND_SLIME_HONEY_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.STICKY_PISTON_ONE_TICK_DROP_BLOCK_RULES).append("\n");
         userPrompt.append("</canonical_rules>\n\n");
 
         userPrompt.append("<player_query>\n");

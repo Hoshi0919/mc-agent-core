@@ -405,3 +405,53 @@ class SpatialDirectiveGenerator:
             hud_title=report.primary_diagnosis,
             hud_description=report.actionable_remediation
         )
+
+
+    @classmethod
+    def generate_piston_overlay(cls, cluster: Optional[Any], report: Optional[Any]) -> SpatialDirectivePacket:
+        if not report or getattr(report, "piston_facing", "unknown") == "unknown":
+            return SpatialDirectivePacket.empty()
+
+        primitives: List[SpatialPrimitive] = []
+        duration = 300
+        p_pos = report.piston_pos
+
+        # 1. Highlight Piston itself
+        if report.is_bud_locked:
+            primitives.append(SpatialPrimitive.box_outline(p_pos, SpatialColor.YELLOW, "BUD LOCK", duration))
+            primitives.append(SpatialPrimitive.billboard(p_pos.offset("up"), "⚠ BUD 锁定：需方块更新复位", SpatialColor.YELLOW, duration))
+        elif report.is_bud_pending:
+            primitives.append(SpatialPrimitive.box_outline(p_pos, SpatialColor.CYAN, "BUD ARMED", duration))
+            primitives.append(SpatialPrimitive.billboard(p_pos.offset("up"), "ℹ BUD 待命：等待更新触发", SpatialColor.CYAN, duration))
+        elif not report.is_healthy:
+            primitives.append(SpatialPrimitive.box_outline(p_pos, SpatialColor.RED, "PISTON STALLED", duration))
+        else:
+            primitives.append(SpatialPrimitive.box_outline(p_pos, SpatialColor.GREEN, "PISTON OK", duration))
+
+        # 2. Quasi-Connectivity (QC) sources
+        for qp in report.qc_power_sources:
+            primitives.append(SpatialPrimitive.box_outline(qp, SpatialColor.CYAN, "QC POWER SOURCE", duration))
+            primitives.append(SpatialPrimitive.flow_arrow(qp, p_pos, SpatialColor.CYAN, "QUASI-CONNECTIVITY (QC)", duration))
+            primitives.append(SpatialPrimitive.billboard(qp.offset("up"), "⚡ 隔空准连接电源", SpatialColor.CYAN, duration))
+
+        # 3. Immovable obstacles
+        for ip in report.immovable_blocks:
+            primitives.append(SpatialPrimitive.box_outline(ip, SpatialColor.PURPLE, "IMMOVABLE BLOCK", duration))
+            primitives.append(SpatialPrimitive.billboard(ip.offset("up"), "✖ 不可推动障碍", SpatialColor.PURPLE, duration))
+
+        # 4. Push chain and push limit overloads
+        if report.is_push_limit_exceeded:
+            for i, b_pos in enumerate(report.push_chain):
+                if i >= 12:
+                    primitives.append(SpatialPrimitive.box_outline(b_pos, SpatialColor.RED, "PUSH LIMIT (MAX 12)", duration))
+                    primitives.append(SpatialPrimitive.billboard(b_pos.offset("up"), f"✖ 超载方块 (#{i + 1})", SpatialColor.RED, duration))
+                else:
+                    primitives.append(SpatialPrimitive.box_outline(b_pos, SpatialColor.ORANGE, f"BLOCK #{i + 1}", duration))
+
+        return SpatialDirectivePacket(
+            id=f"piston-dynamics-{int(time.time()*1000)}",
+            category="PISTON_DYNAMICS",
+            primitives=primitives,
+            hud_title=report.primary_diagnosis,
+            hud_description=report.actionable_advice
+        )

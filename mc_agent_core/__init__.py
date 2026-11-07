@@ -157,6 +157,11 @@ __all__ = [
     "analyze_permaloader",
     "Ae2Report",
     "Ae2NetworkAnalyzer",
+    "PistonReport",
+    "PistonRedstoneAnalyzer",
+    "PISTON_QUASI_CONNECTIVITY_AND_BUD_RULES",
+    "PISTON_PUSH_LIMIT_AND_SLIME_HONEY_RULES",
+    "STICKY_PISTON_ONE_TICK_DROP_BLOCK_RULES",
 ]
 
-__version__ = "2.3.0"
+__version__ = "2.4.0"

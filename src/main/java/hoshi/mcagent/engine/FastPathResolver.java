@@ -265,6 +265,34 @@ public final class FastPathResolver {
             return Optional.of(new Resolution(resp, null, "AE2_P2P_TUNNEL_COMPRESSION_AND_LOOP"));
         }
 
+        // 57. Piston Quasi-Connectivity (QC) & BUD
+        if (q.contains("准连接") || q.contains("qc") || q.contains("bud") || (q.contains("活塞") && (q.contains("隔空") || q.contains("不缩回") || q.contains("卡住") || q.contains("方块更新") || q.contains("锁定")))) {
+            String resp = "§e【活塞准连接 (Quasi-Connectivity, QC) 与 BUD 状态机】§r\n" +
+                    "▸ §b准连接本质§r：Java 版活塞复用了双格门检测逻辑，会感应自身上方 1 格 [x, y+1, z] 周围 5 个红石源！\n" +
+                    "▸ §cBUD 锁定卡死§r：QC 供电不向活塞发送方块更新 (Block Update)；当电源断开而无更新时，活塞将卡在伸出状态不缩回！\n" +
+                    "▸ §a复位解法§r：在活塞旁边敲一下、放置/破坏方块触发方块更新，或给予一次红石脉冲即可恢复。";
+            return Optional.of(new Resolution(resp, null, "PISTON_QUASI_CONNECTIVITY_AND_BUD"));
+        }
+
+        // 58. Piston Push Limit & Slime/Honey Adhesion
+        if (q.contains("推块上限") || q.contains("12格") || (q.contains("活塞") && (q.contains("推不动") || q.contains("上限") || q.contains("粘液") || q.contains("蜜蜂") || q.contains("釉面陶瓦")))) {
+            String resp = "§6【活塞推块上限 (12 格) 与粘液/蜜蜂互斥隔离】§r\n" +
+                    "▸ §c12 方块极限§r：单活塞推拉方块上限严格为 12 块，第 13 块将导致推力彻底超载卡死！\n" +
+                    "▸ §4不可移动障碍§r：基岩、黑曜石、传送门及 Java 版全部带容器实体 (TileEntity，如箱子、熔炉、漏斗) 均不可推动。\n" +
+                    "▸ §e粘液与蜜蜂互斥法则§r：粘液块与蜜蜂块均能粘连相邻方块，但【粘液块与蜜蜂块互不粘连】！交错排列可构建超大型飞行器与连环推移门。\n" +
+                    "▸ §a釉面陶瓦防粘连§r：釉面陶瓦可被活塞推拉，但免疫粘液块/蜜蜂块的横向粘连拖曳，是生电隔断的核心材料。";
+            return Optional.of(new Resolution(resp, null, "PISTON_PUSH_LIMIT_AND_SLIME_HONEY"));
+        }
+
+        // 59. Sticky Piston 1-Tick Drop Block
+        if (q.contains("掉方块") || q.contains("吐方块") || q.contains("1tick") || q.contains("1-tick") || (q.contains("粘性活塞") && (q.contains("短脉冲") || q.contains("t触发器") || q.contains("丢方块")))) {
+            String resp = "§d【粘性活塞 1-tick 脉冲掉方块机理与单稳态门】§r\n" +
+                    "▸ §e极短脉冲脱开§r：粘性活塞接收到 ≤ 1-tick (或 0-tick) 极短脉冲时，活塞瞬时伸缩超过粘滞响应阈值，将直接将粘附方块“吐出”留在前方（或将前方方块瞬间“吸回”）！\n" +
+                    "▸ §a单稳态 T 触发器§r：输入一次短脉冲切换一次方块推拉状态，是紧凑型二值内存和按钮转拉杆开关的核心原语。\n" +
+                    "▸ §b脉冲发生源§r：可通过侦测器面对面脉冲、红石中继器差分延时或活塞切断红石线构造稳定的 1-tick 脉冲。";
+            return Optional.of(new Resolution(resp, null, "STICKY_PISTON_ONE_TICK_DROP_BLOCK"));
+        }
+
         // 53. Crafter Slot Masking & Pulse Sync
         if (q.contains("槽位死锁") || q.contains("槽位遮罩") || q.contains("slot masking") || q.contains("脉冲闭环") || (q.contains("合成器") && (q.contains("死锁") || q.contains("配平") || q.contains("遮罩") || q.contains("时钟")))) {
             String resp = "§d【1.21 自动合成器槽位遮罩与脉冲时钟闭环】\n" +

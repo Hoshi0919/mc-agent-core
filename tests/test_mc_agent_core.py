@@ -1741,3 +1741,169 @@ def test_v23_ae2_network_analyzer_and_spatial_overlay():
 
     r_help = router.execute("Steve", "/hoshi help", None)
     assert "/hoshi ae2" in r_help.message
+
+
+def test_v24_piston_dynamics_and_quasi_connectivity_bud_analyzer():
+    from mc_agent_core.cluster import BlockPos, LocalMachineCluster, PistonRedstoneAnalyzer
+    from mc_agent_core.spatial import SpatialDirectiveGenerator
+
+    # 1. Empty cluster returns empty report
+    empty_cluster = LocalMachineCluster(BlockPos(0, 64, 0))
+    rep_empty = PistonRedstoneAnalyzer.analyze(empty_cluster)
+    assert rep_empty.is_healthy
+    assert rep_empty.push_chain_count == 0
+    assert rep_empty.piston_facing == "unknown"
+
+    # 2. Direct Powering (Redstone block adjacent to piston)
+    direct_cluster = LocalMachineCluster(BlockPos(0, 64, 0)) \
+        .add(0, 64, 0, "minecraft:piston", {"facing": "up", "extended": "false"}) \
+        .add(1, 64, 0, "minecraft:redstone_block")
+    direct_rep = PistonRedstoneAnalyzer.analyze(direct_cluster)
+    assert direct_rep.is_healthy
+    assert direct_rep.is_directly_powered
+    assert not direct_rep.is_qc_powered
+    assert BlockPos(1, 64, 0) in direct_rep.direct_power_sources
+
+    # 3. Quasi-Connectivity (QC) 2 blocks above and BUD Pending
+    qc_cluster = LocalMachineCluster(BlockPos(0, 64, 0)) \
+        .add(0, 64, 0, "minecraft:piston", {"facing": "up", "extended": "false"}) \
+        .add(0, 66, 0, "minecraft:redstone_block")
+    qc_rep = PistonRedstoneAnalyzer.analyze(qc_cluster)
+    assert not qc_rep.is_directly_powered
+    assert qc_rep.is_qc_powered
+    assert qc_rep.is_bud_pending
+    assert BlockPos(0, 66, 0) in qc_rep.qc_power_sources
+
+    # 4. Diagonal QC (above and offset horizontal)
+    diag_qc_cluster = LocalMachineCluster(BlockPos(0, 64, 0)) \
+        .add(0, 64, 0, "minecraft:piston", {"facing": "up", "extended": "false"}) \
+        .add(1, 65, 0, "minecraft:redstone_block")
+    diag_rep = PistonRedstoneAnalyzer.analyze(diag_qc_cluster)
+    assert diag_rep.is_qc_powered
+
+    # 5. BUD Lock (Extended but power source removed, no block update)
+    bud_lock_cluster = LocalMachineCluster(BlockPos(0, 64, 0)) \
+        .add(0, 64, 0, "minecraft:piston", {"facing": "up", "extended": "true"})
+    bud_rep = PistonRedstoneAnalyzer.analyze(bud_lock_cluster)
+    assert not bud_rep.is_healthy
+    assert bud_rep.is_bud_locked
+    assert "BUD 锁定" in bud_rep.issues[0]
+    assert "方块更新" in bud_rep.actionable_advice
+
+    # 6. Normal Push Chain (5 stone blocks)
+    push_cluster = LocalMachineCluster(BlockPos(0, 64, 0)) \
+        .add(0, 64, 0, "minecraft:piston", {"facing": "east", "extended": "false"}) \
+        .add(1, 64, 0, "minecraft:stone") \
+        .add(2, 64, 0, "minecraft:stone") \
+        .add(3, 64, 0, "minecraft:stone") \
+        .add(4, 64, 0, "minecraft:stone") \
+        .add(5, 64, 0, "minecraft:stone")
+    push_rep = PistonRedstoneAnalyzer.analyze(push_cluster)
+    assert push_rep.is_healthy
+    assert push_rep.push_chain_count == 5
+    assert not push_rep.is_push_limit_exceeded
+    assert not push_rep.has_immovable_obstacle
+
+    # 7. Push Limit Exceeded (13 blocks > 12 max)
+    over_cluster = LocalMachineCluster(BlockPos(0, 64, 0)) \
+        .add(0, 64, 0, "minecraft:piston", {"facing": "north", "extended": "false"})
+    for i in range(1, 14):
+        over_cluster.add(0, 64, -i, "minecraft:stone")
+    over_rep = PistonRedstoneAnalyzer.analyze(over_cluster)
+    assert not over_rep.is_healthy
+    assert over_rep.push_chain_count == 13
+    assert over_rep.is_push_limit_exceeded
+    assert "12 方块上限" in over_rep.issues[0]
+
+    # 8. Immovable Obstacle (Obsidian and Vanilla TileEntity Chest)
+    obs_cluster = LocalMachineCluster(BlockPos(0, 64, 0)) \
+        .add(0, 64, 0, "minecraft:piston", {"facing": "up", "extended": "false"}) \
+        .add(0, 65, 0, "minecraft:obsidian")
+    obs_rep = PistonRedstoneAnalyzer.analyze(obs_cluster)
+    assert not obs_rep.is_healthy
+    assert obs_rep.has_immovable_obstacle
+    assert BlockPos(0, 65, 0) in obs_rep.immovable_blocks
+
+    chest_cluster = LocalMachineCluster(BlockPos(0, 64, 0)) \
+        .add(0, 64, 0, "minecraft:piston", {"facing": "east", "extended": "false"}) \
+        .add(1, 64, 0, "minecraft:chest")
+    chest_rep = PistonRedstoneAnalyzer.analyze(chest_cluster)
+    assert chest_rep.has_immovable_obstacle
+
+    # 9. Slime & Honey Mutual Exclusion + Glazed Terracotta Non-adhesion
+    slime_cluster = LocalMachineCluster(BlockPos(0, 64, 0)) \
+        .add(0, 64, 0, "minecraft:sticky_piston", {"facing": "east", "extended": "false"}) \
+        .add(1, 64, 0, "minecraft:slime_block") \
+        .add(1, 64, 1, "minecraft:stone") \
+        .add(1, 64, -1, "minecraft:honey_block") \
+        .add(1, 65, 0, "minecraft:white_glazed_terracotta")
+    slime_rep = PistonRedstoneAnalyzer.analyze(slime_cluster)
+    assert BlockPos(1, 64, 0) in slime_rep.push_chain
+    assert BlockPos(1, 64, 1) in slime_rep.push_chain
+    assert BlockPos(1, 64, -1) not in slime_rep.push_chain
+    assert BlockPos(1, 65, 0) not in slime_rep.push_chain
+    assert slime_rep.push_chain_count == 2
+
+    # 10. Spatial Overlay Directive Generation for Piston
+    qc_overlay = SpatialDirectiveGenerator.generate_piston_overlay(qc_cluster, qc_rep)
+    assert qc_overlay.category == "PISTON_DYNAMICS"
+    assert "QC POWER SOURCE" in qc_overlay.to_json()
+    assert "QUASI-CONNECTIVITY (QC)" in qc_overlay.to_json()
+
+    bud_lock_overlay = SpatialDirectiveGenerator.generate_piston_overlay(bud_lock_cluster, bud_rep)
+    assert "BUD LOCK" in bud_lock_overlay.to_json()
+
+    limit_overlay = SpatialDirectiveGenerator.generate_piston_overlay(over_cluster, over_rep)
+    assert "PUSH LIMIT (MAX 12)" in limit_overlay.to_json()
+
+    # 11. TargetBlock Logistics Evaluation for Piston
+    tb_piston = TargetBlock("minecraft:piston", 10, 64, 10, properties={"facing": "north", "extended": "false"})
+    p_log = tb_piston.evaluate_logistics_or_redstone()
+    assert p_log.is_logistics_or_redstone
+    assert p_log.component_type == "PISTON"
+    assert "准连接" in p_log.actionable_advice
+
+    tb_sticky = TargetBlock("minecraft:sticky_piston", 10, 64, 11, properties={"facing": "up", "extended": "true"})
+    sticky_log = tb_sticky.evaluate_logistics_or_redstone()
+    assert sticky_log.component_type == "STICKY_PISTON"
+    assert "伸出" in sticky_log.state_details
+
+    # 12. Fast Path Query Resolution for Piston Rules 57, 58, 59
+    r_qc = FastPathResolver.try_resolve("为什么活塞隔空激活了？")
+    assert r_qc is not None
+    assert r_qc.category == "PISTON_QUASI_CONNECTIVITY_AND_BUD"
+    assert "准连接" in r_qc.text_response
+
+    r_limit = FastPathResolver.try_resolve("活塞推块上限是多少？")
+    assert r_limit is not None
+    assert r_limit.category == "PISTON_PUSH_LIMIT_AND_SLIME_HONEY"
+    assert "12 方块极限" in r_limit.text_response
+
+    r_drop = FastPathResolver.try_resolve("粘性活塞怎么1tick掉方块？")
+    assert r_drop is not None
+    assert r_drop.category == "STICKY_PISTON_ONE_TICK_DROP_BLOCK"
+    assert "极短脉冲" in r_drop.text_response
+
+    # 13. CommandRouter End-to-End Commands for Piston
+    router = CommandRouter(AsyncQueryDispatcher())
+    r_empty = router.execute("Steve", "/hoshi piston", None)
+    assert r_empty.is_success
+    assert "当前准星未捕捉到局部活塞" in r_empty.message
+
+    ctx_qc = ContextSnapshot("Steve", "overworld", 0.0, 64.0, 0.0, machine_cluster=qc_cluster)
+    r_piston = router.execute("Steve", "/hoshi piston", ctx_qc)
+    assert r_piston.is_success
+    assert "准连接(QC): §b激活 (QC)§r" in r_piston.message
+    assert r_piston.has_spatial_directive
+
+    r_cluster_piston = router.execute("Steve", "/hoshi cluster piston", ctx_qc)
+    assert r_cluster_piston.is_success
+    assert "活塞动力" in r_cluster_piston.message
+
+    r_hl_piston = router.execute("Steve", "/hoshi highlight piston", ctx_qc)
+    assert r_hl_piston.is_success
+    assert r_hl_piston.has_spatial_directive
+    assert r_hl_piston.spatial_directive.category == "PISTON_DYNAMICS"
+
+    r_help = router.execute("Steve", "/hoshi help", None)
+    assert "/hoshi piston" in r_help.message

@@ -39,6 +39,7 @@ import hoshi.mcagent.anvil.EnchantmentEntry;
 import hoshi.mcagent.create.CreateKineticsAnalyzer;
 import hoshi.mcagent.chunkload.PortalChunkLoaderAnalyzer;
 import hoshi.mcagent.cluster.Ae2NetworkAnalyzer;
+import hoshi.mcagent.cluster.PistonRedstoneAnalyzer;
 import hoshi.mcagent.cluster.BlockPos;
 import hoshi.mcagent.cluster.LocalBlock;
 import hoshi.mcagent.cluster.LocalMachineCluster;
@@ -138,6 +139,7 @@ public class McAgentCoreTest {
         testCommandRouterV21ClusterCommand();
         testSpatialVisualOverlayProtocol();
         testAe2NetworkAnalyzerAndSpatialProtocol();
+        testPistonDynamicsAndQuasiConnectivityBudAnalyzer();
 
         System.out.println(String.format("\n🎉 All %d/%d Java tests passed successfully!", testsPassed, testsRun));
     }
@@ -2038,6 +2040,179 @@ public class McAgentCoreTest {
         // /hoshi help mentions ae2
         var resHelp = router.execute("Steve", "/hoshi help", null);
         assertTrue(resHelp.getMessage().contains("/hoshi ae2"), "Help mentions /hoshi ae2");
+    }
+
+
+    private static void testPistonDynamicsAndQuasiConnectivityBudAnalyzer() throws Exception {
+        // 1. Empty cluster returns empty report
+        LocalMachineCluster emptyCluster = LocalMachineCluster.empty(new BlockPos(0, 64, 0));
+        var repEmpty = PistonRedstoneAnalyzer.analyze(emptyCluster);
+        assertTrue(repEmpty.isHealthy(), "Empty piston cluster is healthy");
+        assertTrue(repEmpty.pushChainCount() == 0, "0 push chain in empty");
+        assertTrue(repEmpty.pistonFacing().equals("unknown"), "Unknown facing in empty");
+
+        // 2. Direct Powering (Redstone block adjacent to piston)
+        var directBuilder = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "minecraft:piston", Map.of("facing", "up", "extended", "false"))
+                .add(1, 64, 0, "minecraft:redstone_block");
+        var directRep = PistonRedstoneAnalyzer.analyze(directBuilder.build());
+        assertTrue(directRep.isHealthy(), "Direct powered piston is healthy");
+        assertTrue(directRep.isDirectlyPowered(), "Direct powering detected");
+        assertTrue(!directRep.isQcPowered(), "No QC powering when only direct");
+        assertTrue(directRep.directPowerSources().contains(new BlockPos(1, 64, 0)), "Direct power sources contain redstone block");
+
+        // 3. Quasi-Connectivity (QC) 2 blocks above and BUD Pending
+        var qcBuilder = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "minecraft:piston", Map.of("facing", "up", "extended", "false"))
+                .add(0, 66, 0, "minecraft:redstone_block"); // [x, y+2, z]
+        var qcRep = PistonRedstoneAnalyzer.analyze(qcBuilder.build());
+        assertTrue(!qcRep.isDirectlyPowered(), "No direct power from 2 blocks above");
+        assertTrue(qcRep.isQcPowered(), "QC power detected from 2 blocks above");
+        assertTrue(qcRep.isBudPending(), "Piston is in BUD Pending state (armed)");
+        assertTrue(qcRep.qcPowerSources().contains(new BlockPos(0, 66, 0)), "QC power sources contain redstone block at y+2");
+
+        // 4. Diagonal QC (above and offset horizontal)
+        var diagQcBuilder = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "minecraft:piston", Map.of("facing", "up", "extended", "false"))
+                .add(1, 65, 0, "minecraft:redstone_block"); // [x+1, y+1, z]
+        var diagQcRep = PistonRedstoneAnalyzer.analyze(diagQcBuilder.build());
+        assertTrue(diagQcRep.isQcPowered(), "Diagonal QC detected at [x+1, y+1, z]");
+
+        // 5. BUD Lock (Extended but power source removed, no block update)
+        var budLockBuilder = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "minecraft:piston", Map.of("facing", "up", "extended", "true"));
+        var budLockRep = PistonRedstoneAnalyzer.analyze(budLockBuilder.build());
+        assertTrue(!budLockRep.isHealthy(), "BUD locked piston is not healthy");
+        assertTrue(budLockRep.isBudLocked(), "BUD locked state detected");
+        assertTrue(budLockRep.issues().get(0).contains("BUD 锁定"), "Issues report BUD lock");
+        assertTrue(budLockRep.actionableAdvice().contains("方块更新"), "Advice mentions block update");
+
+        // 6. Normal Push Chain (5 stone blocks)
+        var pushBuilder = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "minecraft:piston", Map.of("facing", "east", "extended", "false"))
+                .add(1, 64, 0, "minecraft:stone")
+                .add(2, 64, 0, "minecraft:stone")
+                .add(3, 64, 0, "minecraft:stone")
+                .add(4, 64, 0, "minecraft:stone")
+                .add(5, 64, 0, "minecraft:stone");
+        var pushRep = PistonRedstoneAnalyzer.analyze(pushBuilder.build());
+        assertTrue(pushRep.isHealthy(), "5 blocks push chain is healthy");
+        assertTrue(pushRep.pushChainCount() == 5, "Push chain count is 5");
+        assertTrue(!pushRep.isPushLimitExceeded(), "Push limit not exceeded for 5 blocks");
+        assertTrue(!pushRep.hasImmovableObstacle(), "No immovable obstacle in stone chain");
+
+        // 7. Push Limit Exceeded (13 blocks > 12 max)
+        var overPushBuilder = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "minecraft:piston", Map.of("facing", "north", "extended", "false"));
+        for (int i = 1; i <= 13; i++) {
+            overPushBuilder.add(0, 64, -i, "minecraft:stone");
+        }
+        var overPushRep = PistonRedstoneAnalyzer.analyze(overPushBuilder.build());
+        assertTrue(!overPushRep.isHealthy(), "13 blocks push chain is unhealthy");
+        assertTrue(overPushRep.pushChainCount() == 13, "Push chain count is 13");
+        assertTrue(overPushRep.isPushLimitExceeded(), "Push limit exceeded for 13 blocks");
+        assertTrue(overPushRep.issues().get(0).contains("12 方块上限"), "Issues report 12 blocks limit");
+
+        // 8. Immovable Obstacle (Obsidian and Vanilla TileEntity Chest)
+        var obsBuilder = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "minecraft:piston", Map.of("facing", "up", "extended", "false"))
+                .add(0, 65, 0, "minecraft:obsidian");
+        var obsRep = PistonRedstoneAnalyzer.analyze(obsBuilder.build());
+        assertTrue(!obsRep.isHealthy(), "Obsidian blocks push chain");
+        assertTrue(obsRep.hasImmovableObstacle(), "Immovable obstacle detected for obsidian");
+        assertTrue(obsRep.immovableBlocks().contains(new BlockPos(0, 65, 0)), "Immovable blocks contain obsidian pos");
+
+        var chestBuilder = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "minecraft:piston", Map.of("facing", "east", "extended", "false"))
+                .add(1, 64, 0, "minecraft:chest");
+        var chestRep = PistonRedstoneAnalyzer.analyze(chestBuilder.build());
+        assertTrue(chestRep.hasImmovableObstacle(), "Chest blocks push chain in vanilla Java");
+
+        // 9. Slime & Honey Mutual Exclusion + Glazed Terracotta Non-adhesion
+        var slimeBuilder = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "minecraft:sticky_piston", Map.of("facing", "east", "extended", "false"))
+                .add(1, 64, 0, "minecraft:slime_block")
+                .add(1, 64, 1, "minecraft:stone")                      // adhered by slime
+                .add(1, 64, -1, "minecraft:honey_block")                 // NOT adhered (mutual exclusion!)
+                .add(1, 65, 0, "minecraft:white_glazed_terracotta");     // NOT adhered (glazed terracotta!)
+        var slimeRep = PistonRedstoneAnalyzer.analyze(slimeBuilder.build());
+        assertTrue(slimeRep.pushChain().contains(new BlockPos(1, 64, 0)), "Push chain contains slime block");
+        assertTrue(slimeRep.pushChain().contains(new BlockPos(1, 64, 1)), "Push chain contains adhered stone");
+        assertTrue(!slimeRep.pushChain().contains(new BlockPos(1, 64, -1)), "Honey block NOT adhered by slime");
+        assertTrue(!slimeRep.pushChain().contains(new BlockPos(1, 65, 0)), "Glazed terracotta NOT adhered by slime");
+        assertTrue(slimeRep.pushChainCount() == 2, "Push chain total count is exactly 2 (slime + stone)");
+
+        // 10. Spatial Overlay Directive Generation for Piston
+        var qcOverlay = SpatialDirectiveGenerator.generatePistonOverlay(qcBuilder.build(), qcRep);
+        assertTrue(qcOverlay.category().equals("PISTON_DYNAMICS"), "Overlay category is PISTON_DYNAMICS");
+        assertTrue(qcOverlay.toJson().contains("QC POWER SOURCE"), "Overlay JSON contains QC POWER SOURCE");
+        assertTrue(qcOverlay.toJson().contains("QUASI-CONNECTIVITY (QC)"), "Overlay JSON contains QUASI-CONNECTIVITY flow arrow");
+
+        var budLockOverlay = SpatialDirectiveGenerator.generatePistonOverlay(budLockBuilder.build(), budLockRep);
+        assertTrue(budLockOverlay.toJson().contains("BUD LOCK"), "Overlay JSON contains BUD LOCK");
+
+        var limitOverlay = SpatialDirectiveGenerator.generatePistonOverlay(overPushBuilder.build(), overPushRep);
+        assertTrue(limitOverlay.toJson().contains("PUSH LIMIT (MAX 12)"), "Overlay JSON contains PUSH LIMIT (MAX 12)");
+
+        // 11. TargetBlock Logistics Evaluation for Piston
+        TargetBlock pistonBlock = new TargetBlock("minecraft:piston", 10, 64, 10, 0, 15, 1.5f, "pickaxe", Map.of("facing", "north", "extended", "false"));
+        var pLog = pistonBlock.evaluateLogisticsOrRedstone();
+        assertTrue(pLog.isLogisticsOrRedstone(), "Piston is logistics/redstone");
+        assertTrue(pLog.componentType().equals("PISTON"), "Type is PISTON");
+        assertTrue(pLog.actionableAdvice().contains("准连接"), "Advice mentions QC准连接");
+
+        TargetBlock stickyBlock = new TargetBlock("minecraft:sticky_piston", 10, 64, 11, 0, 15, 1.5f, "pickaxe", Map.of("facing", "up", "extended", "true"));
+        var stickyLog = stickyBlock.evaluateLogisticsOrRedstone();
+        assertTrue(stickyLog.componentType().equals("STICKY_PISTON"), "Type is STICKY_PISTON");
+        assertTrue(stickyLog.stateDetails().contains("伸出"), "State details mention extended");
+
+        // 12. Fast Path Query Resolution for Piston Rules 57, 58, 59
+        McAgentCore core = new McAgentCore();
+        var qQc = core.query("Steve", "为什么活塞隔空激活了？", null).get();
+        assertTrue(qQc.isFastPath(), "Fast path for QC query");
+        assertTrue(qQc.category().equals("PISTON_QUASI_CONNECTIVITY_AND_BUD"), "Category is PISTON_QUASI_CONNECTIVITY_AND_BUD");
+        assertTrue(qQc.rawAnswer().contains("准连接"), "Response mentions 准连接");
+
+        var qLimit = core.query("Alex", "活塞推块上限是多少？", null).get();
+        assertTrue(qLimit.isFastPath(), "Fast path for push limit query");
+        assertTrue(qLimit.category().equals("PISTON_PUSH_LIMIT_AND_SLIME_HONEY"), "Category is PISTON_PUSH_LIMIT_AND_SLIME_HONEY");
+        assertTrue(qLimit.rawAnswer().contains("12 方块极限"), "Response mentions 12 blocks limit");
+
+        var qDrop = core.query("Miner", "粘性活塞怎么1tick掉方块？", null).get();
+        assertTrue(qDrop.isFastPath(), "Fast path for 1-tick drop block query");
+        assertTrue(qDrop.category().equals("STICKY_PISTON_ONE_TICK_DROP_BLOCK"), "Category is STICKY_PISTON_ONE_TICK_DROP_BLOCK");
+        assertTrue(qDrop.rawAnswer().contains("极短脉冲"), "Response mentions short pulse");
+
+        // 13. CommandRouter End-to-End Commands for Piston
+        PlayerSessionManager sm = new PlayerSessionManager();
+        CommandRouter router = new CommandRouter(core, sm);
+
+        // /hoshi piston with empty cluster
+        var resPistonEmpty = router.execute("Steve", "/hoshi piston", null);
+        assertTrue(resPistonEmpty.isSuccess(), "Piston empty command succeeds");
+        assertTrue(resPistonEmpty.getMessage().contains("当前准星未捕捉到局部活塞"), "Reports no piston targeted");
+
+        // /hoshi piston with QC cluster
+        ContextSnapshot qcCtx = ContextSnapshot.builder().cluster(qcBuilder.build()).build();
+        var resPistonQc = router.execute("Steve", "/hoshi piston", qcCtx);
+        assertTrue(resPistonQc.isSuccess(), "Piston command succeeds on cluster");
+        assertTrue(resPistonQc.getMessage().contains("准连接(QC): §b激活 (QC)§r"), "Message confirms QC activation");
+        assertTrue(resPistonQc.hasSpatialDirective(), "Piston result has spatial directive");
+
+        // /hoshi cluster piston
+        var resClusterPiston = router.execute("Steve", "/hoshi cluster piston", qcCtx);
+        assertTrue(resClusterPiston.isSuccess(), "Cluster piston succeeds");
+        assertTrue(resClusterPiston.getMessage().contains("活塞动力"), "Message contains piston summary");
+
+        // /hoshi highlight piston
+        var resHlPiston = router.execute("Steve", "/hoshi highlight piston", qcCtx);
+        assertTrue(resHlPiston.isSuccess(), "Highlight piston succeeds");
+        assertTrue(resHlPiston.hasSpatialDirective(), "Highlight piston has spatial directive");
+        assertTrue(resHlPiston.getSpatialDirective().category().equals("PISTON_DYNAMICS"), "Directive is PISTON_DYNAMICS");
+
+        // /hoshi help mentions piston
+        var resHelp = router.execute("Steve", "/hoshi help", null);
+        assertTrue(resHelp.getMessage().contains("/hoshi piston"), "Help mentions /hoshi piston");
     }
 
 }

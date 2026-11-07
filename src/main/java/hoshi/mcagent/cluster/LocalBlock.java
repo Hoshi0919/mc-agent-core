@@ -45,6 +45,71 @@ public record LocalBlock(
         return !"false".equalsIgnoreCase(getProperty("enabled", "true"));
     }
 
+    public boolean isPiston() {
+        if (blockId == null) return false;
+        String id = blockId.toLowerCase();
+        return (id.contains("piston") || id.equals("minecraft:piston") || id.equals("minecraft:sticky_piston"))
+                && !id.contains("piston_head");
+    }
+
+    public boolean isStickyPiston() {
+        if (blockId == null) return false;
+        String id = blockId.toLowerCase();
+        return id.contains("sticky_piston");
+    }
+
+    public boolean isExtended() {
+        return "true".equalsIgnoreCase(getProperty("extended", "false"));
+    }
+
+    public boolean isSlimeBlock() {
+        return blockId != null && blockId.toLowerCase().contains("slime_block");
+    }
+
+    public boolean honeyBlock() {
+        return isHoneyBlock();
+    }
+
+    public boolean isHoneyBlock() {
+        return blockId != null && blockId.toLowerCase().contains("honey_block");
+    }
+
+    public boolean isGlazedTerracotta() {
+        return blockId != null && blockId.toLowerCase().contains("glazed_terracotta");
+    }
+
+    public boolean isImmovable() {
+        if (blockId == null) return false;
+        String id = blockId.toLowerCase();
+        if (id.contains("bedrock") || id.contains("obsidian") || id.contains("crying_obsidian") ||
+            id.contains("nether_portal") || id.contains("end_portal") || id.contains("reinforced_deepslate") ||
+            id.contains("piston_head")) {
+            return true;
+        }
+        if (id.contains("chest") || id.contains("barrel") || id.contains("shulker_box") ||
+            id.contains("furnace") || id.contains("smoker") || id.contains("blast_furnace") ||
+            id.contains("hopper") || id.contains("dispenser") || id.contains("dropper") ||
+            id.contains("brewing_stand") || id.contains("crafter") || id.contains("beacon") ||
+            id.contains("enchanting_table") || id.contains("spawner") || id.contains("sculk_sensor") ||
+            id.contains("sculk_catalyst") || id.contains("sculk_shrieker")) {
+            return true;
+        }
+        return false;
+    }
+
+    public boolean isRedstonePowerSource() {
+        if (blockId == null) return false;
+        String id = blockId.toLowerCase();
+        if (id.contains("redstone_block")) return true;
+        if (id.contains("redstone_torch") && !"false".equalsIgnoreCase(getProperty("lit", "true"))) return true;
+        if (isRedstoneWire() && (!"0".equals(getProperty("power", "0")) || isPowered())) return true;
+        if ((id.contains("lever") || id.contains("button") || id.contains("pressure_plate")) && isPowered()) return true;
+        if (isRepeater() && isPowered()) return true;
+        if (isComparator() && isPowered()) return true;
+        if (id.contains("observer") && isPowered()) return true;
+        return isPowered();
+    }
+
     public boolean isHopper() {
         return blockId != null && blockId.toLowerCase().contains("hopper");
     }

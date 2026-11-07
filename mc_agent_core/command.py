@@ -183,19 +183,10 @@ class CommandRouter:
 
         elif sub in ("ae2", "me"):
             return self._handle_ae2(player_id, tokens, arg_start, snapshot)
+        elif sub in ("piston", "qc", "bud"):
+            return self._handle_piston(player_id, tokens, arg_start, snapshot)
         elif sub in ("cluster", "topo"):
-            cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
-            if not cluster:
-                return CommandResult(status="SUCCESS", action="CLUSTER", message="§6【局部机器拓扑诊断】§r\n当前未提供机器集群数据。")
-            from mc_agent_core.cluster import KineticNetworkAnalyzer, HopperNetworkAnalyzer
-            kr = KineticNetworkAnalyzer.analyze(cluster)
-            hr = HopperNetworkAnalyzer.analyze(cluster)
-            pkt = None
-            if kr.is_jammed:
-                pkt = SpatialDirectiveGenerator.generate_kinetic_overlay(cluster, kr)
-            elif hr.has_deadlock or hr.has_backpressure or hr.has_bleed_risk:
-                pkt = SpatialDirectiveGenerator.generate_hopper_overlay(cluster, hr)
-            return CommandResult(status="SUCCESS", action="CLUSTER", message=f"§6【拓扑诊断】§r\n动力：{kr.primary_diagnosis}\n物流：{hr.primary_diagnosis}", spatial_directive=pkt)
+            return self._handle_cluster(player_id, tokens, arg_start, snapshot)
         elif sub in ("highlight", "hl"):
             return self._handle_highlight(player_id, tokens, arg_start, snapshot)
         elif sub in ("chunkloader", "cl"):
@@ -490,6 +481,110 @@ class CommandRouter:
         return CommandResult(status="SUCCESS", action="STATS", message=msg)
 
 
+
+    def _handle_cluster(self, player_id: Optional[str], tokens: list, arg_start: int, snapshot: Optional[ContextSnapshot]) -> CommandResult:
+        sub = tokens[arg_start + 1].lower() if arg_start + 1 < len(tokens) else "all"
+        cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
+
+        if not cluster or cluster.is_empty:
+            msg = ("§6【局部机器拓扑诊断】§r\n"
+                   "当前准星未捕捉到局部多方块机器集群数据。\n"
+                   "支持子诊断：\n"
+                   "▸ §e/hoshi cluster kinetics§r - 诊断 Create 机械动力齿轮卡死与反向啮合\n"
+                   "▸ §e/hoshi cluster hopper§r - 诊断漏斗流水线死锁环路、背压与分类器串线\n"
+                   "▸ §e/hoshi cluster ae2§r - 诊断 AE2 数字化网络拓扑与频道过载\n"
+                   "▸ §e/hoshi cluster piston§r - 诊断活塞准连接 (QC) 与推块链动力学\n"
+                   "▸ §e/hoshi cluster crafter§r - 诊断 1.21 自动合成器槽位遮罩与脉冲时钟")
+            return CommandResult(status="SUCCESS", action="CLUSTER", message=msg)
+
+        sb = []
+        sb.append(f"§6【局部机器集群拓扑诊断 ({sub.upper()})】§r")
+        sb.append(f"▸ 集群中心：{cluster.origin} | 包含方块：{cluster.size} 个")
+
+        if sub in ("kinetics", "all"):
+            from mc_agent_core.cluster import KineticNetworkAnalyzer
+            k = KineticNetworkAnalyzer.analyze(cluster)
+            sb.append(f"▸ 动力状态：{k.primary_diagnosis}")
+            if k.is_jammed:
+                for c in k.conflicts:
+                    sb.append(f"  ✖ {c}")
+                sb.append(f"  建议：{k.actionable_remediation}")
+
+        if sub in ("ae2", "all"):
+            from mc_agent_core.cluster import Ae2NetworkAnalyzer
+            a = Ae2NetworkAnalyzer.analyze(cluster)
+            if a.total_controllers > 0 or a.total_cables > 0 or a.total_devices > 0:
+                sb.append(f"▸ AE2 网络：{a.primary_diagnosis}")
+                for iss in a.issues:
+                    sb.append(f"  ✖ {iss}")
+                sb.append(f"  建议：{a.actionable_remediation}")
+
+        if sub in ("piston", "qc", "all"):
+            from mc_agent_core.cluster import PistonRedstoneAnalyzer
+            p = PistonRedstoneAnalyzer.analyze(cluster)
+            if cluster.get_connected_pistons():
+                sb.append(f"▸ 活塞动力：{p.primary_diagnosis}")
+                for iss in p.issues:
+                    sb.append(f"  ✖ {iss}")
+                sb.append(f"  建议：{p.actionable_advice}")
+
+        if sub in ("hopper", "all"):
+            from mc_agent_core.cluster import HopperNetworkAnalyzer
+            h = HopperNetworkAnalyzer.analyze(cluster)
+            sb.append(f"▸ 物流状态：{h.primary_diagnosis}")
+            if h.has_deadlock:
+                for d in h.deadlocks:
+                    sb.append(f"  ⚡ {d}")
+            if h.warnings:
+                for w in h.warnings:
+                    sb.append(f"  ⚠ {w}")
+            sb.append(f"  建议：{h.actionable_advice}")
+
+        packet = None
+        if sub == "kinetics":
+            from mc_agent_core.cluster import KineticNetworkAnalyzer
+            k = KineticNetworkAnalyzer.analyze(cluster)
+            packet = SpatialDirectiveGenerator.generate_kinetic_overlay(cluster, k)
+        elif sub == "ae2":
+            from mc_agent_core.cluster import Ae2NetworkAnalyzer
+            a = Ae2NetworkAnalyzer.analyze(cluster)
+            packet = SpatialDirectiveGenerator.generate_ae2_overlay(cluster, a)
+        elif sub in ("piston", "qc"):
+            from mc_agent_core.cluster import PistonRedstoneAnalyzer
+            p = PistonRedstoneAnalyzer.analyze(cluster)
+            packet = SpatialDirectiveGenerator.generate_piston_overlay(cluster, p)
+        elif sub == "hopper":
+            from mc_agent_core.cluster import HopperNetworkAnalyzer
+            h = HopperNetworkAnalyzer.analyze(cluster)
+            packet = SpatialDirectiveGenerator.generate_hopper_overlay(cluster, h)
+        elif sub == "all":
+            from mc_agent_core.cluster import KineticNetworkAnalyzer, HopperNetworkAnalyzer
+            k = KineticNetworkAnalyzer.analyze(cluster)
+            h = HopperNetworkAnalyzer.analyze(cluster)
+            if k.is_jammed:
+                packet = SpatialDirectiveGenerator.generate_kinetic_overlay(cluster, k)
+            elif h.has_deadlock or h.has_backpressure or h.has_bleed_risk:
+                packet = SpatialDirectiveGenerator.generate_hopper_overlay(cluster, h)
+
+        return CommandResult(status="SUCCESS", action="CLUSTER", message="\n".join(sb), spatial_directive=packet)
+
+    def _handle_piston(self, player_id: Optional[str], tokens: list, arg_start: int, snapshot: Optional[ContextSnapshot]) -> CommandResult:
+        cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
+        if not cluster or cluster.is_empty or not cluster.get_connected_pistons():
+            msg = ("§e【红石活塞与准连接 (QC) 诊断】§r\n"
+                   "当前准星未捕捉到局部活塞或红石机械集群。\n"
+                   "请将准星对准活塞、粘性活塞或其相邻红石方块，然后再次输入 `/hoshi piston` 触发准连接 (QC) 与推块链动力学诊断！")
+            return CommandResult(status="SUCCESS", action="PISTON", message=msg)
+        from mc_agent_core.cluster import PistonRedstoneAnalyzer
+        report = PistonRedstoneAnalyzer.analyze(cluster)
+        text = report.format_report()
+        paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page")
+        self.session_manager.record_interaction(player_id, "/hoshi piston", text, "PISTON", paged)
+        comps = MinecraftTextFormatter.parse_components(paged.full_page_text, "/hoshi piston")
+        tellraw = TellrawJsonBuilder.to_json(comps)
+        pkt = SpatialDirectiveGenerator.generate_piston_overlay(cluster, report)
+        return CommandResult(status="SUCCESS", action="PISTON", message=paged.full_page_text, tellraw_json=tellraw, paged_result=paged, spatial_directive=pkt)
+
     def _handle_ae2(self, player_id: Optional[str], tokens: list, arg_start: int, snapshot: Optional[ContextSnapshot]) -> CommandResult:
         cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
         if not cluster or cluster.is_empty:
@@ -521,6 +616,15 @@ class CommandRouter:
             from mc_agent_core.cluster import KineticNetworkAnalyzer
             k = KineticNetworkAnalyzer.analyze(cluster)
             pkt = SpatialDirectiveGenerator.generate_kinetic_overlay(cluster, k)
+            return CommandResult(status="SUCCESS", action="HIGHLIGHT", message=f"§a[Hoshi 3D 高亮] {pkt.hud_title}", spatial_directive=pkt)
+
+        if sub in ("piston", "qc", "bud"):
+            cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
+            if not cluster or cluster.is_empty or not cluster.get_connected_pistons():
+                return CommandResult(status="ERROR", action="HIGHLIGHT", message="§c准星未捕捉到局部活塞机械组件，无法投射活塞动力高亮。")
+            from mc_agent_core.cluster import PistonRedstoneAnalyzer
+            p = PistonRedstoneAnalyzer.analyze(cluster)
+            pkt = SpatialDirectiveGenerator.generate_piston_overlay(cluster, p)
             return CommandResult(status="SUCCESS", action="HIGHLIGHT", message=f"§a[Hoshi 3D 高亮] {pkt.hud_title}", spatial_directive=pkt)
 
         if sub in ("ae2", "me"):
@@ -566,6 +670,7 @@ class CommandRouter:
         msg = ("§6【Hoshi 3D 空间全息高亮指令】§r\n"
                "▸ §e/hoshi highlight kinetics§r - 在游戏世界高亮冲突齿轮与流向\n"
                "▸ §e/hoshi highlight hopper§r - 投射漏斗死锁环路与物流方向箭头\n"
+               "▸ §e/hoshi highlight piston§r - 投射准连接 QC 隔电源、BUD 锁定与推块超载\n"
                "▸ §e/hoshi highlight multiblock <名称>§r - 在准星位置投射多方块虚影蓝图\n"
                "▸ §e/hoshi highlight mobfarm§r - 以自身为中心投射 24/32/128m 刷怪动力学清除圈\n"
                "▸ §e/hoshi highlight clear§r - 清除所有世界高亮与全息虚影")
@@ -586,6 +691,7 @@ class CommandRouter:
             "▸ §e/hoshi anvil <装备> [附魔:等级...]§r - 规划二叉树最优附魔工序规避过于昂贵\n"
             "▸ §e/hoshi create stress <动力源> [规模]§r - 诊断 Create 模组动力网应力与过载转速\n"
             "▸ §e/hoshi ae2§r - 诊断准星 AE2 数字化网络拓扑、控制器合法性与 8/32 频道溢出\n"
+            "▸ §e/hoshi piston§r - 诊断准星活塞准连接 (QC)、BUD 锁定与推块链超载\n"
             "▸ §e/hoshi highlight ae2§r - 投射 AE2 频道过载红线与掉线设备 3D 空间全息覆盖层\n"
             "▸ §e/hoshi cluster - 诊断局部机器拓扑\n▸ §e/hoshi chunkloader <permaloader/portal>§r - 诊断生电传送门常载网与 8:1 坐标漂移\n"
             "▸ §e/hoshi nether [x y z]§r - 换算地狱传送门坐标\n"

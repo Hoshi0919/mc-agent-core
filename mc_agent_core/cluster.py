@@ -117,6 +117,81 @@ class LocalBlock:
         bid = self.block_id.lower()
         return any(k in bid for k in ["bus", "drive", "terminal", "interface", "provider", "assembler"]) or self.is_ae2_p2p_tunnel
 
+    @property
+    def is_air(self) -> bool:
+        if not self.block_id:
+            return True
+        bid = self.block_id.lower()
+        return bid in ("air", "minecraft:air", "cave_air", "minecraft:cave_air", "void_air", "minecraft:void_air")
+
+    @property
+    def is_piston(self) -> bool:
+        if not self.block_id:
+            return False
+        bid = self.block_id.lower()
+        return ("piston" in bid or bid == "minecraft:piston" or bid == "minecraft:sticky_piston") and "piston_head" not in bid
+
+    @property
+    def is_sticky_piston(self) -> bool:
+        if not self.block_id:
+            return False
+        return "sticky_piston" in self.block_id.lower()
+
+    @property
+    def is_extended(self) -> bool:
+        return self.get_property("extended", "false").lower() == "true"
+
+    @property
+    def is_slime_block(self) -> bool:
+        return bool(self.block_id and "slime_block" in self.block_id.lower())
+
+    @property
+    def honey_block(self) -> bool:
+        return self.is_honey_block
+
+    @property
+    def is_honey_block(self) -> bool:
+        return bool(self.block_id and "honey_block" in self.block_id.lower())
+
+    @property
+    def is_glazed_terracotta(self) -> bool:
+        return bool(self.block_id and "glazed_terracotta" in self.block_id.lower())
+
+    @property
+    def is_immovable(self) -> bool:
+        if not self.block_id:
+            return False
+        bid = self.block_id.lower()
+        if any(k in bid for k in [
+            "bedrock", "obsidian", "crying_obsidian", "nether_portal", "end_portal",
+            "reinforced_deepslate", "piston_head"
+        ]):
+            return True
+        if any(k in bid for k in [
+            "chest", "barrel", "shulker_box", "furnace", "smoker", "blast_furnace",
+            "hopper", "dispenser", "dropper", "brewing_stand", "crafter", "beacon",
+            "enchanting_table", "spawner", "sculk_sensor", "sculk_catalyst", "sculk_shrieker"
+        ]):
+            return True
+        return False
+
+    @property
+    def is_redstone_power_source(self) -> bool:
+        if not self.block_id:
+            return False
+        bid = self.block_id.lower()
+        if "redstone_block" in bid:
+            return True
+        if "redstone_torch" in bid and self.get_property("lit", "true").lower() != "false":
+            return True
+        if "redstone_wire" in bid and (self.get_property("power", "0") != "0" or self.get_property("powered", "false").lower() == "true"):
+            return True
+        if any(k in bid for k in ["lever", "button", "pressure_plate"]) and self.get_property("powered", "false").lower() == "true":
+            return True
+        if any(k in bid for k in ["repeater", "comparator", "observer"]) and self.get_property("powered", "false").lower() == "true":
+            return True
+        return self.get_property("powered", "false").lower() == "true"
+
 
 
 @dataclass
@@ -138,6 +213,16 @@ class LocalMachineCluster:
     def get_connected_ae2(self) -> List[LocalBlock]:
         return [b for b in self.blocks.values() if b.is_ae2]
 
+    def get_connected_pistons(self) -> List[LocalBlock]:
+        return [b for b in self.blocks.values() if b.is_piston]
+
+    def get_block(self, pos: BlockPos) -> Optional[LocalBlock]:
+        return self.blocks.get(pos)
+
+    @property
+    def origin_block(self) -> Optional[LocalBlock]:
+        return self.blocks.get(self.origin)
+
     @property
     def size(self) -> int:
         return len(self.blocks)
@@ -147,7 +232,7 @@ class LocalMachineCluster:
         return len(self.blocks) == 0
 
     def to_summary(self) -> str:
-        return f"Cluster centered at {self.origin} with {self.size} blocks (Kinetics: {len(self.get_connected_kinetics())}, Hoppers: {len(self.get_connected_hoppers())})"
+        return f"Cluster centered at {self.origin} with {self.size} blocks (Kinetics: {len(self.get_connected_kinetics())}, Hoppers: {len(self.get_connected_hoppers())}, AE2: {len(self.get_connected_ae2())}, Pistons: {len(self.get_connected_pistons())})"
 
 
 @dataclass
@@ -597,4 +682,266 @@ class Ae2NetworkAnalyzer:
             total_dev, online_count, missing_count,
             illegal_interior, overloaded_cables, offline_devices,
             issues, diag, rem
+        )
+
+
+
+@dataclass(frozen=True)
+class PistonReport:
+    is_healthy: bool
+    is_directly_powered: bool
+    is_qc_powered: bool
+    is_bud_locked: bool
+    is_bud_pending: bool
+    is_push_limit_exceeded: bool
+    has_immovable_obstacle: bool
+    piston_pos: BlockPos
+    piston_facing: str
+    push_chain_count: int
+    push_chain: List[BlockPos]
+    direct_power_sources: List[BlockPos]
+    qc_power_sources: List[BlockPos]
+    immovable_blocks: List[BlockPos]
+    issues: List[str]
+    warnings: List[str]
+    primary_diagnosis: str
+    actionable_advice: str
+
+    @classmethod
+    def empty(cls) -> "PistonReport":
+        return PistonReport(
+            is_healthy=True,
+            is_directly_powered=False,
+            is_qc_powered=False,
+            is_bud_locked=False,
+            is_bud_pending=False,
+            is_push_limit_exceeded=False,
+            has_immovable_obstacle=False,
+            piston_pos=BlockPos(0, 0, 0),
+            piston_facing="unknown",
+            push_chain_count=0,
+            push_chain=[],
+            direct_power_sources=[],
+            qc_power_sources=[],
+            immovable_blocks=[],
+            issues=[],
+            warnings=[],
+            primary_diagnosis="未检测到活塞机械组件",
+            actionable_advice=""
+        )
+
+    def format_report(self) -> str:
+        sb = []
+        sb.append("§e【红石活塞与准连接 (QC) 拓扑诊断报告】§r")
+        sb.append(f"▸ 目标活塞坐标：{self.piston_pos} (朝向: {self.piston_facing.upper()})")
+        dp_str = "§a直接供电§r" if self.is_directly_powered else "§7无直接供电§r"
+        qc_str = "§b激活 (QC)§r" if self.is_qc_powered else "§7无§r"
+        sb.append(f"▸ 供电状态：{dp_str} | 准连接(QC): {qc_str}")
+
+        if self.is_bud_locked:
+            sb.append("  ⚡ §c[BUD 锁定卡死] 供电已断开，但缺少方块更新导致活塞保持伸出！§r")
+        elif self.is_bud_pending:
+            sb.append("  ⚡ §6[BUD 待命潜伏] 上方 QC 已充能，等待邻域方块更新触发弹出！§r")
+
+        pl_str = "§c[超重 >12]§r" if self.is_push_limit_exceeded else "§a[正常]§r"
+        sb.append(f"▸ 推块链条负载：{self.push_chain_count} / 12 方块 {pl_str}")
+
+        if self.direct_power_sources:
+            srcs = " ".join(str(p) for p in self.direct_power_sources)
+            sb.append(f"  - 直接供电源: {srcs}")
+        if self.qc_power_sources:
+            srcs = " ".join(str(p) for p in self.qc_power_sources)
+            sb.append(f"  - 准连接 (QC) 隔电源: {srcs}")
+        if self.immovable_blocks:
+            srcs = " ".join(str(p) for p in self.immovable_blocks)
+            sb.append(f"  ✖ §c不可移动阻断方块: {srcs}§r")
+
+        if self.issues:
+            sb.append("§c【发现问题】§r")
+            for iss in self.issues:
+                sb.append(f"  ✖ {iss}")
+        if self.warnings:
+            sb.append("§6【注意事项】§r")
+            for w in self.warnings:
+                sb.append(f"  ⚠ {w}")
+
+        sb.append(f"▸ 诊断结论：{self.primary_diagnosis}")
+        sb.append(f"▸ 优化建议：{self.actionable_advice}")
+        return "\n".join(sb)
+
+
+class PistonRedstoneAnalyzer:
+    @classmethod
+    def analyze(cls, cluster: Optional[LocalMachineCluster], target_pos: Optional[BlockPos] = None) -> PistonReport:
+        if not cluster or cluster.is_empty:
+            return PistonReport.empty()
+
+        piston = None
+        if target_pos:
+            piston = cluster.get_block(target_pos)
+        if not piston or not piston.is_piston:
+            org = cluster.origin_block
+            if org and org.is_piston:
+                piston = org
+        if not piston or not piston.is_piston:
+            pistons = cluster.get_connected_pistons()
+            if pistons:
+                piston = pistons[0]
+
+        if not piston or not piston.is_piston:
+            return PistonReport.empty()
+
+        p_pos = piston.pos
+        facing = piston.facing()
+        extended = piston.is_extended
+
+        direct_power: List[BlockPos] = []
+        qc_power: List[BlockPos] = []
+        immovables: List[BlockPos] = []
+        issues: List[str] = []
+        warnings: List[str] = []
+
+        # 1. Direct Powering Check (6 direct neighbors)
+        for n_pos in p_pos.get_direct_neighbors():
+            n_block = cluster.get_block(n_pos)
+            if n_block and n_block.is_redstone_power_source:
+                direct_power.append(n_pos)
+
+        # 2. Quasi-Connectivity (QC) Check
+        above_pos = p_pos.offset("up")
+        direct_set = set(p_pos.get_direct_neighbors())
+
+        above_block = cluster.get_block(above_pos)
+        if above_block and above_block.is_redstone_power_source:
+            if above_pos not in direct_set:
+                qc_power.append(above_pos)
+
+        qc_candidates = [
+            above_pos.offset("up"),
+            above_pos.offset("north"),
+            above_pos.offset("south"),
+            above_pos.offset("west"),
+            above_pos.offset("east"),
+        ]
+        for qp in qc_candidates:
+            if qp not in direct_set:
+                q_block = cluster.get_block(qp)
+                if q_block and q_block.is_redstone_power_source:
+                    qc_power.append(qp)
+
+        is_directly_powered = len(direct_power) > 0
+        is_qc_powered = len(qc_power) > 0
+
+        # 3. BUD State Machine
+        is_bud_locked = extended and not is_directly_powered and not is_qc_powered
+        is_bud_pending = not extended and not is_directly_powered and is_qc_powered
+
+        if is_bud_locked:
+            issues.append(f"活塞 {p_pos} 处于 BUD 锁定状态：红石源已切断，因未收到方块更新依然保持伸出！")
+        if is_bud_pending:
+            warnings.append(f"活塞 {p_pos} 上方存在准连接 (QC) 充能但未更新：一旦邻近方块发生改变将立即弹出！")
+
+        # 4. Push Chain & Adhesion BFS
+        push_chain: List[BlockPos] = []
+        is_push_limit_exceeded = False
+        has_immovable_obstacle = False
+
+        step_pos = p_pos.offset(facing)
+        visited_in_chain: Set[BlockPos] = set()
+        from collections import deque
+        queue = deque()
+
+        first_block = cluster.get_block(step_pos)
+        if first_block and not first_block.is_air:
+            queue.append(step_pos)
+            visited_in_chain.add(step_pos)
+
+        while queue:
+            current = queue.popleft()
+            cur_block = cluster.get_block(current)
+            if not cur_block or cur_block.is_air:
+                continue
+
+            if cur_block.is_immovable:
+                has_immovable_obstacle = True
+                immovables.append(current)
+                issues.append(f"遭遇不可移动方块 {current} ({cur_block.block_id})，阻断活塞推动！")
+                continue
+
+            push_chain.append(current)
+
+            next_in_line = current.offset(facing)
+            if next_in_line not in visited_in_chain:
+                next_block = cluster.get_block(next_in_line)
+                if next_block and not next_block.is_air:
+                    visited_in_chain.add(next_in_line)
+                    queue.append(next_in_line)
+
+            is_slime = cur_block.is_slime_block
+            is_honey = cur_block.is_honey_block
+
+            if is_slime or is_honey:
+                for neighbor in current.get_direct_neighbors():
+                    if neighbor == p_pos or neighbor in visited_in_chain:
+                        continue
+                    n_block = cluster.get_block(neighbor)
+                    if not n_block or n_block.is_air:
+                        continue
+
+                    if is_slime and n_block.is_honey_block:
+                        continue
+                    if is_honey and n_block.is_slime_block:
+                        continue
+                    if n_block.is_glazed_terracotta:
+                        continue
+
+                    visited_in_chain.add(neighbor)
+                    queue.append(neighbor)
+
+        push_chain_count = len(push_chain)
+        if push_chain_count > 12:
+            is_push_limit_exceeded = True
+            excess = push_chain[12]
+            issues.append(f"推块链总数达到 {push_chain_count} 块，突破 12 方块上限！第 13 块方块位于 {excess}")
+
+        is_healthy = len(issues) == 0 and not is_bud_locked
+
+        if is_bud_locked:
+            diag = "⚡ [BUD 锁定卡死] 活塞断电后未接收到邻域方块更新，保持伸出卡滞。"
+            advice = "解决建议：在活塞正交相邻方块处放置或破坏任意方块产生方块更新，或给予一次红石线脉冲强制其复位缩回。"
+        elif has_immovable_obstacle:
+            diag = "⚡ [不可移动方块阻断] 推块路径上包含黑曜石、基岩或 Java 版不可推容器 (TileEntity)。"
+            advice = "解决建议：移除阻碍的不可移动方块，或使用漏斗矿车/投掷器等代替实心阻挡。"
+        elif is_push_limit_exceeded:
+            diag = f"⚡ [推块上限超载] 推块链条包含 {push_chain_count} 块方块，超出 12 方块推力上限。"
+            advice = "解决建议：使用釉面陶瓦隔断粘液块/蜜蜂块的横向粘连，或减少推击链条上的方块数量。"
+        elif is_bud_pending:
+            diag = "⚡ [BUD 待命状态] 活塞处于准连接 (QC) 充能状态，等待方块更新触发。"
+            advice = "状态正常：若需要即时弹出，请在活塞旁引入红石脉冲或更新源；若用于方块更新检测器 (BUD)，已就绪。"
+        elif is_directly_powered or is_qc_powered:
+            diag = "✓ 活塞供电正常，推块链符合动力学规范。"
+            advice = "保持当前布线即可。"
+        else:
+            diag = "✓ 活塞未充能，推块链处于安全休眠状态。"
+            advice = "正常状态。通过红石粉或中继器输入信号即可激活。"
+
+        return PistonReport(
+            is_healthy=is_healthy,
+            is_directly_powered=is_directly_powered,
+            is_qc_powered=is_qc_powered,
+            is_bud_locked=is_bud_locked,
+            is_bud_pending=is_bud_pending,
+            is_push_limit_exceeded=is_push_limit_exceeded,
+            has_immovable_obstacle=has_immovable_obstacle,
+            piston_pos=p_pos,
+            piston_facing=facing,
+            push_chain_count=push_chain_count,
+            push_chain=push_chain,
+            direct_power_sources=direct_power,
+            qc_power_sources=qc_power,
+            immovable_blocks=immovables,
+            issues=issues,
+            warnings=warnings,
+            primary_diagnosis=diag,
+            actionable_advice=advice
         )

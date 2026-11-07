@@ -4,6 +4,36 @@
 
 ---
 
+## 🌟 核心特性（v2.4.0 里程碑：红石活塞动力学、准连接 QC、BUD 状态机与 3D 全息因果分析）
+
+针对 Minecraft Java 版最具代表性且令新手与生电玩家困惑的红石活塞物理特性（准连接、BUD 卡死、推块上限、粘液/蜜蜂互斥），提供 0ms 纯确定性状态机诊断与 3D 空间全息投射：
+
+1. **准连接 (Quasi-Connectivity, QC) 隔空供电与 BUD 状态机**：
+   - **准连接检测机理**：Java 版活塞复用了双格门的判定代码，自动检测自身上方 1 格 `[x, y+1, z]` 周围 5 个红石供电位置（上方及水平正交相邻）；
+   - **BUD 锁定卡死识别 (BUD Lock)**：活塞因 QC 供电伸出后，若红石电源撤去但未接收到方块更新 (Block Update)，活塞陷入卡死伸出状态不缩回；
+   - **BUD 待命潜伏诊断 (BUD Pending)**：上方存在 QC 供电但活塞尚未更新伸出，标定“待命潜伏”预警；
+   - **一键复位指引**：明确提示在活塞邻近方块敲击、放置/破坏方块触发更新，或给予红石脉冲。
+
+2. **12 方块推力上限与粘液/蜜蜂互斥粘连图搜索 (Push Chain & Adhesion BFS)**：
+   - **12 方块极限核算**：沿推击方向及粘连网络 BFS 遍历全链条，精准截获第 13 块超载方块并标定坐标；
+   - **不可移动障碍阻断**：识别基岩、黑曜石、哭泣黑曜石、传送门及 Java 版全部带容器实体方块 (TileEntity，如箱子、熔炉、漏斗、发射器、潜影盒)；
+   - **粘液与蜜蜂互斥法则 (Slime-Honey Mutual Exclusion)**：实证粘液块与蜜蜂块互不粘连特性，校验交错排列飞行器构架；
+   - **釉面陶瓦隔断**：校验釉面陶瓦可推但防横向粘连的生电物理隔离。
+
+3. **3D 空间全息诊断覆盖层整合 (`generatePistonOverlay`)**：
+   - **活塞本体状态**：黄色线框高亮 (`BUD LOCK`) + 上方悬浮告警标签；青色线框高亮 (`BUD ARMED`)；超载卡死红色线框 (`PISTON STALLED`)；
+   - **准连接隔电源**：青色线框高亮 (`QC POWER SOURCE`) + 空间流动箭头指向活塞 + ⚡ 隔空准连接电源悬浮标牌；
+   - **不可推动障碍**：紫色线框高亮 (`IMMOVABLE BLOCK`) + ✖ 不可移动障碍悬浮标牌；
+   - **超载方块标定**：推块链前 12 块橙色线框，第 13+ 块红色线框 (`PUSH LIMIT MAX 12`) + ✖ 超载方块标签。
+
+4. **游戏内交互指令与问答接入**：
+   - **`/hoshi piston`**：对准星活塞输出完整供电状态、QC 隔电源、推块链负荷与 BUD 诊断；
+   - **`/hoshi cluster piston`**：局部机器集群子图专属活塞动力分析；
+   - **`/hoshi highlight piston`**：向客户端投射 3D 全息覆盖层；
+   - 快速问答路径收录规则 57（准连接与 BUD）、规则 58（推块上限与粘液蜜蜂互斥）、规则 59（粘性活塞 1-tick 脉冲掉方块）。
+
+---
+
 ## 🌟 核心特性（v2.3.0 里程碑：AE2 数字化网络频道拓扑、控制器多方块与 3D 全息诊断）
 
 针对现代大型科技整合包（ATM9, Create: Astral, FTB, GregTech, Enigmatica）中应用能源 2（Applied Energistics 2 / AE2）网络搭建难题，提供 0ms 纯确定性图论拓扑分析与 3D 空间全息诊断：
@@ -326,11 +356,11 @@ mc-agent-core/
 ```bash
 javac -encoding UTF-8 -d bin $(find src/main/java src/test/java -name '*.java')
 java -cp bin hoshi.mcagent.McAgentCoreTest
-# 🎉 All 756/756 Java tests passed successfully!
+# 🎉 All 819/819 Java tests passed successfully!
 ```
 
 ### Python 仿真套件
 ```bash
 PYTHONPATH=. uv run --with pytest pytest tests/ -v
-# 62 passed in 0.37s
+# 63 passed in 0.40s
 ```
