@@ -125,6 +125,24 @@ class LocalBlock:
         return bid in ("air", "minecraft:air", "cave_air", "minecraft:cave_air", "void_air", "minecraft:void_air")
 
     @property
+    def is_comparator(self) -> bool:
+        return bool(self.block_id and "comparator" in self.block_id.lower())
+
+    @property
+    def is_redstone_wire(self) -> bool:
+        if not self.block_id:
+            return False
+        bid = self.block_id.lower()
+        return "redstone_wire" in bid or bid == "minecraft:redstone"
+
+    @property
+    def is_container(self) -> bool:
+        if not self.block_id:
+            return False
+        bid = self.block_id.lower()
+        return any(k in bid for k in ["chest", "shulker_box", "barrel", "dropper", "dispenser", "crafter", "furnace", "hopper", "brewing_stand"])
+
+    @property
     def is_piston(self) -> bool:
         if not self.block_id:
             return False
@@ -216,6 +234,9 @@ class LocalMachineCluster:
     def get_connected_pistons(self) -> List[LocalBlock]:
         return [b for b in self.blocks.values() if b.is_piston]
 
+    def get_connected_comparators(self) -> List[LocalBlock]:
+        return [b for b in self.blocks.values() if b.is_comparator]
+
     def get_block(self, pos: BlockPos) -> Optional[LocalBlock]:
         return self.blocks.get(pos)
 
@@ -232,7 +253,7 @@ class LocalMachineCluster:
         return len(self.blocks) == 0
 
     def to_summary(self) -> str:
-        return f"Cluster centered at {self.origin} with {self.size} blocks (Kinetics: {len(self.get_connected_kinetics())}, Hoppers: {len(self.get_connected_hoppers())}, AE2: {len(self.get_connected_ae2())}, Pistons: {len(self.get_connected_pistons())})"
+        return f"Cluster centered at {self.origin} with {self.size} blocks (Kinetics: {len(self.get_connected_kinetics())}, Hoppers: {len(self.get_connected_hoppers())}, AE2: {len(self.get_connected_ae2())}, Pistons: {len(self.get_connected_pistons())}, Comparators: {len(self.get_connected_comparators())})"
 
 
 @dataclass
@@ -940,6 +961,327 @@ class PistonRedstoneAnalyzer:
             direct_power_sources=direct_power,
             qc_power_sources=qc_power,
             immovable_blocks=immovables,
+            issues=issues,
+            warnings=warnings,
+            primary_diagnosis=diag,
+            actionable_advice=advice
+        )
+
+
+@dataclass
+class ContainerSlotInfo:
+    slot: int
+    item_id: str
+    count: int
+    max_stack: int = 64
+
+
+@dataclass
+class ComparatorReport:
+    is_healthy: bool
+    is_subtract_mode: bool
+    output_signal: int
+    rear_signal: int
+    side_signal: int
+    is_sorter_slice: bool
+    redstone_wire_length: int
+    has_crosstalk_risk: bool
+    has_unstackable_pollution: bool
+    is_overflow_protected: bool
+    comparator_pos: BlockPos
+    container_pos: BlockPos
+    container_type: str
+    filled_item_count: int
+    container_slot_capacity: int
+    redstone_wire_chain: List[BlockPos]
+    crosstalk_leak_targets: List[BlockPos]
+    issues: List[str]
+    warnings: List[str]
+    primary_diagnosis: str
+    actionable_advice: str
+
+    @classmethod
+    def empty(cls) -> "ComparatorReport":
+        return cls(
+            is_healthy=True,
+            is_subtract_mode=False,
+            output_signal=0,
+            rear_signal=0,
+            side_signal=0,
+            is_sorter_slice=False,
+            redstone_wire_length=0,
+            has_crosstalk_risk=False,
+            has_unstackable_pollution=False,
+            is_overflow_protected=True,
+            comparator_pos=BlockPos(0, 0, 0),
+            container_pos=BlockPos(0, 0, 0),
+            container_type="none",
+            filled_item_count=0,
+            container_slot_capacity=0,
+            redstone_wire_chain=[],
+            crosstalk_leak_targets=[],
+            issues=[],
+            warnings=[],
+            primary_diagnosis="未检测到红石比较器或容器组件",
+            actionable_advice=""
+        )
+
+    def format_report(self) -> str:
+        lines = [
+            "§e【红石比较器与容器分类拓扑诊断报告】§r",
+            f"▸ 目标比较器坐标：{self.comparator_pos} (模式: {'§c减法模式 (Subtract)§r' if self.is_subtract_mode else '§a比较模式 (Compare)§r'})",
+            f"▸ 信号强度：输出 §6{self.output_signal}§r | 输入(后端): {self.rear_signal} | 侧边: {self.side_signal}"
+        ]
+        if self.container_type != "none":
+            lines.append(f"▸ 绑测容器：{self.container_pos} ({self.container_type.upper()}) | 填充负载: {self.filled_item_count} 物品 (槽位: {self.container_slot_capacity})")
+
+        if self.is_sorter_slice:
+            lines.append(f"▸ 物品分类切片：红石线长 {self.redstone_wire_length} 格 | 架构: {'§a[安全防串扰 (3格线/41+1)]§r' if self.is_overflow_protected else '§c[高危串扰隐患 (短线/超载)]§r'}")
+
+        if self.has_crosstalk_risk:
+            lines.append("  ⚡ §c[高危串扰警报] 漏斗满溢或红石线过短，信号将横向泄漏至相邻切片导致漏光！§r")
+            if self.crosstalk_leak_targets:
+                lines.append(f"  ✖ 泄漏波及切片目标: {' '.join(str(p) for p in self.crosstalk_leak_targets)}")
+
+        if self.has_unstackable_pollution:
+            lines.append("  ✖ §c[槽位污染] 检测到不可堆叠/16堆叠物品误入滤波槽，致使信号异常激增！§r")
+
+        if self.issues:
+            lines.append("§c【发现问题】§r")
+            for iss in self.issues:
+                lines.append(f"  ✖ {iss}")
+
+        if self.warnings:
+            lines.append("§6【风险预警】§r")
+            for w in self.warnings:
+                lines.append(f"  ⚠ {w}")
+
+        lines.append(f"▸ 诊断结论：{self.primary_diagnosis}")
+        if self.actionable_advice:
+            lines.append(f"▸ 优化建议：{self.actionable_advice}")
+        return "\n".join(lines)
+
+
+class ComparatorRedstoneAnalyzer:
+
+    @staticmethod
+    def calculate_container_signal(slot_count: int, items: List[ContainerSlotInfo]) -> int:
+        if slot_count <= 0 or not items:
+            return 0
+        sum_filled_ratio = 0.0
+        has_any_item = False
+        for item in items:
+            if item.count > 0:
+                has_any_item = True
+                max_stk = item.max_stack if item.max_stack > 0 else 64
+                sum_filled_ratio += item.count / max_stk
+        if not has_any_item:
+            return 0
+        raw = 1.0 + (sum_filled_ratio / float(slot_count)) * 14.0
+        import math
+        return min(15, max(1, math.floor(raw)))
+
+    @staticmethod
+    def calculate_simple_container_signal(slot_count: int, total_items: int, max_stack: int = 64) -> int:
+        if slot_count <= 0 or total_items <= 0:
+            return 0
+        stk = max_stack if max_stack > 0 else 64
+        items = []
+        rem = total_items
+        for i in range(slot_count):
+            if rem <= 0:
+                break
+            take = min(stk, rem)
+            items.append(ContainerSlotInfo(i, "item", take, stk))
+            rem -= take
+        return ComparatorRedstoneAnalyzer.calculate_container_signal(slot_count, items)
+
+    @staticmethod
+    def analyze(cluster: Optional[LocalMachineCluster], target_pos: Optional[BlockPos] = None) -> ComparatorReport:
+        if not cluster or not cluster.blocks:
+            return ComparatorReport.empty()
+
+        comp = cluster.get_block(target_pos) if target_pos else None
+        if not comp or not comp.is_comparator:
+            for b in cluster.blocks.values():
+                if b.is_comparator:
+                    comp = b
+                    target_pos = b.pos
+                    break
+
+        if not comp or not comp.is_comparator:
+            return ComparatorReport.empty()
+
+        facing = comp.get_property("facing", "north").lower()
+        is_subtract = comp.get_property("mode", "compare").lower() == "subtract"
+
+        def opposite_offset(pos: BlockPos, f: str) -> BlockPos:
+            if f == "north": return pos.offset("south")
+            if f == "south": return pos.offset("north")
+            if f == "west": return pos.offset("east")
+            if f == "east": return pos.offset("west")
+            return pos.offset("south")
+
+        def facing_offset(pos: BlockPos, f: str) -> BlockPos:
+            if f == "north": return pos.offset("north")
+            if f == "south": return pos.offset("south")
+            if f == "west": return pos.offset("west")
+            if f == "east": return pos.offset("east")
+            return pos.offset("north")
+
+        def side_offsets(pos: BlockPos, f: str) -> List[BlockPos]:
+            if f in ("north", "south"):
+                return [pos.offset("west"), pos.offset("east")]
+            else:
+                return [pos.offset("north"), pos.offset("south")]
+
+        rear_pos = opposite_offset(target_pos, facing)
+        rear_block = cluster.get_block(rear_pos)
+
+        container_pos = rear_pos
+        container_type = "none"
+        slot_count = 0
+        filled_item_count = 0
+        has_unstackable = False
+        rear_signal = 0
+
+        def parse_container_type(bid: Optional[str]) -> str:
+            if not bid: return "unknown"
+            b = bid.lower()
+            for k in ["hopper", "chest", "barrel", "shulker_box", "dispenser", "dropper", "crafter", "furnace", "brewing_stand"]:
+                if k in b: return k
+            return "container"
+
+        def get_slot_capacity(ctype: str) -> int:
+            if ctype in ("hopper", "brewing_stand"): return 5
+            if ctype in ("chest", "barrel", "shulker_box"): return 27
+            if ctype in ("dispenser", "dropper", "crafter"): return 9
+            if ctype == "furnace": return 3
+            return 27
+
+        if rear_block and rear_block.is_container:
+            container_type = parse_container_type(rear_block.block_id)
+            slot_count = get_slot_capacity(container_type)
+            items_prop = rear_block.get_property("items_count", "") or rear_block.get_property("items", "")
+            has_unstackable = rear_block.get_property("has_unstackable", "false").lower() == "true"
+            if items_prop:
+                try:
+                    filled_item_count = int(items_prop)
+                except ValueError:
+                    filled_item_count = 0
+            else:
+                filled_item_count = 45 if rear_block.is_powered else 0
+
+            if has_unstackable:
+                items = [ContainerSlotInfo(0, "potion", 1, 1)]
+                rem = max(0, filled_item_count - 1)
+                for s in range(1, slot_count):
+                    take = min(64, rem)
+                    items.append(ContainerSlotInfo(s, "filler", take, 64))
+                    rem -= take
+                rear_signal = ComparatorRedstoneAnalyzer.calculate_container_signal(slot_count, items)
+            else:
+                rear_signal = ComparatorRedstoneAnalyzer.calculate_simple_container_signal(slot_count, filled_item_count, 64)
+        elif rear_block:
+            try:
+                rear_signal = int(rear_block.get_property("power", "0"))
+            except ValueError:
+                rear_signal = 15 if rear_block.is_powered else 0
+
+        side_signal = 0
+        for s_pos in side_offsets(target_pos, facing):
+            s_block = cluster.get_block(s_pos)
+            if s_block:
+                try:
+                    p = int(s_block.get_property("power", "0"))
+                except ValueError:
+                    p = 15 if s_block.is_powered else 0
+                if p > side_signal:
+                    side_signal = p
+
+        if is_subtract:
+            output_signal = max(0, rear_signal - side_signal)
+        else:
+            output_signal = rear_signal if rear_signal >= side_signal else 0
+
+        front_pos = facing_offset(target_pos, facing)
+        wire_chain = []
+        cur = front_pos
+        for _ in range(5):
+            w = cluster.get_block(cur)
+            if w and w.is_redstone_wire:
+                wire_chain.append(cur)
+                cur = facing_offset(cur, facing)
+            else:
+                break
+        wire_length = len(wire_chain)
+
+        is_sorter_slice = (rear_block is not None and rear_block.is_hopper) and (wire_length >= 2)
+        has_crosstalk_risk = False
+        is_overflow_protected = True
+        crosstalk_leak_targets = []
+
+        if is_sorter_slice:
+            if wire_length == 2:
+                is_overflow_protected = False
+                if filled_item_count >= 46 or output_signal >= 3:
+                    has_crosstalk_risk = True
+                    for w_pos in wire_chain:
+                        for side in side_offsets(w_pos, facing):
+                            adj = cluster.get_block(side)
+                            if adj and adj.is_redstone_wire:
+                                crosstalk_leak_targets.append(side)
+            elif wire_length >= 3:
+                is_overflow_protected = True
+                if output_signal >= 4:
+                    has_crosstalk_risk = True
+
+        issues = []
+        warnings = []
+        is_healthy = True
+
+        if has_unstackable:
+            is_healthy = False
+            issues.append(f"滤波漏斗内混入不可堆叠物品，导致比较器信号暴增至 {output_signal}！")
+
+        if has_crosstalk_risk:
+            is_healthy = False
+            issues.append(f"检测到红石串扰风险！当前信号强度 {output_signal} 在 {wire_length} 格红石线末端诱发横向泄漏，将毁损相邻分类切片！")
+        elif not is_overflow_protected and is_sorter_slice:
+            warnings.append(f"当前分类切片仅采用 {wire_length} 格红石线走线；若下方箱子满溢导致漏斗堆积超 45 件，将引发串扰！")
+
+        if not is_healthy:
+            if has_unstackable:
+                diag = "不可堆叠物品槽位污染，破坏物品分类器信号标定"
+                advice = "立即取出漏斗中的不可堆叠物品，换用重命名后的 64 堆叠方块作为滤波占位符。"
+            else:
+                diag = "分类机红石线过短或满溢超载，面临相邻切片串扰烧毁风险"
+                advice = "建议将红石粉线路扩充至 3 格走线，并严格采用 41+1+1+1+1 物品布局，确保满溢时信号上限截断在 3 格以内。"
+        elif is_sorter_slice:
+            diag = "物品分类切片架构健全，具备防满溢串扰保护" if is_overflow_protected else "物品分类切片正常运行（注意防范后续满仓溢出）"
+            advice = "当前 3 格红石走线与槽位配置安全，可支持紧凑密集切片并行排列。" if is_overflow_protected else "建议预留满仓停机熔断机制，或升级为标准 3 格红石线分类切片。"
+        else:
+            diag = f"红石比较器运行正常 (输出信号: {output_signal})"
+            advice = "当前处于减法模式，可通过侧面信号动态衰减实现脉冲延长或高频时钟。" if is_subtract else "当前处于比较模式，输出等于或大于后端信号时如实透传。"
+
+        return ComparatorReport(
+            is_healthy=is_healthy,
+            is_subtract_mode=is_subtract,
+            output_signal=output_signal,
+            rear_signal=rear_signal,
+            side_signal=side_signal,
+            is_sorter_slice=is_sorter_slice,
+            redstone_wire_length=wire_length,
+            has_crosstalk_risk=has_crosstalk_risk,
+            has_unstackable_pollution=has_unstackable,
+            is_overflow_protected=is_overflow_protected,
+            comparator_pos=target_pos,
+            container_pos=container_pos,
+            container_type=container_type,
+            filled_item_count=filled_item_count,
+            container_slot_capacity=slot_count,
+            redstone_wire_chain=wire_chain,
+            crosstalk_leak_targets=crosstalk_leak_targets,
             issues=issues,
             warnings=warnings,
             primary_diagnosis=diag,

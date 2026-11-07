@@ -1907,3 +1907,136 @@ def test_v24_piston_dynamics_and_quasi_connectivity_bud_analyzer():
 
     r_help = router.execute("Steve", "/hoshi help", None)
     assert "/hoshi piston" in r_help.message
+
+
+
+def test_comparator_dynamics_and_crosstalk_analyzer():
+    from mc_agent_core.cluster import (
+        ComparatorRedstoneAnalyzer,
+        ContainerSlotInfo,
+        LocalMachineCluster,
+        BlockPos
+    )
+    from mc_agent_core.spatial import SpatialDirectiveGenerator
+    from mc_agent_core.fast_path import FastPathResolver
+    from mc_agent_core.command import CommandRouter
+    from mc_agent_core.dispatcher import AsyncQueryDispatcher
+    from mc_agent_core.context import ContextSnapshot
+
+    # 1. Container Signal Formula Verification
+    assert ComparatorRedstoneAnalyzer.calculate_simple_container_signal(5, 0, 64) == 0
+    assert ComparatorRedstoneAnalyzer.calculate_simple_container_signal(5, 1, 64) == 1
+    # 45 items in 5-slot hopper (41+1+1+1+1): 45/320 = 0.140625 -> floor(1 + 0.140625 * 14) = 2
+    assert ComparatorRedstoneAnalyzer.calculate_simple_container_signal(5, 45, 64) == 2
+    # 46 items in 5-slot hopper: 46/320 = 0.14375 -> floor(1 + 0.14375 * 14) = 3
+    assert ComparatorRedstoneAnalyzer.calculate_simple_container_signal(5, 46, 64) == 3
+    # 68 items (full 64+1+1+1+1): 68/320 = 0.2125 -> floor(1 + 0.2125 * 14) = 3
+    assert ComparatorRedstoneAnalyzer.calculate_simple_container_signal(5, 68, 64) == 3
+    # Full hopper 320 items: signal 15
+    assert ComparatorRedstoneAnalyzer.calculate_simple_container_signal(5, 320, 64) == 15
+
+    # 2. Unstackable Item Pollution (1 potion + 4 items in hopper)
+    polluted_items = [
+        ContainerSlotInfo(0, "minecraft:potion", 1, 1),
+        ContainerSlotInfo(1, "minecraft:iron_ingot", 1, 64),
+        ContainerSlotInfo(2, "minecraft:iron_ingot", 1, 64),
+        ContainerSlotInfo(3, "minecraft:iron_ingot", 1, 64),
+        ContainerSlotInfo(4, "minecraft:iron_ingot", 1, 64),
+    ]
+    assert ComparatorRedstoneAnalyzer.calculate_container_signal(5, polluted_items) == 3
+
+    # 3. Cluster Analysis: Safe 3-wire Item Sorter Slice
+    safe_cluster = LocalMachineCluster(BlockPos(10, 64, 10)) \
+        .add(10, 64, 10, "minecraft:comparator", {"facing": "north", "mode": "compare"}) \
+        .add(10, 64, 11, "minecraft:hopper", {"items": "45", "facing": "east"}) \
+        .add(10, 64, 9, "minecraft:redstone_wire", {"power": "2"}) \
+        .add(10, 64, 8, "minecraft:redstone_wire", {"power": "1"}) \
+        .add(10, 64, 7, "minecraft:redstone_wire", {"power": "0"})
+
+    safe_rep = ComparatorRedstoneAnalyzer.analyze(safe_cluster, BlockPos(10, 64, 10))
+    assert safe_rep.is_healthy
+    assert safe_rep.is_sorter_slice
+    assert safe_rep.is_overflow_protected
+    assert not safe_rep.has_crosstalk_risk
+    assert safe_rep.redstone_wire_length == 3
+    assert safe_rep.output_signal == 2
+
+    # 4. Cluster Analysis: Risky 2-wire Item Sorter with Overflow Crosstalk
+    risky_cluster = LocalMachineCluster(BlockPos(10, 64, 10)) \
+        .add(10, 64, 10, "minecraft:comparator", {"facing": "north", "mode": "compare"}) \
+        .add(10, 64, 11, "minecraft:hopper", {"items": "46", "facing": "east"}) \
+        .add(10, 64, 9, "minecraft:redstone_wire", {"power": "3"}) \
+        .add(10, 64, 8, "minecraft:redstone_wire", {"power": "2"}) \
+        .add(11, 64, 9, "minecraft:redstone_wire", {"power": "0"})
+
+    risky_rep = ComparatorRedstoneAnalyzer.analyze(risky_cluster, BlockPos(10, 64, 10))
+    assert not risky_rep.is_healthy
+    assert risky_rep.has_crosstalk_risk
+    assert BlockPos(11, 64, 9) in risky_rep.crosstalk_leak_targets
+
+    # 5. Cluster Analysis: Unstackable Item Pollution
+    polluted_cluster = LocalMachineCluster(BlockPos(10, 64, 10)) \
+        .add(10, 64, 10, "minecraft:comparator", {"facing": "north", "mode": "compare"}) \
+        .add(10, 64, 11, "minecraft:hopper", {"has_unstackable": "true", "items": "5", "facing": "east"})
+    polluted_rep = ComparatorRedstoneAnalyzer.analyze(polluted_cluster, BlockPos(10, 64, 10))
+    assert not polluted_rep.is_healthy
+    assert polluted_rep.has_unstackable_pollution
+
+    # 6. Cluster Analysis: Subtraction Mode
+    sub_cluster = LocalMachineCluster(BlockPos(10, 64, 10)) \
+        .add(10, 64, 10, "minecraft:comparator", {"facing": "north", "mode": "subtract"}) \
+        .add(10, 64, 11, "minecraft:redstone_wire", {"power": "10"}) \
+        .add(9, 64, 10, "minecraft:redstone_wire", {"power": "4"})
+    sub_rep = ComparatorRedstoneAnalyzer.analyze(sub_cluster, BlockPos(10, 64, 10))
+    assert sub_rep.is_subtract_mode
+    assert sub_rep.output_signal == 6
+
+    # 7. 3D Spatial Directive Overlay
+    safe_overlay = SpatialDirectiveGenerator.generate_comparator_overlay(safe_cluster, safe_rep)
+    assert safe_overlay.category == "COMPARATOR_DYNAMICS"
+    assert "COMPARATOR" in safe_overlay.to_json()
+    assert "WIRE" in safe_overlay.to_json()
+
+    risky_overlay = SpatialDirectiveGenerator.generate_comparator_overlay(risky_cluster, risky_rep)
+    assert "CROSSTALK" in risky_overlay.to_json()
+    assert "CROSSTALK LEAK" in risky_overlay.to_json()
+
+    # 8. Fast Path Rules 60, 61, 62
+    r_formula = FastPathResolver.try_resolve("红石比较器容器信号怎么计算？")
+    assert r_formula is not None
+    assert r_formula.category == "COMPARATOR_CONTAINER_SIGNAL_FORMULA"
+    assert "核心数学公式" in r_formula.text_response
+
+    r_crosstalk = FastPathResolver.try_resolve("为什么物品分类机会串扰漏光？")
+    assert r_crosstalk is not None
+    assert r_crosstalk.category == "ITEM_SORTER_ANTI_OVERFLOW_AND_CROSSTALK"
+    assert "41+1 黄金配比" in r_crosstalk.text_response
+
+    r_subtract = FastPathResolver.try_resolve("比较器脉冲延长器怎么做？")
+    assert r_subtract is not None
+    assert r_subtract.category == "COMPARATOR_SUBTRACTION_MODE_AND_CLOCK_DYNAMICS"
+    assert "减法模式运算" in r_subtract.text_response
+
+    # 9. CommandRouter End-to-End
+    router = CommandRouter(AsyncQueryDispatcher())
+    r_empty = router.execute("Steve", "/hoshi comparator", None)
+    assert r_empty.is_success
+    assert "当前准星未捕捉到局部比较器" in r_empty.message
+
+    ctx_safe = ContextSnapshot("Steve", "overworld", 0.0, 64.0, 0.0, machine_cluster=safe_cluster)
+    r_comp = router.execute("Steve", "/hoshi comparator", ctx_safe)
+    assert r_comp.is_success
+    assert "红石比较器与容器分类拓扑诊断报告" in r_comp.message
+    assert r_comp.has_spatial_directive
+
+    r_cluster_comp = router.execute("Steve", "/hoshi cluster comparator", ctx_safe)
+    assert r_cluster_comp.is_success
+    assert "比较器状态" in r_cluster_comp.message
+
+    r_hl_comp = router.execute("Steve", "/hoshi highlight comparator", ctx_safe)
+    assert r_hl_comp.is_success
+    assert r_hl_comp.has_spatial_directive
+    assert r_hl_comp.spatial_directive.category == "COMPARATOR_DYNAMICS"
+
+    r_help = router.execute("Steve", "/hoshi help", None)
+    assert "/hoshi comparator" in r_help.message

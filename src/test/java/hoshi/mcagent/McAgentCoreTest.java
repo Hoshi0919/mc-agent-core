@@ -40,6 +40,7 @@ import hoshi.mcagent.create.CreateKineticsAnalyzer;
 import hoshi.mcagent.chunkload.PortalChunkLoaderAnalyzer;
 import hoshi.mcagent.cluster.Ae2NetworkAnalyzer;
 import hoshi.mcagent.cluster.PistonRedstoneAnalyzer;
+import hoshi.mcagent.cluster.ComparatorRedstoneAnalyzer;
 import hoshi.mcagent.cluster.BlockPos;
 import hoshi.mcagent.cluster.LocalBlock;
 import hoshi.mcagent.cluster.LocalMachineCluster;
@@ -140,6 +141,7 @@ public class McAgentCoreTest {
         testSpatialVisualOverlayProtocol();
         testAe2NetworkAnalyzerAndSpatialProtocol();
         testPistonDynamicsAndQuasiConnectivityBudAnalyzer();
+        testComparatorRedstoneAnalyzerAndSpatialProtocol();
 
         System.out.println(String.format("\n🎉 All %d/%d Java tests passed successfully!", testsPassed, testsRun));
     }
@@ -2213,6 +2215,152 @@ public class McAgentCoreTest {
         // /hoshi help mentions piston
         var resHelp = router.execute("Steve", "/hoshi help", null);
         assertTrue(resHelp.getMessage().contains("/hoshi piston"), "Help mentions /hoshi piston");
+    }
+    private static void testComparatorRedstoneAnalyzerAndSpatialProtocol() throws Exception {
+        // 1. Container Signal Formula Verification
+        int sigEmpty = ComparatorRedstoneAnalyzer.calculateSimpleContainerSignal(5, 0, 64);
+        assertTrue(sigEmpty == 0, "Empty container has 0 signal");
+
+        int sigOne = ComparatorRedstoneAnalyzer.calculateSimpleContainerSignal(5, 1, 64);
+        assertTrue(sigOne == 1, "Single item gives signal 1");
+
+        // 45 items in 5-slot hopper (41+1+1+1+1): 45/320 = 0.140625 -> floor(1 + 0.140625 * 14) = floor(2.96875) = 2
+        int sig45 = ComparatorRedstoneAnalyzer.calculateSimpleContainerSignal(5, 45, 64);
+        assertTrue(sig45 == 2, "45 items in hopper gives exact signal 2");
+
+        // 46 items in 5-slot hopper (42+1+1+1+1): 46/320 = 0.14375 -> floor(1 + 0.14375 * 14) = floor(3.0125) = 3
+        int sig46 = ComparatorRedstoneAnalyzer.calculateSimpleContainerSignal(5, 46, 64);
+        assertTrue(sig46 == 3, "46 items in hopper triggers transition to signal 3");
+
+        // 68 items (overflowed hopper 64+1+1+1+1): 68/320 = 0.2125 -> floor(1 + 0.2125 * 14) = floor(3.975) = 3
+        int sig68 = ComparatorRedstoneAnalyzer.calculateSimpleContainerSignal(5, 68, 64);
+        assertTrue(sig68 == 3, "68 items in hopper caps at signal 3");
+
+        // Full hopper 320 items: signal 15
+        int sigFull = ComparatorRedstoneAnalyzer.calculateSimpleContainerSignal(5, 320, 64);
+        assertTrue(sigFull == 15, "Full hopper gives maximum signal 15");
+
+        // 2. Unstackable item pollution (1 potion + 4 items in hopper):
+        // sum = 1/1 + 4/64 = 1.0625 -> 1.0625 / 5 = 0.2125 -> floor(1 + 0.2125 * 14) = 3
+        var pollutedItems = List.of(
+                new ComparatorRedstoneAnalyzer.ContainerSlotInfo(0, "minecraft:potion", 1, 1),
+                new ComparatorRedstoneAnalyzer.ContainerSlotInfo(1, "minecraft:iron_ingot", 1, 64),
+                new ComparatorRedstoneAnalyzer.ContainerSlotInfo(2, "minecraft:iron_ingot", 1, 64),
+                new ComparatorRedstoneAnalyzer.ContainerSlotInfo(3, "minecraft:iron_ingot", 1, 64),
+                new ComparatorRedstoneAnalyzer.ContainerSlotInfo(4, "minecraft:iron_ingot", 1, 64)
+        );
+        int sigPolluted = ComparatorRedstoneAnalyzer.calculateContainerSignal(5, pollutedItems);
+        assertTrue(sigPolluted == 3, "Unstackable item in hopper surges signal to 3");
+
+        // 3. Cluster Analysis: Safe 3-wire Item Sorter Slice
+        // Comparator at [10, 64, 10], facing north
+        // Hopper behind comparator at [10, 64, 11] (rear = opposite of north = south = z+1)
+        // Redstone wire in front at [10, 64, 9], [10, 64, 8], [10, 64, 7] (3 wires north)
+        var safeBuilder = LocalMachineCluster.builder(10, 64, 10);
+        safeBuilder.add(10, 64, 10, "minecraft:comparator", Map.of("facing", "north", "mode", "compare"));
+        safeBuilder.add(10, 64, 11, "minecraft:hopper", Map.of("items", "45", "facing", "east"));
+        safeBuilder.add(10, 64, 9, "minecraft:redstone_wire", Map.of("power", "2"));
+        safeBuilder.add(10, 64, 8, "minecraft:redstone_wire", Map.of("power", "1"));
+        safeBuilder.add(10, 64, 7, "minecraft:redstone_wire", Map.of("power", "0"));
+
+        var safeCluster = safeBuilder.build();
+        var safeReport = ComparatorRedstoneAnalyzer.analyze(safeCluster, new BlockPos(10, 64, 10));
+        assertTrue(safeReport.isHealthy(), "3-wire sorter slice is healthy");
+        assertTrue(safeReport.isSorterSlice(), "Identified as sorter slice");
+        assertTrue(safeReport.isOverflowProtected(), "3-wire sorter is overflow protected");
+        assertTrue(!safeReport.hasCrosstalkRisk(), "No crosstalk risk in safe slice");
+        assertTrue(safeReport.redstoneWireLength() == 3, "Redstone wire length is 3");
+        assertTrue(safeReport.outputSignal() == 2, "Output signal is 2 for 45 items");
+
+        // 4. Cluster Analysis: Risky 2-wire Item Sorter with Overflow Crosstalk
+        // 2 wires in front: [10, 64, 9], [10, 64, 8]
+        // Parallel wire adjacent at [11, 64, 9] (adjacent slice)
+        // Hopper has 46 items (signal 3)
+        var riskyBuilder = LocalMachineCluster.builder(10, 64, 10);
+        riskyBuilder.add(10, 64, 10, "minecraft:comparator", Map.of("facing", "north", "mode", "compare"));
+        riskyBuilder.add(10, 64, 11, "minecraft:hopper", Map.of("items", "46", "facing", "east"));
+        riskyBuilder.add(10, 64, 9, "minecraft:redstone_wire", Map.of("power", "3"));
+        riskyBuilder.add(10, 64, 8, "minecraft:redstone_wire", Map.of("power", "2"));
+        riskyBuilder.add(11, 64, 9, "minecraft:redstone_wire", Map.of("power", "0")); // adjacent slice wire
+
+        var riskyCluster = riskyBuilder.build();
+        var riskyReport = ComparatorRedstoneAnalyzer.analyze(riskyCluster, new BlockPos(10, 64, 10));
+        assertTrue(!riskyReport.isHealthy(), "Overflowed 2-wire sorter is unhealthy");
+        assertTrue(riskyReport.hasCrosstalkRisk(), "Crosstalk risk detected for 2-wire overflow");
+        assertTrue(!riskyReport.crosstalkLeakTargets().isEmpty(), "Crosstalk leak target captured");
+        assertTrue(riskyReport.crosstalkLeakTargets().contains(new BlockPos(11, 64, 9)), "Adjacent wire is leak target");
+
+        // 5. Cluster Analysis: Unstackable Item Pollution
+        var pollutedBuilder = LocalMachineCluster.builder(10, 64, 10);
+        pollutedBuilder.add(10, 64, 10, "minecraft:comparator", Map.of("facing", "north", "mode", "compare"));
+        pollutedBuilder.add(10, 64, 11, "minecraft:hopper", Map.of("has_unstackable", "true", "items", "5", "facing", "east"));
+        var pollutedCluster = pollutedBuilder.build();
+        var pollutedReport = ComparatorRedstoneAnalyzer.analyze(pollutedCluster, new BlockPos(10, 64, 10));
+        assertTrue(!pollutedReport.isHealthy(), "Polluted container is unhealthy");
+        assertTrue(pollutedReport.hasUnstackablePollution(), "Has unstackable pollution");
+
+        // 6. Cluster Analysis: Subtraction Mode
+        var subBuilder = LocalMachineCluster.builder(10, 64, 10);
+        subBuilder.add(10, 64, 10, "minecraft:comparator", Map.of("facing", "north", "mode", "subtract"));
+        subBuilder.add(10, 64, 11, "minecraft:redstone_wire", Map.of("power", "10")); // rear
+        subBuilder.add(9, 64, 10, "minecraft:redstone_wire", Map.of("power", "4"));   // side
+        var subCluster = subBuilder.build();
+        var subReport = ComparatorRedstoneAnalyzer.analyze(subCluster, new BlockPos(10, 64, 10));
+        assertTrue(subReport.isSubtractMode(), "Detected subtract mode");
+        assertTrue(subReport.outputSignal() == 6, "Subtract mode output: 10 - 4 = 6");
+
+        // 7. 3D Spatial Directive Overlay
+        var safeOverlay = SpatialDirectiveGenerator.generateComparatorOverlay(safeCluster, safeReport);
+        assertTrue(safeOverlay.category().equals("COMPARATOR_DYNAMICS"), "Overlay category is COMPARATOR_DYNAMICS");
+        assertTrue(safeOverlay.toJson().contains("COMPARATOR"), "Overlay JSON contains COMPARATOR");
+        assertTrue(safeOverlay.toJson().contains("WIRE"), "Overlay JSON contains WIRE");
+
+        var riskyOverlay = SpatialDirectiveGenerator.generateComparatorOverlay(riskyCluster, riskyReport);
+        assertTrue(riskyOverlay.toJson().contains("CROSSTALK"), "Risky overlay JSON contains CROSSTALK");
+        assertTrue(riskyOverlay.toJson().contains("CROSSTALK LEAK"), "Risky overlay JSON contains CROSSTALK LEAK");
+
+        // 8. Fast Path Rules 60, 61, 62
+        McAgentCore core = new McAgentCore();
+        var qFormula = core.query("Steve", "红石比较器容器信号怎么计算？", null).get();
+        assertTrue(qFormula.isFastPath(), "Fast path for comparator formula query");
+        assertTrue(qFormula.category().equals("COMPARATOR_CONTAINER_SIGNAL_FORMULA"), "Category is COMPARATOR_CONTAINER_SIGNAL_FORMULA");
+        assertTrue(qFormula.rawAnswer().contains("核心数学公式"), "Response mentions formula");
+
+        var qCrosstalk = core.query("Alex", "为什么物品分类机会串扰漏光？", null).get();
+        assertTrue(qCrosstalk.isFastPath(), "Fast path for sorter crosstalk query");
+        assertTrue(qCrosstalk.category().equals("ITEM_SORTER_ANTI_OVERFLOW_AND_CROSSTALK"), "Category is ITEM_SORTER_ANTI_OVERFLOW_AND_CROSSTALK");
+        assertTrue(qCrosstalk.rawAnswer().contains("41+1 黄金配比"), "Response mentions 41+1 ratio");
+
+        var qSubtract = core.query("Miner", "比较器脉冲延长器怎么做？", null).get();
+        assertTrue(qSubtract.isFastPath(), "Fast path for subtract clock query");
+        assertTrue(qSubtract.category().equals("COMPARATOR_SUBTRACTION_MODE_AND_CLOCK_DYNAMICS"), "Category is COMPARATOR_SUBTRACTION_MODE_AND_CLOCK_DYNAMICS");
+        assertTrue(qSubtract.rawAnswer().contains("减法模式运算"), "Response mentions subtract mode");
+
+        // 9. CommandRouter End-to-End
+        PlayerSessionManager sm = new PlayerSessionManager();
+        CommandRouter router = new CommandRouter(core, sm);
+
+        var resCompEmpty = router.execute("Steve", "/hoshi comparator", null);
+        assertTrue(resCompEmpty.isSuccess(), "Empty comparator command succeeds");
+        assertTrue(resCompEmpty.getMessage().contains("当前准星未捕捉到局部比较器"), "Reports no comparator targeted");
+
+        ContextSnapshot safeCtx = ContextSnapshot.builder().cluster(safeCluster).build();
+        var resCompSafe = router.execute("Steve", "/hoshi comparator", safeCtx);
+        assertTrue(resCompSafe.isSuccess(), "Comparator command succeeds on cluster");
+        assertTrue(resCompSafe.getMessage().contains("红石比较器与容器分类拓扑诊断报告"), "Message contains header");
+        assertTrue(resCompSafe.hasSpatialDirective(), "Result has spatial directive");
+
+        var resClusterComp = router.execute("Steve", "/hoshi cluster comparator", safeCtx);
+        assertTrue(resClusterComp.isSuccess(), "Cluster comparator command succeeds");
+        assertTrue(resClusterComp.getMessage().contains("比较器状态"), "Message contains comparator status");
+
+        var resHlComp = router.execute("Steve", "/hoshi highlight comparator", safeCtx);
+        assertTrue(resHlComp.isSuccess(), "Highlight comparator succeeds");
+        assertTrue(resHlComp.hasSpatialDirective(), "Highlight comparator has spatial directive");
+        assertTrue(resHlComp.getSpatialDirective().category().equals("COMPARATOR_DYNAMICS"), "Directive is COMPARATOR_DYNAMICS");
+
+        var resHelp = router.execute("Steve", "/hoshi help", null);
+        assertTrue(resHelp.getMessage().contains("/hoshi comparator"), "Help mentions /hoshi comparator");
     }
 
 }

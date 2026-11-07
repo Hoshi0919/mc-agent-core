@@ -100,6 +100,30 @@ class FastPathResolver:
         if any(k in q for k in ["槽位死锁", "槽位遮罩", "slot masking", "合成器配比"]):
             return Resolution(text_response="§d【1.21 自动合成器槽位遮罩与脉冲时钟闭环】\n▸ Slot Masking 槽位遮罩", category="CRAFTER_SLOT_MASKING_AND_PULSE_SYNC")
 
+        # 60. Comparator Container Signal Formula
+        if any(k in q for k in ["比较器信号公式", "容器信号计算", "比较器满箱信号", "不可堆叠物品信号"]) or ("比较器" in q and any(k in q for k in ["公式", "槽位", "计算", "强度"])):
+            resp = ("§e【红石比较器容器信号强度计算公式与槽位加权】§r\n"
+                    "▸ §b核心数学公式§r：若容器非空，输出信号强度 S = floor(1 + (sum(count_i / maxStack_i) / N) * 14)；空容器输出 S = 0！\n"
+                    "▸ §c槽位加权差异§r：64 堆叠常规；16 堆叠（珍珠/雪球）1个等效4个普通；不可堆叠（剑/药水）1个填满整槽（等效64个普通物品）！\n"
+                    "▸ §a特殊容器映射§r：雕纹书架对应最后书槽 (1~6)；堆肥桶对应层数 (0~8)；蜂箱对应蜂蜜等级 (0~5)；唱片机按曲目输出 (1~15)。")
+            return Resolution(text_response=resp, suggested_command="/hoshi comparator", category="COMPARATOR_CONTAINER_SIGNAL_FORMULA")
+
+        # 61. Item Sorter Anti-Overflow & Crosstalk
+        if not any(k in q for k in ["死锁", "分类器"]) and (any(k in q for k in ["串扰", "防串扰"]) or ("分类机" in q and any(k in q for k in ["走线", "溢出", "漏空", "3格", "漏光", "串扰"]))):
+            resp = ("§6【物品分类机 41+1 布局与 3 格防串扰线路架构】§r\n"
+                    "▸ §e41+1 黄金配比§r：5 槽漏斗放置 41 个目标物品 + 4 个命名占位符（总物品 45，占用率 45/320）；静态输出严格为 2 级信号！\n"
+                    "▸ §a跃迁解锁机制§r：流入第 42 个物品（总数 46）瞬间，信号跳升至 3 级，激活第 3 格红石粉解锁漏斗抽走 1 件，回落至 2 级锁死！\n"
+                    "▸ §c3格红石线防串扰§r：2格线若遇箱子满载堆积至68件（信号3级），将横向泄漏激活相邻切片导致隔壁漏光！3格线可物理阻断横向串扰。")
+            return Resolution(text_response=resp, suggested_command="/hoshi comparator", category="ITEM_SORTER_ANTI_OVERFLOW_AND_CROSSTALK")
+
+        # 62. Comparator Subtraction Mode & Clock Dynamics
+        if any(k in q for k in ["脉冲延长器", "比较器衰减", "比较器回环"]) or ("比较器" in q and any(k in q for k in ["脉冲延长", "延时关门", "自反馈时钟", "回环时钟", "衰减器"])):
+            resp = ("§d【比较器减法模式、脉冲衰减与高频时钟发生器】§r\n"
+                    "▸ §e减法模式运算§r：前端火把点亮时进入减法模式，输出 S_out = max(0, S_rear - S_side)；侧面信号越大，输出被抵消越多！\n"
+                    "▸ §c比较器回环高频时钟§r：比较器输出端接回自身侧边，产生极高频 1-tick 脉冲震荡 (10 Hz)；注意防范集群 tick 卡顿！\n"
+                    "▸ §a脉冲延长器 (Pulse Extender)§r：双向比较器两边并联红石线，信号每 tick 衰减 1 级，实现平滑延时关门与机器缓冲。")
+            return Resolution(text_response=resp, suggested_command="/hoshi comparator", category="COMPARATOR_SUBTRACTION_MODE_AND_CLOCK_DYNAMICS")
+
 
         # 0. Context-Aware Crosshair Target Block Mining
         if context and context.target_block and not context.target_block.is_air:

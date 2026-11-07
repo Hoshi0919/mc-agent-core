@@ -2,6 +2,7 @@ package hoshi.mcagent.command;
 
 import hoshi.mcagent.cluster.Ae2NetworkAnalyzer;
 import hoshi.mcagent.cluster.PistonRedstoneAnalyzer;
+import hoshi.mcagent.cluster.ComparatorRedstoneAnalyzer;
 import hoshi.mcagent.cluster.BlockPos;
 import hoshi.mcagent.spatial.SpatialDirectiveGenerator;
 import hoshi.mcagent.spatial.SpatialDirectivePacket;
@@ -248,6 +249,11 @@ public class CommandRouter {
             case "qc":
             case "bud": {
                 return handlePiston(playerId, tokens, argStart, snapshot);
+            }
+            case "comparator":
+            case "comp":
+            case "sorter": {
+                return handleComparator(playerId, tokens, argStart, snapshot);
             }
             case "cluster":
             case "topo": {
@@ -674,6 +680,24 @@ public class CommandRouter {
     }
 
     
+    private CommandResult handleComparator(String playerId, String[] tokens, int argStart, ContextSnapshot snapshot) {
+        LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
+        if (cluster == null || cluster.isEmpty() || cluster.getConnectedComparators().isEmpty()) {
+            String msg = "§e【红石比较器与容器分类诊断】§r\n" +
+                    "当前准星未捕捉到局部比较器或分类机漏斗集群。\n" +
+                    "请将准星对准红石比较器、漏斗或红石粉，然后再次输入 `/hoshi comparator` 触发容器信号与防串扰诊断！";
+            return CommandResult.success("COMPARATOR", msg, null, null, null);
+        }
+        var report = ComparatorRedstoneAnalyzer.analyze(cluster, cluster.origin());
+        String text = report.formatReport();
+        ChatPaginator.PagedResult paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page");
+        sessionManager.recordInteraction(playerId, "/hoshi comparator", text, "COMPARATOR", paged);
+        var comps = MinecraftTextFormatter.parseComponents(paged.fullPageText(), "/hoshi comparator");
+        String tellraw = TellrawJsonBuilder.toJson(comps);
+        var packet = SpatialDirectiveGenerator.generateComparatorOverlay(cluster, report);
+        return CommandResult.success("COMPARATOR", paged.fullPageText(), null, tellraw, paged, packet);
+    }
+
     private CommandResult handlePiston(String playerId, String[] tokens, int argStart, ContextSnapshot snapshot) {
         LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
         if (cluster == null || cluster.isEmpty() || cluster.getConnectedPistons().isEmpty()) {
@@ -748,6 +772,17 @@ public class CommandRouter {
             }
         }
 
+        if ("comparator".equals(sub) || "sorter".equals(sub) || "all".equals(sub)) {
+            var c = ComparatorRedstoneAnalyzer.analyze(cluster, cluster.origin());
+            if (!cluster.getConnectedComparators().isEmpty()) {
+                sb.append(String.format("▸ 比较器状态：%s\n", c.primaryDiagnosis()));
+                if (!c.issues().isEmpty()) {
+                    for (String iss : c.issues()) sb.append("  ✖ ").append(iss).append("\n");
+                }
+                sb.append("  建议：").append(c.actionableAdvice()).append("\n");
+            }
+        }
+
         if ("piston".equals(sub) || "qc".equals(sub) || "all".equals(sub)) {
             var p = PistonRedstoneAnalyzer.analyze(cluster);
             if (!cluster.getConnectedPistons().isEmpty()) {
@@ -781,6 +816,9 @@ public class CommandRouter {
         } else if ("piston".equals(sub) || "qc".equals(sub)) {
             var p = PistonRedstoneAnalyzer.analyze(cluster);
             packet = SpatialDirectiveGenerator.generatePistonOverlay(cluster, p);
+        } else if ("comparator".equals(sub) || "sorter".equals(sub)) {
+            var c = ComparatorRedstoneAnalyzer.analyze(cluster, cluster.origin());
+            packet = SpatialDirectiveGenerator.generateComparatorOverlay(cluster, c);
         } else if ("hopper".equals(sub)) {
             var h = HopperNetworkAnalyzer.analyze(cluster);
             packet = SpatialDirectiveGenerator.generateHopperOverlay(cluster, h);
@@ -824,6 +862,16 @@ public class CommandRouter {
             }
             var a = Ae2NetworkAnalyzer.analyze(cluster);
             var packet = SpatialDirectiveGenerator.generateAe2Overlay(cluster, a);
+            return CommandResult.success("HIGHLIGHT", "§a[Hoshi 3D 高亮] " + packet.hudTitle(), null, packet.toTellrawFallback(), null, packet);
+        }
+
+        if ("comparator".equals(sub) || "sorter".equals(sub) || "comp".equals(sub)) {
+            LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
+            if (cluster == null || cluster.isEmpty() || cluster.getConnectedComparators().isEmpty()) {
+                return CommandResult.error("HIGHLIGHT", "§c准星未捕捉到局部比较器组件，无法投射比较器高亮。");
+            }
+            var c = ComparatorRedstoneAnalyzer.analyze(cluster, cluster.origin());
+            var packet = SpatialDirectiveGenerator.generateComparatorOverlay(cluster, c);
             return CommandResult.success("HIGHLIGHT", "§a[Hoshi 3D 高亮] " + packet.hudTitle(), null, packet.toTellrawFallback(), null, packet);
         }
 
@@ -878,6 +926,7 @@ public class CommandRouter {
                 "▸ §e/hoshi highlight hopper§r - 投射漏斗死锁环路与物流方向箭头\n" +
                 "▸ §e/hoshi highlight multiblock <名称>§r - 在准星位置投射多方块虚影蓝图\n" +
                 "▸ §e/hoshi highlight mobfarm§r - 以自身为中心投射 24/32/128m 刷怪动力学清除圈\n" +
+                "▸ §e/hoshi highlight comparator§r - 投射比较器信号、串扰高危线路与漏斗负载\n" +
                 "▸ §e/hoshi highlight piston§r - 投射准连接 QC 隔电源、BUD 锁定与推块超载\n" +
                 "▸ §e/hoshi highlight clear§r - 清除所有世界高亮与全息虚影";
         return CommandResult.success("HIGHLIGHT", msg, null, null, null);
@@ -899,6 +948,7 @@ public class CommandRouter {
                 "▸ §e/hoshi chunkloader <permaloader/portal>§r - 诊断生电传送门常载网与 8:1 坐标漂移\n" +
                                 "▸ §e/hoshi ae2§r - 诊断准星 AE2 数字化网络拓扑、控制器合法性与 8/32 频道溢出\n" +
                 "▸ §e/hoshi highlight ae2§r - 投射 AE2 频道过载红线与掉线设备 3D 空间全息覆盖层\n" +
+                "▸ §e/hoshi comparator§r - 诊断准星比较器信号强度、分类机满溢串扰与防溢出保护\n" +
                 "▸ §e/hoshi piston§r - 诊断准星活塞准连接 (QC)、BUD 锁定与推块链超载\n" +
                 "▸ §e/hoshi cluster [kinetics/hopper/crafter]§r - 诊断局部机器拓扑、齿轮卡死与漏斗回路\n" +
                 "▸ §e/hoshi highlight [kinetics/hopper/multiblock/mobfarm/clear]§r - 投射 3D 空间高亮与全息虚影\n" +

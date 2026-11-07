@@ -293,6 +293,33 @@ public final class FastPathResolver {
             return Optional.of(new Resolution(resp, null, "STICKY_PISTON_ONE_TICK_DROP_BLOCK"));
         }
 
+        // 60. Comparator Container Signal Formula
+        if (q.contains("比较器信号公式") || q.contains("容器信号计算") || q.contains("比较器满箱信号") || q.contains("不可堆叠物品信号") || (q.contains("比较器") && (q.contains("公式") || q.contains("槽位") || q.contains("计算") || q.contains("强度")))) {
+            String resp = "§e【红石比较器容器信号强度计算公式与槽位加权】§r\n" +
+                    "▸ §b核心数学公式§r：若容器非空，输出信号强度 S = floor(1 + (sum(count_i / maxStack_i) / N) * 14)；空容器输出 S = 0！\n" +
+                    "▸ §c槽位加权差异§r：64 堆叠常规；16 堆叠（珍珠/雪球）1个等效4个普通；不可堆叠（剑/药水）1个填满整槽（等效64个普通物品）！\n" +
+                    "▸ §a特殊容器映射§r：雕纹书架对应最后书槽 (1~6)；堆肥桶对应层数 (0~8)；蜂箱对应蜂蜜等级 (0~5)；唱片机按曲目输出 (1~15)。";
+            return Optional.of(new Resolution(resp, "/hoshi comparator", "COMPARATOR_CONTAINER_SIGNAL_FORMULA"));
+        }
+
+        // 61. Item Sorter Anti-Overflow & Crosstalk
+        if (!q.contains("死锁") && !q.contains("分类器") && (q.contains("串扰") || q.contains("防串扰") || (q.contains("分类机") && (q.contains("走线") || q.contains("溢出") || q.contains("漏空") || q.contains("3格") || q.contains("漏光") || q.contains("串扰"))))) {
+            String resp = "§6【物品分类机 41+1 布局与 3 格防串扰线路架构】§r\n" +
+                    "▸ §e41+1 黄金配比§r：5 槽漏斗放置 41 个目标物品 + 4 个命名占位符（总物品 45，占用率 45/320）；静态输出严格为 2 级信号！\n" +
+                    "▸ §a跃迁解锁机制§r：流入第 42 个物品（总数 46）瞬间，信号跳升至 3 级，激活第 3 格红石粉解锁漏斗抽走 1 件，回落至 2 级锁死！\n" +
+                    "▸ §c3格红石线防串扰§r：2格线若遇箱子满载堆积至68件（信号3级），将横向泄漏激活相邻切片导致隔壁漏光！3格线可物理阻断横向串扰。";
+            return Optional.of(new Resolution(resp, "/hoshi comparator", "ITEM_SORTER_ANTI_OVERFLOW_AND_CROSSTALK"));
+        }
+
+        // 62. Comparator Subtraction Mode & Clock Dynamics
+        if (q.contains("脉冲延长器") || q.contains("比较器衰减") || q.contains("比较器回环") || (q.contains("比较器") && (q.contains("脉冲延长") || q.contains("延时关门") || q.contains("自反馈时钟") || q.contains("回环时钟") || q.contains("衰减器")))) {
+            String resp = "§d【比较器减法模式、脉冲衰减与高频时钟发生器】§r\n" +
+                    "▸ §e减法模式运算§r：前端火把点亮时进入减法模式，输出 S_out = max(0, S_rear - S_side)；侧面信号越大，输出被抵消越多！\n" +
+                    "▸ §c比较器回环高频时钟§r：比较器输出端接回自身侧边，产生极高频 1-tick 脉冲震荡 (10 Hz)；注意防范集群 tick 卡顿！\n" +
+                    "▸ §a脉冲延长器 (Pulse Extender)§r：双向比较器两边并联红石线，信号每 tick 衰减 1 级，实现平滑延时关门与机器缓冲。";
+            return Optional.of(new Resolution(resp, "/hoshi comparator", "COMPARATOR_SUBTRACTION_MODE_AND_CLOCK_DYNAMICS"));
+        }
+
         // 53. Crafter Slot Masking & Pulse Sync
         if (q.contains("槽位死锁") || q.contains("槽位遮罩") || q.contains("slot masking") || q.contains("脉冲闭环") || (q.contains("合成器") && (q.contains("死锁") || q.contains("配平") || q.contains("遮罩") || q.contains("时钟")))) {
             String resp = "§d【1.21 自动合成器槽位遮罩与脉冲时钟闭环】\n" +

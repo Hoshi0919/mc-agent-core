@@ -185,6 +185,8 @@ class CommandRouter:
             return self._handle_ae2(player_id, tokens, arg_start, snapshot)
         elif sub in ("piston", "qc", "bud"):
             return self._handle_piston(player_id, tokens, arg_start, snapshot)
+        elif sub in ("comparator", "comp", "sorter"):
+            return self._handle_comparator(player_id, tokens, arg_start, snapshot)
         elif sub in ("cluster", "topo"):
             return self._handle_cluster(player_id, tokens, arg_start, snapshot)
         elif sub in ("highlight", "hl"):
@@ -519,6 +521,15 @@ class CommandRouter:
                     sb.append(f"  ✖ {iss}")
                 sb.append(f"  建议：{a.actionable_remediation}")
 
+        if sub in ("comparator", "sorter", "all"):
+            from mc_agent_core.cluster import ComparatorRedstoneAnalyzer
+            c = ComparatorRedstoneAnalyzer.analyze(cluster, cluster.origin)
+            if cluster.get_connected_comparators():
+                sb.append(f"▸ 比较器状态：{c.primary_diagnosis}")
+                for iss in c.issues:
+                    sb.append(f"  ✖ {iss}")
+                sb.append(f"  建议：{c.actionable_advice}")
+
         if sub in ("piston", "qc", "all"):
             from mc_agent_core.cluster import PistonRedstoneAnalyzer
             p = PistonRedstoneAnalyzer.analyze(cluster)
@@ -553,6 +564,10 @@ class CommandRouter:
             from mc_agent_core.cluster import PistonRedstoneAnalyzer
             p = PistonRedstoneAnalyzer.analyze(cluster)
             packet = SpatialDirectiveGenerator.generate_piston_overlay(cluster, p)
+        elif sub in ("comparator", "sorter"):
+            from mc_agent_core.cluster import ComparatorRedstoneAnalyzer
+            c = ComparatorRedstoneAnalyzer.analyze(cluster, cluster.origin)
+            packet = SpatialDirectiveGenerator.generate_comparator_overlay(cluster, c)
         elif sub == "hopper":
             from mc_agent_core.cluster import HopperNetworkAnalyzer
             h = HopperNetworkAnalyzer.analyze(cluster)
@@ -567,6 +582,23 @@ class CommandRouter:
                 packet = SpatialDirectiveGenerator.generate_hopper_overlay(cluster, h)
 
         return CommandResult(status="SUCCESS", action="CLUSTER", message="\n".join(sb), spatial_directive=packet)
+
+    def _handle_comparator(self, player_id: Optional[str], tokens: list, arg_start: int, snapshot: Optional[ContextSnapshot]) -> CommandResult:
+        cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
+        if not cluster or cluster.is_empty or not cluster.get_connected_comparators():
+            msg = ("§e【红石比较器与容器分类诊断】§r\n"
+                   "当前准星未捕捉到局部比较器或分类机漏斗集群。\n"
+                   "请将准星对准红石比较器、漏斗或红石粉，然后再次输入 `/hoshi comparator` 触发容器信号与防串扰诊断！")
+            return CommandResult(status="SUCCESS", action="COMPARATOR", message=msg)
+        from mc_agent_core.cluster import ComparatorRedstoneAnalyzer
+        report = ComparatorRedstoneAnalyzer.analyze(cluster, cluster.origin)
+        text = report.format_report()
+        paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page")
+        self.session_manager.record_interaction(player_id, "/hoshi comparator", text, "COMPARATOR", paged)
+        comps = MinecraftTextFormatter.parse_components(paged.full_page_text, "/hoshi comparator")
+        tellraw = TellrawJsonBuilder.to_json(comps)
+        pkt = SpatialDirectiveGenerator.generate_comparator_overlay(cluster, report)
+        return CommandResult(status="SUCCESS", action="COMPARATOR", message=paged.full_page_text, tellraw_json=tellraw, paged_result=paged, spatial_directive=pkt)
 
     def _handle_piston(self, player_id: Optional[str], tokens: list, arg_start: int, snapshot: Optional[ContextSnapshot]) -> CommandResult:
         cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
@@ -616,6 +648,15 @@ class CommandRouter:
             from mc_agent_core.cluster import KineticNetworkAnalyzer
             k = KineticNetworkAnalyzer.analyze(cluster)
             pkt = SpatialDirectiveGenerator.generate_kinetic_overlay(cluster, k)
+            return CommandResult(status="SUCCESS", action="HIGHLIGHT", message=f"§a[Hoshi 3D 高亮] {pkt.hud_title}", spatial_directive=pkt)
+
+        if sub in ("comparator", "sorter", "comp"):
+            cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
+            if not cluster or cluster.is_empty or not cluster.get_connected_comparators():
+                return CommandResult(status="ERROR", action="HIGHLIGHT", message="§c准星未捕捉到局部比较器组件，无法投射比较器高亮。")
+            from mc_agent_core.cluster import ComparatorRedstoneAnalyzer
+            c = ComparatorRedstoneAnalyzer.analyze(cluster, cluster.origin)
+            pkt = SpatialDirectiveGenerator.generate_comparator_overlay(cluster, c)
             return CommandResult(status="SUCCESS", action="HIGHLIGHT", message=f"§a[Hoshi 3D 高亮] {pkt.hud_title}", spatial_directive=pkt)
 
         if sub in ("piston", "qc", "bud"):
@@ -670,6 +711,7 @@ class CommandRouter:
         msg = ("§6【Hoshi 3D 空间全息高亮指令】§r\n"
                "▸ §e/hoshi highlight kinetics§r - 在游戏世界高亮冲突齿轮与流向\n"
                "▸ §e/hoshi highlight hopper§r - 投射漏斗死锁环路与物流方向箭头\n"
+               "▸ §e/hoshi highlight comparator§r - 投射比较器信号、串扰高危线路与漏斗负载\n" +
                "▸ §e/hoshi highlight piston§r - 投射准连接 QC 隔电源、BUD 锁定与推块超载\n"
                "▸ §e/hoshi highlight multiblock <名称>§r - 在准星位置投射多方块虚影蓝图\n"
                "▸ §e/hoshi highlight mobfarm§r - 以自身为中心投射 24/32/128m 刷怪动力学清除圈\n"
@@ -691,6 +733,7 @@ class CommandRouter:
             "▸ §e/hoshi anvil <装备> [附魔:等级...]§r - 规划二叉树最优附魔工序规避过于昂贵\n"
             "▸ §e/hoshi create stress <动力源> [规模]§r - 诊断 Create 模组动力网应力与过载转速\n"
             "▸ §e/hoshi ae2§r - 诊断准星 AE2 数字化网络拓扑、控制器合法性与 8/32 频道溢出\n"
+            "▸ §e/hoshi comparator§r - 诊断准星比较器信号强度、分类机满溢串扰与防溢出保护\n" +
             "▸ §e/hoshi piston§r - 诊断准星活塞准连接 (QC)、BUD 锁定与推块链超载\n"
             "▸ §e/hoshi highlight ae2§r - 投射 AE2 频道过载红线与掉线设备 3D 空间全息覆盖层\n"
             "▸ §e/hoshi cluster - 诊断局部机器拓扑\n▸ §e/hoshi chunkloader <permaloader/portal>§r - 诊断生电传送门常载网与 8:1 坐标漂移\n"

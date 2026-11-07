@@ -455,3 +455,57 @@ class SpatialDirectiveGenerator:
             hud_title=report.primary_diagnosis,
             hud_description=report.actionable_advice
         )
+
+    @classmethod
+    def generate_comparator_overlay(cls, cluster: Optional[Any], report: Optional[Any]) -> SpatialDirectivePacket:
+        if not report or (getattr(report, "container_type", "none") == "none" and report.output_signal == 0 and report.redstone_wire_length == 0 and not report.is_subtract_mode):
+            return SpatialDirectivePacket.empty()
+
+        primitives: List[SpatialPrimitive] = []
+        duration = 300
+        c_pos = report.comparator_pos
+
+        # 1. Comparator outline
+        if report.has_crosstalk_risk or report.has_unstackable_pollution:
+            primitives.append(SpatialPrimitive.box_outline(c_pos, SpatialColor.RED, "COMPARATOR HAZARD", duration))
+            primitives.append(SpatialPrimitive.billboard(c_pos.offset("up"), f"⚡ 比较器告警 (信号: {report.output_signal})", SpatialColor.RED, duration))
+        elif report.is_subtract_mode:
+            primitives.append(SpatialPrimitive.box_outline(c_pos, SpatialColor.PURPLE, "SUBTRACT MODE", duration))
+            primitives.append(SpatialPrimitive.billboard(c_pos.offset("up"), f"➖ 减法模式 (输出: {report.output_signal})", SpatialColor.PURPLE, duration))
+        else:
+            primitives.append(SpatialPrimitive.box_outline(c_pos, SpatialColor.YELLOW, "COMPARATOR", duration))
+            primitives.append(SpatialPrimitive.billboard(c_pos.offset("up"), f"⚡ 比较模式 (信号: {report.output_signal})", SpatialColor.YELLOW, duration))
+
+        # 2. Bound container
+        if getattr(report, "container_type", "none") != "none":
+            cont_pos = report.container_pos
+            if report.has_unstackable_pollution:
+                primitives.append(SpatialPrimitive.box_outline(cont_pos, SpatialColor.PURPLE, "POLLUTED CONTAINER", duration))
+                primitives.append(SpatialPrimitive.billboard(cont_pos.offset("up"), "✖ 槽位污染：不可堆叠物品", SpatialColor.PURPLE, duration))
+            else:
+                primitives.append(SpatialPrimitive.box_outline(cont_pos, SpatialColor.CYAN, "CONTAINER", duration))
+                primitives.append(SpatialPrimitive.billboard(cont_pos.offset("up"), f"📦 容器负载: {report.filled_item_count} 物品", SpatialColor.CYAN, duration))
+
+        # 3. Redstone wire chain
+        if report.redstone_wire_chain:
+            for i, w_pos in enumerate(report.redstone_wire_chain):
+                if report.has_crosstalk_risk:
+                    primitives.append(SpatialPrimitive.box_outline(w_pos, SpatialColor.RED, "CROSSTALK WIRE", duration))
+                elif report.is_overflow_protected:
+                    primitives.append(SpatialPrimitive.box_outline(w_pos, SpatialColor.GREEN, f"WIRE #{i + 1}", duration))
+                else:
+                    primitives.append(SpatialPrimitive.box_outline(w_pos, SpatialColor.ORANGE, f"WIRE #{i + 1}", duration))
+
+        # 4. Crosstalk leakage targets
+        for leak_target in report.crosstalk_leak_targets:
+            primitives.append(SpatialPrimitive.box_outline(leak_target, SpatialColor.RED, "CROSSTALK LEAK TARGET", duration))
+            primitives.append(SpatialPrimitive.flow_arrow(c_pos, leak_target, SpatialColor.RED, "CROSSTALK LEAK", duration))
+            primitives.append(SpatialPrimitive.billboard(leak_target.offset("up"), "⚠ 串扰信号泄漏毁损", SpatialColor.RED, duration))
+
+        return SpatialDirectivePacket(
+            id=f"comparator-dynamics-{int(time.time()*1000)}",
+            category="COMPARATOR_DYNAMICS",
+            primitives=primitives,
+            hud_title=report.primary_diagnosis,
+            hud_description=report.actionable_advice
+        )

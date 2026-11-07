@@ -2,6 +2,7 @@ package hoshi.mcagent.spatial;
 
 import hoshi.mcagent.cluster.Ae2NetworkAnalyzer;
 import hoshi.mcagent.cluster.PistonRedstoneAnalyzer;
+import hoshi.mcagent.cluster.ComparatorRedstoneAnalyzer;
 import hoshi.mcagent.cluster.BlockPos;
 import hoshi.mcagent.cluster.HopperNetworkAnalyzer;
 import hoshi.mcagent.cluster.KineticNetworkAnalyzer;
@@ -421,6 +422,73 @@ public final class SpatialDirectiveGenerator {
         return SpatialDirectivePacket.of(
                 "piston-dynamics-" + System.currentTimeMillis(),
                 "PISTON_DYNAMICS",
+                primitives,
+                report.primaryDiagnosis(),
+                report.actionableAdvice()
+        );
+    }
+
+    /**
+     * Generates in-world holographic overlays for Minecraft Redstone Comparators,
+     * container fullness, item sorter crosstalk hazards, and overflow protection.
+     */
+    public static SpatialDirectivePacket generateComparatorOverlay(LocalMachineCluster cluster, ComparatorRedstoneAnalyzer.ComparatorReport report) {
+        if (report == null || "none".equals(report.containerType()) && report.outputSignal() == 0 && report.redstoneWireLength() == 0 && !report.isSubtractMode()) {
+            return SpatialDirectivePacket.empty();
+        }
+
+        List<SpatialPrimitive> primitives = new ArrayList<>();
+        int duration = 300; // 15 seconds
+        BlockPos cPos = report.comparatorPos();
+
+        // 1. Comparator outline
+        if (report.hasCrosstalkRisk() || report.hasUnstackablePollution()) {
+            primitives.add(SpatialPrimitive.boxOutline(cPos, SpatialColor.RED, "COMPARATOR HAZARD", duration));
+            primitives.add(SpatialPrimitive.billboard(cPos.offset("up"), String.format("⚡ 比较器告警 (信号: %d)", report.outputSignal()), SpatialColor.RED, duration));
+        } else if (report.isSubtractMode()) {
+            primitives.add(SpatialPrimitive.boxOutline(cPos, SpatialColor.PURPLE, "SUBTRACT MODE", duration));
+            primitives.add(SpatialPrimitive.billboard(cPos.offset("up"), String.format("➖ 减法模式 (输出: %d)", report.outputSignal()), SpatialColor.PURPLE, duration));
+        } else {
+            primitives.add(SpatialPrimitive.boxOutline(cPos, SpatialColor.YELLOW, "COMPARATOR", duration));
+            primitives.add(SpatialPrimitive.billboard(cPos.offset("up"), String.format("⚡ 比较模式 (信号: %d)", report.outputSignal()), SpatialColor.YELLOW, duration));
+        }
+
+        // 2. Bound container
+        if (!"none".equals(report.containerType())) {
+            BlockPos contPos = report.containerPos();
+            if (report.hasUnstackablePollution()) {
+                primitives.add(SpatialPrimitive.boxOutline(contPos, SpatialColor.PURPLE, "POLLUTED CONTAINER", duration));
+                primitives.add(SpatialPrimitive.billboard(contPos.offset("up"), "✖ 槽位污染：不可堆叠物品", SpatialColor.PURPLE, duration));
+            } else {
+                primitives.add(SpatialPrimitive.boxOutline(contPos, SpatialColor.CYAN, "CONTAINER", duration));
+                primitives.add(SpatialPrimitive.billboard(contPos.offset("up"), String.format("📦 容器负载: %d 物品", report.filledItemCount()), SpatialColor.CYAN, duration));
+            }
+        }
+
+        // 3. Redstone wire chain
+        if (!report.redstoneWireChain().isEmpty()) {
+            for (int i = 0; i < report.redstoneWireChain().size(); i++) {
+                BlockPos wPos = report.redstoneWireChain().get(i);
+                if (report.hasCrosstalkRisk()) {
+                    primitives.add(SpatialPrimitive.boxOutline(wPos, SpatialColor.RED, "CROSSTALK WIRE", duration));
+                } else if (report.isOverflowProtected()) {
+                    primitives.add(SpatialPrimitive.boxOutline(wPos, SpatialColor.GREEN, String.format("WIRE #%d", i + 1), duration));
+                } else {
+                    primitives.add(SpatialPrimitive.boxOutline(wPos, SpatialColor.ORANGE, String.format("WIRE #%d", i + 1), duration));
+                }
+            }
+        }
+
+        // 4. Crosstalk leakage targets
+        for (BlockPos leakTarget : report.crosstalkLeakTargets()) {
+            primitives.add(SpatialPrimitive.boxOutline(leakTarget, SpatialColor.RED, "CROSSTALK LEAK TARGET", duration));
+            primitives.add(SpatialPrimitive.flowArrow(cPos, leakTarget, SpatialColor.RED, "CROSSTALK LEAK", duration));
+            primitives.add(SpatialPrimitive.billboard(leakTarget.offset("up"), "⚠ 串扰信号泄漏毁损", SpatialColor.RED, duration));
+        }
+
+        return SpatialDirectivePacket.of(
+                "comparator-dynamics-" + System.currentTimeMillis(),
+                "COMPARATOR_DYNAMICS",
                 primitives,
                 report.primaryDiagnosis(),
                 report.actionableAdvice()
