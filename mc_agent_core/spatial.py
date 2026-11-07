@@ -509,3 +509,54 @@ class SpatialDirectiveGenerator:
             hud_title=report.primary_diagnosis,
             hud_description=report.actionable_advice
         )
+
+
+    @classmethod
+    def generate_transmission_overlay(cls, cluster: Optional[Any], report: Optional[Any]) -> SpatialDirectivePacket:
+        if not report:
+            return SpatialDirectivePacket.empty()
+
+        primitives = []
+        duration = 300
+        t_pos = report.target_pos
+
+        if report.has_torch_burnout:
+            primitives.append(SpatialPrimitive.box_outline(t_pos, SpatialColor.RED, "TORCH BURNOUT HAZARD", duration))
+            primitives.append(SpatialPrimitive.billboard(t_pos.offset("up"), f"⚡ 烧毁高危 (信号: {report.signal_strength})", SpatialColor.RED, duration))
+        elif report.has_weak_power_blockade:
+            primitives.append(SpatialPrimitive.box_outline(t_pos, SpatialColor.ORANGE, "WEAK POWER BLOCKADE", duration))
+            primitives.append(SpatialPrimitive.billboard(t_pos.offset("up"), "✖ 弱充能阻断点", SpatialColor.ORANGE, duration))
+        elif report.has_wire_redirection_disconnection:
+            primitives.append(SpatialPrimitive.box_outline(t_pos, SpatialColor.YELLOW, "WIRE REDIRECTED", duration))
+            primitives.append(SpatialPrimitive.billboard(t_pos.offset("up"), "↷ 偏转断路线路", SpatialColor.YELLOW, duration))
+        elif report.has_observer_loop:
+            primitives.append(SpatialPrimitive.box_outline(t_pos, SpatialColor.CYAN, "OBSERVER LOOP", duration))
+            primitives.append(SpatialPrimitive.billboard(t_pos.offset("up"), "⟳ 侦测器自激时钟", SpatialColor.CYAN, duration))
+        else:
+            primitives.append(SpatialPrimitive.box_outline(t_pos, SpatialColor.GREEN, "HEALTHY TRANSMISSION", duration))
+            primitives.append(SpatialPrimitive.billboard(t_pos.offset("up"), f"✓ 传输正常 (信号: {report.signal_strength})", SpatialColor.GREEN, duration))
+
+        for b_pos in report.burnout_torches:
+            primitives.append(SpatialPrimitive.box_outline(b_pos, SpatialColor.RED, "BURNOUT TORCH", duration))
+            primitives.append(SpatialPrimitive.billboard(b_pos.offset("up"), "⚠ 火把自激烧毁高危", SpatialColor.RED, duration))
+
+        for w_pos in report.weak_power_blockades:
+            primitives.append(SpatialPrimitive.box_outline(w_pos, SpatialColor.ORANGE, "WEAK POWER", duration))
+            primitives.append(SpatialPrimitive.billboard(w_pos.offset("up"), "✖ 弱充能：火把不熄灭/导线不供电", SpatialColor.ORANGE, duration))
+
+        for r_pos in report.redirected_wires:
+            primitives.append(SpatialPrimitive.box_outline(r_pos, SpatialColor.YELLOW, "REDIRECTED WIRE", duration))
+            primitives.append(SpatialPrimitive.flow_arrow(r_pos, t_pos, SpatialColor.YELLOW, "REDIRECTED DISCONNECTED", duration))
+            primitives.append(SpatialPrimitive.billboard(r_pos.offset("up"), "↷ 导线偏转脱离目标", SpatialColor.YELLOW, duration))
+
+        for o_pos in report.observer_loops:
+            primitives.append(SpatialPrimitive.box_outline(o_pos, SpatialColor.CYAN, "OBSERVER OSCILLATION", duration))
+            primitives.append(SpatialPrimitive.billboard(o_pos.offset("up"), "⟳ 1-Clock 自激震荡", SpatialColor.CYAN, duration))
+
+        return SpatialDirectivePacket(
+            id=f"redstone-transmission-{int(time.time()*1000)}",
+            category="REDSTONE_TRANSMISSION",
+            primitives=primitives,
+            hud_title=report.primary_diagnosis,
+            hud_description=report.actionable_advice
+        )

@@ -2040,3 +2040,124 @@ def test_comparator_dynamics_and_crosstalk_analyzer():
 
     r_help = router.execute("Steve", "/hoshi help", None)
     assert "/hoshi comparator" in r_help.message
+
+
+
+def test_redstone_transmission_analyzer_and_powering_dynamics():
+    from mc_agent_core.cluster import RedstoneTransmissionAnalyzer, LocalMachineCluster, BlockPos, LocalBlock
+    from mc_agent_core.spatial import SpatialDirectiveGenerator
+    from mc_agent_core.fast_path import FastPathResolver
+    from mc_agent_core.command import CommandRouter
+    from mc_agent_core.context import ContextSnapshot
+    from mc_agent_core.dispatcher import AsyncQueryDispatcher
+
+    # 1. Power State Calculations: Strong, Weak, Insulator
+    p_cluster = LocalMachineCluster(BlockPos(10, 64, 10)) \
+        .add(10, 64, 10, "minecraft:stone") \
+        .add(9, 64, 10, "minecraft:repeater", {"facing": "east", "powered": "true"})
+
+    p_type, p_strength, _ = RedstoneTransmissionAnalyzer.calculate_power_state(p_cluster, BlockPos(10, 64, 10))
+    assert p_type == "STRONG"
+    assert p_strength == 15
+
+    # Top redstone wire delivers WEAK power
+    weak_cluster = LocalMachineCluster(BlockPos(10, 64, 10)) \
+        .add(10, 64, 10, "minecraft:stone") \
+        .add(10, 65, 10, "minecraft:redstone_wire", {"power": "12"})
+    w_type, w_strength, _ = RedstoneTransmissionAnalyzer.calculate_power_state(weak_cluster, BlockPos(10, 64, 10))
+    assert w_type == "WEAK"
+    assert w_strength == 12
+
+    # Glass is TRANSPARENT_INSULATOR
+    glass_cluster = LocalMachineCluster(BlockPos(10, 64, 10)) \
+        .add(10, 64, 10, "minecraft:glass")
+    g_type, _, _ = RedstoneTransmissionAnalyzer.calculate_power_state(glass_cluster, BlockPos(10, 64, 10))
+    assert g_type == "TRANSPARENT_INSULATOR"
+
+    # 2. Torch Burnout Diagnostics (1-tick feedback loop)
+    burnout_cluster = LocalMachineCluster(BlockPos(10, 64, 10)) \
+        .add(10, 64, 10, "minecraft:stone") \
+        .add(10, 65, 10, "minecraft:redstone_torch") \
+        .add(10, 66, 10, "minecraft:stone") \
+        .add(11, 66, 10, "minecraft:redstone_wire", {"power": "15"}) \
+        .add(11, 65, 10, "minecraft:redstone_wire", {"power": "14"}) \
+        .add(11, 64, 10, "minecraft:redstone_wire", {"power": "13"})
+
+    burnout_report = RedstoneTransmissionAnalyzer.analyze(burnout_cluster, BlockPos(10, 64, 10))
+    assert not burnout_report.is_healthy
+    assert burnout_report.has_torch_burnout
+    assert BlockPos(10, 65, 10) in burnout_report.burnout_torches
+
+    # 3. Weak Power Torch Blockade
+    weak_torch_cluster = LocalMachineCluster(BlockPos(10, 64, 10)) \
+        .add(10, 64, 10, "minecraft:stone") \
+        .add(10, 65, 10, "minecraft:redstone_torch") \
+        .add(11, 64, 10, "minecraft:redstone_wire", {"power": "15"})
+
+    weak_torch_report = RedstoneTransmissionAnalyzer.analyze(weak_torch_cluster, BlockPos(10, 64, 10))
+    assert not weak_torch_report.is_healthy
+    assert weak_torch_report.has_weak_power_blockade
+    assert BlockPos(10, 64, 10) in weak_torch_report.weak_power_blockades
+
+    # 4. Wire Redirection Disconnection
+    redir_cluster = LocalMachineCluster(BlockPos(10, 64, 10)) \
+        .add(10, 64, 10, "minecraft:stone") \
+        .add(9, 64, 10, "minecraft:redstone_wire", {"power": "15", "north": "side", "east": "none"})
+
+    redir_report = RedstoneTransmissionAnalyzer.analyze(redir_cluster, BlockPos(10, 64, 10))
+    assert redir_report.has_wire_redirection_disconnection
+    assert BlockPos(9, 64, 10) in redir_report.redirected_wires
+
+    # 5. Observer 1-Clock Oscillation Loop
+    obs_cluster = LocalMachineCluster(BlockPos(10, 64, 10)) \
+        .add(10, 64, 10, "minecraft:observer", {"facing": "east"}) \
+        .add(11, 64, 10, "minecraft:observer", {"facing": "west"})
+
+    obs_report = RedstoneTransmissionAnalyzer.analyze(obs_cluster, BlockPos(10, 64, 10))
+    assert obs_report.has_observer_loop
+    assert BlockPos(10, 64, 10) in obs_report.observer_loops
+    assert BlockPos(11, 64, 10) in obs_report.observer_loops
+
+    # 6. 3D Spatial Directive Overlays
+    burnout_overlay = SpatialDirectiveGenerator.generate_transmission_overlay(burnout_cluster, burnout_report)
+    assert burnout_overlay.category == "REDSTONE_TRANSMISSION"
+    assert "BURNOUT TORCH" in burnout_overlay.to_json()
+
+    weak_overlay = SpatialDirectiveGenerator.generate_transmission_overlay(weak_torch_cluster, weak_torch_report)
+    assert "WEAK POWER BLOCKADE" in weak_overlay.to_json()
+
+    # 7. Fast Path Rules 63, 64, 65
+    r_power = FastPathResolver.try_resolve("红石强充能和弱充能的区别是什么？")
+    assert r_power is not None
+    assert r_power.category == "REDSTONE_STRONG_VS_WEAK_POWERING"
+    assert "强充能" in r_power.text_response
+
+    r_burnout = FastPathResolver.try_resolve("红石火把为什么会冒烟熄灭？")
+    assert r_burnout is not None
+    assert r_burnout.category == "REDSTONE_TORCH_BURNOUT_DYNAMICS"
+    assert "烧毁" in r_burnout.text_response
+
+    r_wire = FastPathResolver.try_resolve("红石线偏转断开怎么解决？")
+    assert r_wire is not None
+    assert r_wire.category == "REDSTONE_WIRE_REDIRECTION_DISCONNECTION"
+    assert "偏转" in r_wire.text_response
+
+    # 8. Command Router Integration
+    router = CommandRouter(AsyncQueryDispatcher())
+    r_empty = router.execute("Steve", "/hoshi transmission", None)
+    assert r_empty.is_success
+    assert "当前准星未捕捉到局部红石导线" in r_empty.message
+
+    ctx = ContextSnapshot("Steve", "overworld", 0.0, 64.0, 0.0, machine_cluster=burnout_cluster)
+    r_cmd = router.execute("Steve", "/hoshi transmission", ctx)
+    assert r_cmd.is_success
+    assert "红石传输拓扑与充能因果诊断报告" in r_cmd.message
+    assert r_cmd.has_spatial_directive
+
+    r_hl = router.execute("Steve", "/hoshi highlight transmission", ctx)
+    assert r_hl.is_success
+    assert r_hl.has_spatial_directive
+    assert r_hl.spatial_directive.category == "REDSTONE_TRANSMISSION"
+
+    r_help = router.execute("Steve", "/hoshi help", None)
+    assert "/hoshi transmission" in r_help.message

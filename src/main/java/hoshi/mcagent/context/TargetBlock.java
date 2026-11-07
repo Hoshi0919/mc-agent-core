@@ -1,5 +1,7 @@
 package hoshi.mcagent.context;
 
+import hoshi.mcagent.cluster.BlockPos;
+
 import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
@@ -42,6 +44,10 @@ public record TargetBlock(
         if (properties == null) {
             properties = Collections.emptyMap();
         }
+    }
+
+    public BlockPos blockPos() {
+        return new BlockPos(x, y, z);
     }
 
     public static TargetBlock air() {

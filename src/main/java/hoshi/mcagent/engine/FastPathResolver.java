@@ -293,6 +293,33 @@ public final class FastPathResolver {
             return Optional.of(new Resolution(resp, null, "STICKY_PISTON_ONE_TICK_DROP_BLOCK"));
         }
 
+        // 63. Redstone Strong vs Weak Powering
+        if (q.contains("强充能") || q.contains("弱充能") || q.contains("充能区别") || (q.contains("红石火把") && (q.contains("不灭") || q.contains("熄灭不了")))) {
+            String resp = "§e【红石强充能与弱充能物理法则及阻断诊断】§r\n" +
+                    "▸ §a强充能 (Strongly Powered)§r：由红石中继器、比较器直接正对注入实体方块，或附着拉杆/按钮；可反向熄灭附着的红石火把，并向周围红石线供电！\n" +
+                    "▸ §6弱充能 (Weakly Powered)§r：由红石粉直接指向实体方块或沿顶部走过；可激活相邻机械（活塞/灯/门），但【决不能】熄灭表面附着的火把，且不向未指向的导线供电！\n" +
+                    "▸ §c绝缘透明阻断§r：玻璃、半砖（台阶）、树叶、荧石无法被充能，红石火把无法附着且信号无法穿透供电。";
+            return Optional.of(new Resolution(resp, "/hoshi transmission", "REDSTONE_STRONG_VS_WEAK_POWERING"));
+        }
+
+        // 64. Redstone Torch Burnout Dynamics
+        if (q.contains("火把烧毁") || q.contains("火把冒烟") || q.contains("红石火把熄灭") || q.contains("火把失灵") || q.contains("burnout") || (q.contains("红石火把") && (q.contains("烧毁") || q.contains("冒烟") || q.contains("高频")))) {
+            String resp = "§c【红石火把烧毁 (Burnout) 动力学与自激振荡机制】§r\n" +
+                    "▸ §e烧毁阈值条件§r：红石火把在 60 gameticks（3 秒 / 30 redstone ticks）内若反转切换 >= 8 次，将触发烧毁 (Burnout)！\n" +
+                    "▸ §c烧毁表象§r：火把发出嘶嘶声，顶端冒出黑烟粒子并强制熄灭，进入数十 tick 的冷却失灵状态！\n" +
+                    "▸ §a自激回路根因与解法§r：火把输出反向给底座方块强充能且缺少中继器（延迟 < 4 ticks）必发烧毁；必须接入中继器将回路拉长至 4 ticks 以上，或改用比较器时钟。";
+            return Optional.of(new Resolution(resp, "/hoshi transmission", "REDSTONE_TORCH_BURNOUT_DYNAMICS"));
+        }
+
+        // 65. Redstone Wire Redirection Disconnection
+        if (q.contains("红石线偏转") || q.contains("红石拐弯") || q.contains("红石线断开") || q.contains("红石粉拐弯") || q.contains("红石粉断路") || (q.contains("红石线") && (q.contains("偏转") || q.contains("重定向") || q.contains("断开")))) {
+            String resp = "§e【红石导线重定向偏转断路与单向隔离法则】§r\n" +
+                    "▸ §e偏转吸引机制§r：红石粉默认呈十字状向四周供电；但当水平相邻存在其它红石组件时，红石线会自动弯曲重定向延伸至该组件！\n" +
+                    "▸ §c偏转意外断路§r：若红石线发生侧向偏转拐角，将不再正对原来的前向方块，导致前向方块失去弱充能输入造成断电！\n" +
+                    "▸ §a物理隔离与单向注入§r：在目标方块正前插入中继器锁定单向注入，或在拐角侧面使用不透明实体方块做物理隔离防止线路偏转。";
+            return Optional.of(new Resolution(resp, "/hoshi transmission", "REDSTONE_WIRE_REDIRECTION_DISCONNECTION"));
+        }
+
         // 60. Comparator Container Signal Formula
         if (q.contains("比较器信号公式") || q.contains("容器信号计算") || q.contains("比较器满箱信号") || q.contains("不可堆叠物品信号") || (q.contains("比较器") && (q.contains("公式") || q.contains("槽位") || q.contains("计算") || q.contains("强度")))) {
             String resp = "§e【红石比较器容器信号强度计算公式与槽位加权】§r\n" +

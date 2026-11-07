@@ -3,6 +3,7 @@ package hoshi.mcagent.spatial;
 import hoshi.mcagent.cluster.Ae2NetworkAnalyzer;
 import hoshi.mcagent.cluster.PistonRedstoneAnalyzer;
 import hoshi.mcagent.cluster.ComparatorRedstoneAnalyzer;
+import hoshi.mcagent.cluster.RedstoneTransmissionAnalyzer;
 import hoshi.mcagent.cluster.BlockPos;
 import hoshi.mcagent.cluster.HopperNetworkAnalyzer;
 import hoshi.mcagent.cluster.KineticNetworkAnalyzer;
@@ -489,6 +490,73 @@ public final class SpatialDirectiveGenerator {
         return SpatialDirectivePacket.of(
                 "comparator-dynamics-" + System.currentTimeMillis(),
                 "COMPARATOR_DYNAMICS",
+                primitives,
+                report.primaryDiagnosis(),
+                report.actionableAdvice()
+        );
+    }
+
+    /**
+     * Generates in-world holographic overlays for redstone transmission, torch burnout, and powering blockades.
+     */
+    public static SpatialDirectivePacket generateTransmissionOverlay(
+            LocalMachineCluster cluster,
+            RedstoneTransmissionAnalyzer.TransmissionReport report
+    ) {
+        if (report == null) {
+            return SpatialDirectivePacket.empty();
+        }
+
+        List<SpatialPrimitive> primitives = new ArrayList<>();
+        int duration = 300; // 15 seconds
+        BlockPos tPos = report.targetPos();
+
+        // 1. Target block bounding box and state
+        if (report.hasTorchBurnout()) {
+            primitives.add(SpatialPrimitive.boxOutline(tPos, SpatialColor.RED, "TORCH BURNOUT HAZARD", duration));
+            primitives.add(SpatialPrimitive.billboard(tPos.offset("up"), String.format("⚡ 烧毁高危 (信号: %d)", report.signalStrength()), SpatialColor.RED, duration));
+        } else if (report.hasWeakPowerBlockade()) {
+            primitives.add(SpatialPrimitive.boxOutline(tPos, SpatialColor.ORANGE, "WEAK POWER BLOCKADE", duration));
+            primitives.add(SpatialPrimitive.billboard(tPos.offset("up"), "✖ 弱充能阻断点", SpatialColor.ORANGE, duration));
+        } else if (report.hasWireRedirectionDisconnection()) {
+            primitives.add(SpatialPrimitive.boxOutline(tPos, SpatialColor.YELLOW, "WIRE REDIRECTED", duration));
+            primitives.add(SpatialPrimitive.billboard(tPos.offset("up"), "↷ 偏转断路线路", SpatialColor.YELLOW, duration));
+        } else if (report.hasObserverLoop()) {
+            primitives.add(SpatialPrimitive.boxOutline(tPos, SpatialColor.CYAN, "OBSERVER LOOP", duration));
+            primitives.add(SpatialPrimitive.billboard(tPos.offset("up"), "⟳ 侦测器自激时钟", SpatialColor.CYAN, duration));
+        } else {
+            primitives.add(SpatialPrimitive.boxOutline(tPos, SpatialColor.GREEN, "HEALTHY TRANSMISSION", duration));
+            primitives.add(SpatialPrimitive.billboard(tPos.offset("up"), String.format("✓ 传输正常 (信号: %d)", report.signalStrength()), SpatialColor.GREEN, duration));
+        }
+
+        // 2. Burnout torches
+        for (BlockPos bPos : report.burnoutTorches()) {
+            primitives.add(SpatialPrimitive.boxOutline(bPos, SpatialColor.RED, "BURNOUT TORCH", duration));
+            primitives.add(SpatialPrimitive.billboard(bPos.offset("up"), "⚠ 火把自激烧毁高危", SpatialColor.RED, duration));
+        }
+
+        // 3. Weak power blockades
+        for (BlockPos wPos : report.weakPowerBlockades()) {
+            primitives.add(SpatialPrimitive.boxOutline(wPos, SpatialColor.ORANGE, "WEAK POWER", duration));
+            primitives.add(SpatialPrimitive.billboard(wPos.offset("up"), "✖ 弱充能：火把不熄灭/导线不供电", SpatialColor.ORANGE, duration));
+        }
+
+        // 4. Redirected wires
+        for (BlockPos rPos : report.redirectedWires()) {
+            primitives.add(SpatialPrimitive.boxOutline(rPos, SpatialColor.YELLOW, "REDIRECTED WIRE", duration));
+            primitives.add(SpatialPrimitive.flowArrow(rPos, tPos, SpatialColor.YELLOW, "REDIRECTED DISCONNECTED", duration));
+            primitives.add(SpatialPrimitive.billboard(rPos.offset("up"), "↷ 导线偏转脱离目标", SpatialColor.YELLOW, duration));
+        }
+
+        // 5. Observer loops
+        for (BlockPos oPos : report.observerLoops()) {
+            primitives.add(SpatialPrimitive.boxOutline(oPos, SpatialColor.CYAN, "OBSERVER OSCILLATION", duration));
+            primitives.add(SpatialPrimitive.billboard(oPos.offset("up"), "⟳ 1-Clock 自激震荡", SpatialColor.CYAN, duration));
+        }
+
+        return SpatialDirectivePacket.of(
+                "redstone-transmission-" + System.currentTimeMillis(),
+                "REDSTONE_TRANSMISSION",
                 primitives,
                 report.primaryDiagnosis(),
                 report.actionableAdvice()

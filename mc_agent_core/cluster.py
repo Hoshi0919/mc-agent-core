@@ -28,6 +28,9 @@ class BlockPos:
     def manhattan_distance(self, other: "BlockPos") -> int:
         return abs(self.x - other.x) + abs(self.y - other.y) + abs(self.z - other.z)
 
+    def neighbors(self) -> List["BlockPos"]:
+        return self.get_direct_neighbors()
+
     def get_direct_neighbors(self) -> List["BlockPos"]:
         return [
             BlockPos(self.x, self.y - 1, self.z),
@@ -127,6 +130,21 @@ class LocalBlock:
     @property
     def is_comparator(self) -> bool:
         return bool(self.block_id and "comparator" in self.block_id.lower())
+
+    @property
+    def is_repeater(self) -> bool:
+        return bool(self.block_id and "repeater" in self.block_id.lower())
+
+    @property
+    def is_observer(self) -> bool:
+        return bool(self.block_id and "observer" in self.block_id.lower())
+
+    @property
+    def is_redstone_torch(self) -> bool:
+        return bool(self.block_id and "redstone_torch" in self.block_id.lower())
+
+    def is_powered(self) -> bool:
+        return self.get_property("powered", "false").lower() == "true" 
 
     @property
     def is_redstone_wire(self) -> bool:
@@ -1285,5 +1303,354 @@ class ComparatorRedstoneAnalyzer:
             issues=issues,
             warnings=warnings,
             primary_diagnosis=diag,
+            actionable_advice=advice
+        )
+
+
+@dataclass
+class RedstoneTransmissionReport:
+    is_healthy: bool
+    has_torch_burnout: bool
+    has_weak_power_blockade: bool
+    has_wire_redirection_disconnection: bool
+    has_observer_loop: bool
+    target_pos: BlockPos
+    target_block_type: str
+    power_type: str  # STRONG, WEAK, TRANSPARENT_INSULATOR, NONE
+    signal_strength: int
+    burnout_torches: List[BlockPos]
+    weak_power_blockades: List[BlockPos]
+    redirected_wires: List[BlockPos]
+    observer_loops: List[BlockPos]
+    issues: List[str]
+    warnings: List[str]
+    primary_diagnosis: str
+    actionable_advice: str
+
+    def format_report(self) -> str:
+        sb = []
+        sb.append("§e【红石传输拓扑与充能因果诊断报告】§r")
+        sb.append(f"▸ 目标组件坐标：{self.target_pos} ({self.target_block_type.upper()})")
+        pt_zh = {
+            "STRONG": "§a强充能 (Strongly Powered)§r",
+            "WEAK": "§6弱充能 (Weakly Powered)§r",
+            "TRANSPARENT_INSULATOR": "§c透明绝缘介质 (Non-conductive)§r",
+            "NONE": "§7未充能 (Unpowered)§r"
+        }.get(self.power_type, self.power_type)
+        sb.append(f"▸ 充能状态：{pt_zh} | 信号强度: §6{self.signal_strength}§r")
+
+        if self.has_torch_burnout:
+            sb.append("  ⚡ §c[火把烧毁高危] 检测到红石火把极速自激振荡回路 (总延迟 < 4 ticks)！§r")
+            for b in self.burnout_torches:
+                sb.append(f"     ✖ 烧毁火把节点: {b} (3秒内切换>=8次触发熄灭冷却)")
+
+        if self.has_weak_power_blockade:
+            sb.append("  ⚡ §6[弱充能阻断告警] 实体方块仅为弱充能 (Weakly Powered)，无法熄灭火把或激活未指向的红石线！§r")
+            for w in self.weak_power_blockades:
+                sb.append(f"     ✖ 弱充能阻断点: {w} (需中继器升格为强充能)")
+
+        if self.has_wire_redirection_disconnection:
+            sb.append("  ⚡ §e[导线偏转断路] 红石粉因邻近组件吸引发生转向，脱离目标方块造成断电！§r")
+            for r in self.redirected_wires:
+                sb.append(f"     ↷ 偏转断路线路: {r}")
+
+        if self.has_observer_loop:
+            sb.append("  ⚡ §b[侦测器自激死循环] 检测到 1-clock (2 gameticks) 高频脉冲死循环振荡！§r")
+            for o in self.observer_loops:
+                sb.append(f"     ⟳ 侦测器振荡源: {o}")
+
+        if self.is_healthy:
+            sb.append("  ✓ §a[传输健康] 电路充能完整，无烧毁、弱充能阻断或偏转断路隐患。§r")
+
+        sb.append(f"▸ 核心诊断：{self.primary_diagnosis}")
+        if self.actionable_advice:
+            sb.append(f"▸ 修复建议：{self.actionable_advice}")
+        return "\n".join(sb)
+
+
+class RedstoneTransmissionAnalyzer:
+    @staticmethod
+    def is_transparent(block: Optional[LocalBlock]) -> bool:
+        if not block or block.is_air:
+            return True
+        bid = block.block_id.lower()
+        transparent_keys = [
+            "glass", "slab", "stairs", "glowstone", "leaves", "ice",
+            "hopper", "chest", "fence", "wall", "piston", "door",
+            "trapdoor", "wire", "torch", "repeater", "comparator"
+        ]
+        return any(k in bid for k in transparent_keys)
+
+    @staticmethod
+    def is_solid_conductive(block: Optional[LocalBlock]) -> bool:
+        if not block or block.is_air or RedstoneTransmissionAnalyzer.is_transparent(block):
+            return False
+        bid = block.block_id.lower()
+        non_conductive = ["redstone", "torch", "lever", "button", "pressure_plate"]
+        return not any(k in bid for k in non_conductive)
+
+    @staticmethod
+    def is_wire_pointing_to(cluster: LocalMachineCluster, wire_pos: BlockPos, target_pos: BlockPos) -> bool:
+        wire = cluster.get_block(wire_pos)
+        if not wire or not wire.is_redstone_wire:
+            return False
+
+        dx = target_pos.x - wire_pos.x
+        dy = target_pos.y - wire_pos.y
+        dz = target_pos.z - wire_pos.z
+
+        if dy != 0 or abs(dx) + abs(dz) != 1:
+            return False
+
+        direction = "east" if dx == 1 else "west" if dx == -1 else "south" if dz == 1 else "north"
+        conn = wire.get_property(direction, "none")
+        if conn != "none":
+            return True
+
+        if any(wire.get_property(d, "none") != "none" for d in ["north", "south", "east", "west"] if d != direction):
+            return wire.get_property(direction, "none") != "none"
+
+        return True
+
+    @staticmethod
+    def calculate_power_state(cluster: LocalMachineCluster, pos: BlockPos) -> tuple[str, int, List[BlockPos]]:
+        block = cluster.get_block(pos)
+        if not block or block.is_air:
+            return "NONE", 0, []
+
+        if RedstoneTransmissionAnalyzer.is_transparent(block):
+            return "TRANSPARENT_INSULATOR", 0, []
+
+        max_strong = 0
+        max_weak = 0
+        sources = []
+
+        for n_pos in pos.neighbors():
+            nb = cluster.get_block(n_pos)
+            if not nb:
+                continue
+
+            # 1. Repeater pointing to pos
+            if nb.is_repeater and nb.is_powered():
+                if n_pos.offset(facing=nb.facing()) == pos:
+                    max_strong = max(max_strong, 15)
+                    sources.append(n_pos)
+
+            # 2. Comparator pointing to pos
+            if nb.is_comparator and nb.is_powered():
+                if n_pos.offset(facing=nb.facing()) == pos:
+                    p = int(nb.get_property("power", "15") or "15")
+                    max_strong = max(max_strong, p)
+                    sources.append(n_pos)
+
+            # 3. Lever / Button
+            if any(k in nb.block_id.lower() for k in ["lever", "button", "pressure_plate"]) and nb.is_powered():
+                max_strong = max(max_strong, 15)
+                sources.append(n_pos)
+
+            # 4. Redstone block
+            if "redstone_block" in nb.block_id.lower():
+                max_strong = max(max_strong, 15)
+                sources.append(n_pos)
+
+            # 5. Redstone wire
+            if nb.is_redstone_wire:
+                wp = int(nb.get_property("power", "15" if nb.is_powered() else "0") or "0")
+                if wp > 0:
+                    if n_pos == pos.offset("up") or RedstoneTransmissionAnalyzer.is_wire_pointing_to(cluster, n_pos, pos):
+                        max_weak = max(max_weak, wp)
+                        sources.append(n_pos)
+
+        if max_strong > 0:
+            return "STRONG", max_strong, sources
+        elif max_weak > 0:
+            return "WEAK", max_weak, sources
+        else:
+            return "NONE", 0, sources
+
+    @staticmethod
+    def get_torch_base_pos(torch: LocalBlock) -> BlockPos:
+        bid = torch.block_id.lower()
+        facing = torch.facing()
+        if "wall_torch" in bid:
+            opp = {"north": "south", "south": "north", "east": "west", "west": "east"}
+            return torch.pos.offset(facing=opp.get(facing, "down"))
+        return torch.pos.offset("down")
+
+    @staticmethod
+    def calculate_loop_delay(cluster: LocalMachineCluster, torch_pos: BlockPos, base_pos: BlockPos) -> int:
+        from collections import deque
+        queue = deque()
+        delay_map = {}
+
+        above = torch_pos.offset("up")
+        queue.append(above)
+        delay_map[above] = 1
+
+        for n in torch_pos.neighbors():
+            if n == torch_pos.offset("down"):
+                continue
+            nb = cluster.get_block(n)
+            if nb and nb.is_redstone_wire:
+                queue.append(n)
+                delay_map[n] = 1
+
+        visited = set()
+        opp_facing = {"north": "south", "south": "north", "east": "west", "west": "east", "up": "down", "down": "up"}
+
+        while queue:
+            curr = queue.popleft()
+            if curr == base_pos:
+                return delay_map[curr]
+            if curr in visited:
+                continue
+            visited.add(curr)
+
+            curr_delay = delay_map[curr]
+            for next_pos in curr.neighbors():
+                if next_pos in visited or next_pos == torch_pos:
+                    continue
+                next_block = cluster.get_block(next_pos)
+                if not next_block:
+                    continue
+
+                if next_pos == base_pos:
+                    return curr_delay
+
+                if next_block.is_redstone_wire:
+                    if next_pos not in delay_map:
+                        delay_map[next_pos] = curr_delay
+                    queue.append(next_pos)
+                elif next_block.is_repeater:
+                    rf = next_block.facing()
+                    if next_pos.offset(facing=opp_facing.get(rf, "north")) == curr:
+                        r_delay = int(next_block.get_property("delay", "1") or "1")
+                        if next_pos not in delay_map:
+                            delay_map[next_pos] = curr_delay + r_delay
+                        queue.append(next_pos.offset(facing=rf))
+                elif RedstoneTransmissionAnalyzer.is_solid_conductive(next_block) and next_pos != base_pos:
+                    if next_pos not in delay_map:
+                        delay_map[next_pos] = curr_delay
+                    queue.append(next_pos)
+
+        return -1
+
+    @classmethod
+    def analyze(cls, cluster: Optional[LocalMachineCluster], target_pos: Optional[BlockPos] = None) -> RedstoneTransmissionReport:
+        if not cluster or not cluster.blocks:
+            return RedstoneTransmissionReport(
+                is_healthy=True, has_torch_burnout=False, has_weak_power_blockade=False,
+                has_wire_redirection_disconnection=False, has_observer_loop=False,
+                target_pos=BlockPos(0, 0, 0), target_block_type="none", power_type="NONE",
+                signal_strength=0, burnout_torches=[], weak_power_blockades=[],
+                redirected_wires=[], observer_loops=[], issues=[], warnings=[],
+                primary_diagnosis="未检测到红石传输或电路异常", actionable_advice=""
+            )
+
+        if not target_pos:
+            target_pos = cluster.origin
+
+        target_block = cluster.get_block(target_pos)
+        target_type = target_block.block_id if target_block else "minecraft:air"
+
+        power_type, signal_strength, _ = cls.calculate_power_state(cluster, target_pos)
+
+        burnout_torches = []
+        weak_power_blockades = []
+        redirected_wires = []
+        observer_loops = []
+        issues = []
+        warnings = []
+
+        # 1. Detect torch burnout
+        for block in cluster.blocks.values():
+            if "redstone_torch" in block.block_id.lower():
+                torch_pos = block.pos
+                base_pos = cls.get_torch_base_pos(block)
+                loop_delay = cls.calculate_loop_delay(cluster, torch_pos, base_pos)
+                if 0 <= loop_delay < 4:
+                    burnout_torches.append(torch_pos)
+                    issues.append(f"红石火把 {torch_pos} 存在极速自激反馈回路（回路中继延迟: {loop_delay} ticks < 4 ticks），必将烧毁熄灭")
+
+        # 2. Detect weak power blockades
+        for neighbor in target_pos.neighbors():
+            nb = cluster.get_block(neighbor)
+            if nb and "redstone_torch" in nb.block_id.lower():
+                base = cls.get_torch_base_pos(nb)
+                if base == target_pos and power_type == "WEAK":
+                    weak_power_blockades.append(target_pos)
+                    issues.append(f"方块 {target_pos} 附着红石火把 {neighbor}，但该方块仅处于弱充能状态，红石火把无法熄灭！")
+
+        for neighbor in target_pos.neighbors():
+            nb = cluster.get_block(neighbor)
+            if nb and nb.is_redstone_wire and power_type == "WEAK":
+                if not cls.is_wire_pointing_to(cluster, neighbor, target_pos):
+                    weak_power_blockades.append(target_pos)
+                    issues.append(f"弱充能方块 {target_pos} 无法向相邻未对准的红石线 {neighbor} 传导信号")
+                    break
+
+        # 3. Detect wire redirection disconnection
+        if target_block and not target_block.is_air:
+            for neighbor in target_pos.neighbors():
+                wire = cluster.get_block(neighbor)
+                if wire and wire.is_redstone_wire:
+                    wp = int(wire.get_property("power", "15" if wire.is_powered() else "0") or "0")
+                    if wp > 0:
+                        if not cls.is_wire_pointing_to(cluster, neighbor, target_pos) and neighbor != target_pos.offset("up"):
+                            redirected_wires.append(neighbor)
+                            warnings.append(f"红石线 {neighbor} 处于激活状态，但发生偏转脱离目标方块 {target_pos}，导致供电中断")
+
+        # 4. Detect observer loops
+        for block in cluster.blocks.values():
+            if "observer" in block.block_id.lower():
+                facing = block.facing()
+                detected_pos = block.pos.offset(facing=facing)
+                t_obs = cluster.get_block(detected_pos)
+                if t_obs and "observer" in t_obs.block_id.lower():
+                    if t_obs.pos.offset(facing=t_obs.facing()) == block.pos:
+                        if block.pos not in observer_loops:
+                            observer_loops.append(block.pos)
+                            observer_loops.append(t_obs.pos)
+                            warnings.append(f"侦测器 {block.pos} 与 {t_obs.pos} 面对面相对，构成 1-clock (2 gameticks) 自激震荡时钟")
+
+        has_torch_burnout = len(burnout_torches) > 0
+        has_weak_power = len(weak_power_blockades) > 0
+        has_wire_redir = len(redirected_wires) > 0
+        has_observer_loop = len(observer_loops) > 0
+        is_healthy = not has_torch_burnout and not has_weak_power and not has_wire_redir and not has_observer_loop
+
+        if has_torch_burnout:
+            primary_diag = "检测到红石火把自激振荡反馈回路，回路延迟 < 4 ticks，火把将高频烧毁熄灭"
+            advice = "在反馈回路中接入红石中继器（Repeater），将总延迟调至 4 redstone ticks（8 gameticks）以上消除烧毁"
+        elif has_weak_power:
+            primary_diag = "实体方块处于弱充能状态，无法灭活附着的红石火把或激活未指向的红石导线"
+            advice = "改用红石中继器直接指向该方块，升格为强充能（Strongly Powered），以可靠熄灭火把"
+        elif has_wire_redir:
+            primary_diag = "红石粉受到邻近组件吸引产生偏转，不再对齐目标方块造成断路"
+            advice = "在目标方块前放置中继器锁定单向注入，或在红石线侧面加装隔电方块防止偏转"
+        elif has_observer_loop:
+            primary_diag = "侦测器面对面或与活塞构成 1-clock (2 gameticks) 极限自激振荡"
+            advice = "断开侦测器对冲，改用比较器时钟或拉开间距避免高频卡死"
+        else:
+            primary_diag = "红石传输链路与充能拓扑正常，无烧毁或阻断隐患"
+            advice = "保持当前规范布线"
+
+        return RedstoneTransmissionReport(
+            is_healthy=is_healthy,
+            has_torch_burnout=has_torch_burnout,
+            has_weak_power_blockade=has_weak_power,
+            has_wire_redirection_disconnection=has_wire_redir,
+            has_observer_loop=has_observer_loop,
+            target_pos=target_pos,
+            target_block_type=target_type,
+            power_type=power_type,
+            signal_strength=signal_strength,
+            burnout_torches=burnout_torches,
+            weak_power_blockades=weak_power_blockades,
+            redirected_wires=redirected_wires,
+            observer_loops=observer_loops,
+            issues=issues,
+            warnings=warnings,
+            primary_diagnosis=primary_diag,
             actionable_advice=advice
         )

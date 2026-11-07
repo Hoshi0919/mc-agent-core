@@ -41,6 +41,7 @@ import hoshi.mcagent.chunkload.PortalChunkLoaderAnalyzer;
 import hoshi.mcagent.cluster.Ae2NetworkAnalyzer;
 import hoshi.mcagent.cluster.PistonRedstoneAnalyzer;
 import hoshi.mcagent.cluster.ComparatorRedstoneAnalyzer;
+import hoshi.mcagent.cluster.RedstoneTransmissionAnalyzer;
 import hoshi.mcagent.cluster.BlockPos;
 import hoshi.mcagent.cluster.LocalBlock;
 import hoshi.mcagent.cluster.LocalMachineCluster;
@@ -142,6 +143,7 @@ public class McAgentCoreTest {
         testAe2NetworkAnalyzerAndSpatialProtocol();
         testPistonDynamicsAndQuasiConnectivityBudAnalyzer();
         testComparatorRedstoneAnalyzerAndSpatialProtocol();
+        testRedstoneTransmissionAnalyzerAndPoweringDynamics();
 
         System.out.println(String.format("\n🎉 All %d/%d Java tests passed successfully!", testsPassed, testsRun));
     }
@@ -2361,6 +2363,120 @@ public class McAgentCoreTest {
 
         var resHelp = router.execute("Steve", "/hoshi help", null);
         assertTrue(resHelp.getMessage().contains("/hoshi comparator"), "Help mentions /hoshi comparator");
+    }
+
+    private static void testRedstoneTransmissionAnalyzerAndPoweringDynamics() throws Exception {
+        // 1. Power State Calculations: Strong, Weak, and Insulator
+        var pClusterBuilder = LocalMachineCluster.builder(10, 64, 10);
+        pClusterBuilder.add(10, 64, 10, "minecraft:stone"); // target
+        pClusterBuilder.add(9, 64, 10, "minecraft:repeater", Map.of("facing", "east", "powered", "true"));
+        var pCluster = pClusterBuilder.build();
+
+        var strongState = RedstoneTransmissionAnalyzer.calculatePowerState(pCluster, new BlockPos(10, 64, 10));
+        assertTrue(strongState.powerType() == RedstoneTransmissionAnalyzer.PowerType.STRONG, "Repeater delivers STRONG power");
+        assertTrue(strongState.signalStrength() == 15, "Repeater delivers full 15 strength");
+
+        // Weak Power via Redstone Wire
+        var weakBuilder = LocalMachineCluster.builder(10, 64, 10);
+        weakBuilder.add(10, 64, 10, "minecraft:stone");
+        weakBuilder.add(10, 65, 10, "minecraft:redstone_wire", Map.of("power", "12")); // wire on top
+        var weakState = RedstoneTransmissionAnalyzer.calculatePowerState(weakBuilder.build(), new BlockPos(10, 64, 10));
+        assertTrue(weakState.powerType() == RedstoneTransmissionAnalyzer.PowerType.WEAK, "Top redstone wire delivers WEAK power");
+        assertTrue(weakState.signalStrength() == 12, "Weak power matches wire signal 12");
+
+        // Transparent Insulator (Glass)
+        var glassBuilder = LocalMachineCluster.builder(10, 64, 10);
+        glassBuilder.add(10, 64, 10, "minecraft:glass");
+        var glassState = RedstoneTransmissionAnalyzer.calculatePowerState(glassBuilder.build(), new BlockPos(10, 64, 10));
+        assertTrue(glassState.powerType() == RedstoneTransmissionAnalyzer.PowerType.TRANSPARENT_INSULATOR, "Glass is TRANSPARENT_INSULATOR");
+
+        // 2. Torch Burnout Diagnostics (1-tick feedback loop)
+        var burnoutBuilder = LocalMachineCluster.builder(10, 64, 10);
+        burnoutBuilder.add(10, 64, 10, "minecraft:stone"); // base
+        burnoutBuilder.add(10, 65, 10, "minecraft:redstone_torch"); // torch
+        burnoutBuilder.add(10, 66, 10, "minecraft:stone"); // block above torch
+        burnoutBuilder.add(11, 66, 10, "minecraft:redstone_wire", Map.of("power", "15"));
+        burnoutBuilder.add(11, 65, 10, "minecraft:redstone_wire", Map.of("power", "14"));
+        burnoutBuilder.add(11, 64, 10, "minecraft:redstone_wire", Map.of("power", "13")); // connects to base [10, 64, 10]
+        var burnoutCluster = burnoutBuilder.build();
+
+        var burnoutReport = RedstoneTransmissionAnalyzer.analyzeTransmission(burnoutCluster, new BlockPos(10, 64, 10));
+        assertTrue(!burnoutReport.isHealthy(), "Burnout loop is unhealthy");
+        assertTrue(burnoutReport.hasTorchBurnout(), "Detected torch burnout high risk");
+        assertTrue(burnoutReport.burnoutTorches().contains(new BlockPos(10, 65, 10)), "Torch pos captured in burnout list");
+
+        // 3. Weak Power Torch Blockade (Weakly powered base cannot turn off torch)
+        var weakTorchBuilder = LocalMachineCluster.builder(10, 64, 10);
+        weakTorchBuilder.add(10, 64, 10, "minecraft:stone"); // base
+        weakTorchBuilder.add(10, 65, 10, "minecraft:redstone_torch"); // torch
+        weakTorchBuilder.add(11, 64, 10, "minecraft:redstone_wire", Map.of("power", "15")); // wire feeds base directly -> weak power
+        var weakTorchCluster = weakTorchBuilder.build();
+
+        var weakTorchReport = RedstoneTransmissionAnalyzer.analyzeTransmission(weakTorchCluster, new BlockPos(10, 64, 10));
+        assertTrue(!weakTorchReport.isHealthy(), "Weak power torch blockade is unhealthy");
+        assertTrue(weakTorchReport.hasWeakPowerBlockade(), "Detected weak power blockade");
+        assertTrue(weakTorchReport.weakPowerBlockades().contains(new BlockPos(10, 64, 10)), "Base block flagged as weak power blockade");
+
+        // 4. Wire Redirection Disconnection
+        var redirBuilder = LocalMachineCluster.builder(10, 64, 10);
+        redirBuilder.add(10, 64, 10, "minecraft:stone"); // target
+        redirBuilder.add(9, 64, 10, "minecraft:redstone_wire", Map.of("power", "15", "north", "side", "east", "none")); // diverted north
+        var redirReport = RedstoneTransmissionAnalyzer.analyzeTransmission(redirBuilder.build(), new BlockPos(10, 64, 10));
+        assertTrue(redirReport.hasWireRedirectionDisconnection(), "Detected wire redirection disconnection");
+        assertTrue(redirReport.redirectedWires().contains(new BlockPos(9, 64, 10)), "Redirected wire captured");
+
+        // 5. Observer Face-to-Face Oscillation Loop
+        var obsBuilder = LocalMachineCluster.builder(10, 64, 10);
+        obsBuilder.add(10, 64, 10, "minecraft:observer", Map.of("facing", "east")); // looks east at 11, 64, 10
+        obsBuilder.add(11, 64, 10, "minecraft:observer", Map.of("facing", "west")); // looks west at 10, 64, 10
+        var obsReport = RedstoneTransmissionAnalyzer.analyzeTransmission(obsBuilder.build(), new BlockPos(10, 64, 10));
+        assertTrue(obsReport.hasObserverLoop(), "Detected observer 1-clock oscillation loop");
+        assertTrue(obsReport.observerLoops().contains(new BlockPos(10, 64, 10)), "Observer 1 in loop");
+        assertTrue(obsReport.observerLoops().contains(new BlockPos(11, 64, 10)), "Observer 2 in loop");
+
+        // 6. 3D Spatial Directive Overlays
+        var burnoutOverlay = SpatialDirectiveGenerator.generateTransmissionOverlay(burnoutCluster, burnoutReport);
+        assertTrue(burnoutOverlay.category().equals("REDSTONE_TRANSMISSION"), "Overlay category is REDSTONE_TRANSMISSION");
+        assertTrue(burnoutOverlay.toJson().contains("BURNOUT TORCH"), "Overlay contains BURNOUT TORCH");
+
+        var weakOverlay = SpatialDirectiveGenerator.generateTransmissionOverlay(weakTorchCluster, weakTorchReport);
+        assertTrue(weakOverlay.toJson().contains("WEAK POWER BLOCKADE"), "Overlay contains WEAK POWER BLOCKADE");
+
+        // 7. Fast Path Rules 63, 64, 65
+        McAgentCore core = new McAgentCore();
+        var qPower = core.query("Steve", "红石强充能和弱充能的区别是什么？", null).get();
+        assertTrue(qPower.category().equals("REDSTONE_STRONG_VS_WEAK_POWERING"), "Category is REDSTONE_STRONG_VS_WEAK_POWERING");
+        assertTrue(qPower.rawAnswer().contains("强充能"), "Response mentions 强充能");
+
+        var qBurnout = core.query("Alex", "红石火把为什么会冒烟熄灭？", null).get();
+        assertTrue(qBurnout.category().equals("REDSTONE_TORCH_BURNOUT_DYNAMICS"), "Category is REDSTONE_TORCH_BURNOUT_DYNAMICS");
+        assertTrue(qBurnout.rawAnswer().contains("烧毁"), "Response mentions 烧毁");
+
+        var qWire = core.query("Engineer", "红石线偏转断开怎么解决？", null).get();
+                assertTrue(qWire.category().equals("REDSTONE_WIRE_REDIRECTION_DISCONNECTION"), "Category is REDSTONE_WIRE_REDIRECTION_DISCONNECTION");
+        assertTrue(qWire.rawAnswer().contains("偏转"), "Response mentions 偏转");
+
+        // 8. Command Router Integration
+        PlayerSessionManager sm = new PlayerSessionManager();
+        CommandRouter router = new CommandRouter(core, sm);
+
+        var resEmpty = router.execute("Steve", "/hoshi transmission", null);
+        assertTrue(resEmpty.isSuccess(), "Empty transmission command succeeds");
+        assertTrue(resEmpty.getMessage().contains("当前准星未捕捉到局部红石导线"), "Reports no redstone targeted");
+
+        ContextSnapshot ctx = ContextSnapshot.builder().cluster(burnoutCluster).build();
+        var resCmd = router.execute("Steve", "/hoshi transmission", ctx);
+        assertTrue(resCmd.isSuccess(), "Transmission command succeeds on cluster");
+        assertTrue(resCmd.getMessage().contains("红石传输拓扑与充能因果诊断报告"), "Message contains header");
+        assertTrue(resCmd.hasSpatialDirective(), "Result has spatial directive");
+
+        var resHl = router.execute("Steve", "/hoshi highlight transmission", ctx);
+        assertTrue(resHl.isSuccess(), "Highlight transmission succeeds");
+        assertTrue(resHl.hasSpatialDirective(), "Highlight transmission has spatial directive");
+        assertTrue(resHl.getSpatialDirective().category().equals("REDSTONE_TRANSMISSION"), "Directive is REDSTONE_TRANSMISSION");
+
+        var resHelp = router.execute("Steve", "/hoshi help", null);
+        assertTrue(resHelp.getMessage().contains("/hoshi transmission"), "Help mentions /hoshi transmission");
     }
 
 }

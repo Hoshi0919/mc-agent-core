@@ -38,6 +38,10 @@ public record BlockPos(int x, int y, int z) {
         return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
+    public List<BlockPos> neighbors() {
+        return getDirectNeighbors();
+    }
+
     public List<BlockPos> getDirectNeighbors() {
         List<BlockPos> neighbors = new ArrayList<>(6);
         neighbors.add(new BlockPos(x, y - 1, z));

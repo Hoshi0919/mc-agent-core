@@ -207,6 +207,32 @@ public record LocalBlock(
                id.contains("security_station") || isAe2P2PTunnel();
     }
 
+    public boolean isRedstoneTorch() {
+        return blockId != null && (blockId.toLowerCase().contains("redstone_torch") || blockId.toLowerCase().contains("redstone_wall_torch"));
+    }
+
+    public boolean isObserver() {
+        return blockId != null && blockId.toLowerCase().contains("observer");
+    }
+
+    public boolean isTransparent() {
+        if (blockId == null || isAir()) return true;
+        String id = blockId.toLowerCase();
+        return id.contains("glass") || id.contains("slab") || id.contains("stairs") ||
+               id.contains("glowstone") || id.contains("leaves") || id.contains("ice") ||
+               id.contains("hopper") || id.contains("chest") || id.contains("fence") ||
+               id.contains("wall") || id.contains("piston") || id.contains("door") ||
+               id.contains("trapdoor") || id.contains("wire") || isRedstoneTorch() ||
+               isRepeater() || isComparator();
+    }
+
+    public boolean isSolidConductiveBlock() {
+        if (blockId == null || isAir() || isTransparent()) return false;
+        String id = blockId.toLowerCase();
+        return !id.contains("redstone") && !id.contains("torch") && !id.contains("lever") &&
+               !id.contains("button") && !id.contains("pressure_plate");
+    }
+
     public boolean isAir() {
         return blockId == null || blockId.equals("minecraft:air") || blockId.equals("minecraft:cave_air") || blockId.equals("minecraft:void_air");
     }
