@@ -233,6 +233,28 @@ public record LocalBlock(
                !id.contains("button") && !id.contains("pressure_plate");
     }
 
+    public boolean isCopperBulb() {
+        if (blockId == null) return false;
+        String id = blockId.toLowerCase();
+        return id.contains("copper_bulb");
+    }
+
+    public boolean isCopperBulbLit() {
+        return isCopperBulb() && "true".equalsIgnoreCase(getProperty("lit", "false"));
+    }
+
+    public boolean isButton() {
+        if (blockId == null) return false;
+        String id = blockId.toLowerCase();
+        return id.contains("button");
+    }
+
+    public boolean isLever() {
+        if (blockId == null) return false;
+        String id = blockId.toLowerCase();
+        return id.contains("lever");
+    }
+
     public boolean isAir() {
         return blockId == null || blockId.equals("minecraft:air") || blockId.equals("minecraft:cave_air") || blockId.equals("minecraft:void_air");
     }

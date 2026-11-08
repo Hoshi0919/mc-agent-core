@@ -124,6 +124,31 @@ class FastPathResolver:
                     "▸ §a物理隔离与单向注入§r：在目标方块正前插入中继器锁定单向注入，或在拐角侧面使用不透明实体方块做物理隔离防止线路偏转。")
             return Resolution(text_response=resp, suggested_command="/hoshi transmission", category="REDSTONE_WIRE_REDIRECTION_DISCONNECTION")
 
+        # 66. Redstone RS-NOR Latch Dynamics & Race Conflict
+        if any(k in q for k in ["rs锁存器", "rs-nor", "锁存器冲突", "双稳态锁存器"]) or ("锁存器" in q and any(k in q for k in ["原理", "怎么做", "竞争", "冲突"])):
+            resp = ("§e【RS-NOR 保持锁存器物理法则与 S=1 & R=1 冲突自激防范】§r\n"
+                    "▸ §a交叉耦合结构§r：由两个反相器（实体方块+红石火把）交叉反馈构成双稳态回路；Set (S) 脉冲置位使输出 Q=1；Reset (R) 脉冲复位使输出 Q=0；双端无输入时永久锁存保持当前状态！\n"
+                    "▸ §c非法竞争冲突 (Illegal Race Condition)§r：严禁 Set 与 Reset 同时输入 (S=1, R=1)！此时两只火把均被强行熄灭 (Q=0, Q_bar=0)；若两路信号同时撤去，火把将根据微观时序发生自激振荡或不可预测的随机翻转！\n"
+                    "▸ §e抗冲突对策§r：在 S 和 R 输入端前置互锁逻辑或双向仲裁电路，确保任意时刻仅单侧信号有效。")
+            return Resolution(text_response=resp, suggested_command="/hoshi logic", category="REDSTONE_RS_NOR_LATCH_DYNAMICS")
+
+        # 67. 1.21 Copper Bulb Native T-Flip-Flop & 1-gt Odd Delay
+        if any(k in q for k in ["铜球", "copper bulb", "铜灯", "1.21铜球"]) or ("铜" in q and any(k in q for k in ["触发器", "t触发器", "延迟"])):
+            resp = ("§e【1.21 铜球 (Copper Bulb) 原生 T 触发器与 1 游戏刻奇数延迟应用】§r\n"
+                    "▸ §a原生单格双稳态§r：Minecraft 1.21 新增的铜球是官方首个原生 1 方块 T-Flip-Flop！在接收到输入信号上升沿（powered: false -> true）时自动翻转发光状态 (lit = !lit) 并物理锁存！\n"
+                    "▸ §6比较器高信噪读取§r：后方放置比较器可无损读取状态：当 lit=true (发光) 时稳定输出最高 15 级满信号；当 lit=false 时输出 0 级信号！\n"
+                    "▸ §b1 游戏刻 (1 gt) 奇数刻延迟§r：铜球状态翻转具有罕见的 1 gametick (0.5 redstone tick) 极速延迟，打破了传统红石原件只能按偶数刻运算的限制，是制造奇数刻极速时钟与紧凑计数器的终极原语！\n"
+                    "▸ §c未断电锁死警示§r：若持续供电未断开（powered 保持 true），铜球无法响应后续脉冲，必须确保脉冲完全断开后方可再次翻转。")
+            return Resolution(text_response=resp, suggested_command="/hoshi logic", category="REDSTONE_COPPER_BULB_DYNAMICS")
+
+        # 68. Sticky Piston 1-Tick Spit & Monostable Pulse Shaping
+        if any(k in q for k in ["活塞吐方块", "粘性活塞吐方块", "1刻脉冲", "单稳态电路", "脉冲限制器"]) or ("活塞" in q and any(k in q for k in ["吐方块", "留下方块", "拉不回", "脉宽"])):
+            resp = ("§e【粘性活塞 1 刻吐方块物理法则与单稳态脉冲整形】§r\n"
+                    "▸ §a1 刻脱离物理法则§r：Java 版粘性活塞在接收到 <= 2 gameticks (1 redstone tick) 的超短脉冲时，活塞瞬间伸出并立即缩回，由于速度极快无法将吸附的方块拉回，将方块丢在前方 (Spit Block)；再次接收 1 刻脉冲时将方块拉回，构成经典紧凑 T-Flip-Flop！\n"
+                    "▸ §c脉宽过长失效缺陷§r：木质按钮 (30 gt / 1.5s)、石质按钮 (20 gt / 1.0s) 或长脉冲直接输入活塞时，活塞伸出等待脉冲结束后缩回会将方块带回，完全无法吐方块！\n"
+                    "▸ §e单稳态整形方案§r：必须在按钮与活塞之间接入单稳态电路（如普通活塞切线单稳态、中继器锁存限制器），将长脉冲精准裁剪为 1 redstone tick (2 gt) 极短脉冲。")
+            return Resolution(text_response=resp, suggested_command="/hoshi logic", category="STICKY_PISTON_MONOSTABLE_SPIT")
+
         # 60. Comparator Container Signal Formula
         if any(k in q for k in ["比较器信号公式", "容器信号计算", "比较器满箱信号", "不可堆叠物品信号"]) or ("比较器" in q and any(k in q for k in ["公式", "槽位", "计算", "强度"])):
             resp = ("§e【红石比较器容器信号强度计算公式与槽位加权】§r\n"

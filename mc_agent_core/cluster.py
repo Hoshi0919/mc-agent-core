@@ -139,6 +139,23 @@ class LocalBlock:
     def is_observer(self) -> bool:
         return bool(self.block_id and "observer" in self.block_id.lower())
 
+
+    @property
+    def is_copper_bulb(self) -> bool:
+        return bool(self.block_id and "copper_bulb" in self.block_id.lower())
+
+    @property
+    def is_copper_bulb_lit(self) -> bool:
+        return self.is_copper_bulb and self.get_property("lit", "false").lower() == "true"
+
+    @property
+    def is_button(self) -> bool:
+        return bool(self.block_id and "button" in self.block_id.lower())
+
+    @property
+    def is_lever(self) -> bool:
+        return bool(self.block_id and "lever" in self.block_id.lower())
+
     @property
     def is_redstone_torch(self) -> bool:
         return bool(self.block_id and "redstone_torch" in self.block_id.lower())
@@ -254,6 +271,10 @@ class LocalMachineCluster:
 
     def get_connected_comparators(self) -> List[LocalBlock]:
         return [b for b in self.blocks.values() if b.is_comparator]
+
+
+    def get_connected_copper_bulbs(self) -> List[LocalBlock]:
+        return [b for b in self.blocks.values() if b.is_copper_bulb]
 
     def get_block(self, pos: BlockPos) -> Optional[LocalBlock]:
         return self.blocks.get(pos)
@@ -1654,3 +1675,449 @@ class RedstoneTransmissionAnalyzer:
             primary_diagnosis=primary_diag,
             actionable_advice=advice
         )
+
+
+@dataclass
+class RedstoneLogicReport:
+    is_healthy: bool
+    has_race_conflict: bool
+    has_pulse_width_mismatch: bool
+    has_bulb_lock: bool
+    has_glitch_risk: bool
+    target_pos: BlockPos
+    target_block_type: str
+    logic_type: str  # COPPER_BULB_T_FLIP_FLOP, RS_NOR_LATCH, STICKY_PISTON_T_FLIP_FLOP, MONOSTABLE_CIRCUIT, LOGIC_GATE, NONE
+    gate_kind: str  # AND, OR, XOR, NOT, NONE
+    output_state: bool
+    signal_strength: int
+    conflict_nodes: List[BlockPos]
+    active_outputs: List[BlockPos]
+    logic_components: List[BlockPos]
+    issues: List[str]
+    warnings: List[str]
+    primary_diagnosis: str
+    actionable_advice: str
+
+    def format_report(self) -> str:
+        sb = []
+        sb.append("§e【红石门电路、时序锁存器与铜球触发器因果诊断报告】§r")
+        sb.append(f"▸ 目标组件坐标：{self.target_pos} ({self.target_block_type.upper()})")
+        lt_zh = {
+            "COPPER_BULB_T_FLIP_FLOP": "§b1.21 铜球原生 T 触发器 (Copper Bulb T-Flip-Flop)§r",
+            "RS_NOR_LATCH": "§aRS-NOR 保持锁存器 (Bi-stable Latch)§r",
+            "STICKY_PISTON_T_FLIP_FLOP": "§3粘性活塞 1 刻吐方块 T 触发器 (Piston 1-Tick Spit)§r",
+            "MONOSTABLE_CIRCUIT": "§6单稳态脉冲限制器 (Monostable Pulse Limiter)§r",
+            "LOGIC_GATE": f"§d复合门电路 ({self.gate_kind} 门)§r",
+            "NONE": "§7无特定门电路§r"
+        }.get(self.logic_type, self.logic_type)
+        out_zh = "§a[激活/高电平/ON]§r" if self.output_state else "§7[休眠/低电平/OFF]§r"
+        sb.append(f"▸ 逻辑类型：{lt_zh} | 输出状态: {out_zh} (信号强度: §6{self.signal_strength}§r)")
+
+        if self.has_race_conflict:
+            sb.append("  ⚡ §c[锁存器竞争冲突] RS-NOR 保持锁存器检测到 Set 与 Reset 同时激活 (S=1, R=1)！§r")
+            for c in self.conflict_nodes:
+                sb.append(f"     ✖ 冲突输入端: {c} (双端熄灭并在撤除信号时触发亚稳态自激)")
+
+        if self.has_pulse_width_mismatch:
+            sb.append("  ⚡ §e[脉宽不匹配失效] 粘性活塞 T 触发器输入脉冲 > 2 gameticks (检测到按钮或长持续供电)！§r")
+            for c in self.conflict_nodes:
+                sb.append(f"     ✖ 超宽输入电源: {c} (活塞伸缩带回方块，无法脱离方块翻转)")
+
+        if self.has_bulb_lock:
+            sb.append("  ⚡ §6[铜球未复位锁定] 1.21 铜球处于持续充能状态 (powered=true)，无法响应后续脉冲！§r")
+            for c in self.conflict_nodes:
+                sb.append(f"     ✖ 持续通电锁定点: {c} (需先断开信号恢复 powered=false)")
+
+        if self.has_glitch_risk:
+            sb.append("  ⚡ §e[门电路毛刺风险] 复合门多路输入存在延时差 (>=2 ticks)，切换瞬间可能激发出瞬态假脉冲！§r")
+            for c in self.conflict_nodes:
+                sb.append(f"     ↷ 延时失配输入端: {c}")
+
+        if self.is_healthy:
+            sb.append("  ✓ §a[逻辑健康] 时序逻辑与门电路逻辑状态清晰，无竞争冒险、脉宽失配或锁死隐患。§r")
+
+        sb.append(f"▸ 核心诊断：{self.primary_diagnosis}")
+        if self.actionable_advice:
+            sb.append(f"▸ 修复建议：{self.actionable_advice}")
+        return "\n".join(sb)
+
+
+class RedstoneLogicAnalyzer:
+    @staticmethod
+    def empty() -> RedstoneLogicReport:
+        return RedstoneLogicReport(
+            is_healthy=True,
+            has_race_conflict=False,
+            has_pulse_width_mismatch=False,
+            has_bulb_lock=False,
+            has_glitch_risk=False,
+            target_pos=BlockPos(0, 0, 0),
+            target_block_type="none",
+            logic_type="NONE",
+            gate_kind="NONE",
+            output_state=False,
+            signal_strength=0,
+            conflict_nodes=[],
+            active_outputs=[],
+            logic_components=[],
+            issues=[],
+            warnings=[],
+            primary_diagnosis="未检测到红石门电路、锁存器或触发器组件",
+            actionable_advice=""
+        )
+
+    @staticmethod
+    def analyze(cluster: Optional[LocalMachineCluster], target_pos: BlockPos) -> RedstoneLogicReport:
+        if not cluster or cluster.is_empty:
+            return RedstoneLogicAnalyzer.empty()
+
+        target = cluster.get_block(target_pos)
+        focus_pos = target_pos if (target and not target.is_air) else cluster.origin
+        focus_block = cluster.get_block(focus_pos)
+
+        # 1. Copper Bulb
+        if focus_block and focus_block.is_copper_bulb:
+            return RedstoneLogicAnalyzer._analyze_copper_bulb(cluster, focus_block)
+        for b in cluster.get_connected_copper_bulbs():
+            return RedstoneLogicAnalyzer._analyze_copper_bulb(cluster, b)
+
+        # 2. RS-NOR Latch
+        latch = RedstoneLogicAnalyzer._scan_rs_nor_latch(cluster, focus_pos)
+        if latch:
+            return latch
+
+        # 3. Sticky Piston T-Flip-Flop
+        if focus_block and focus_block.is_sticky_piston:
+            return RedstoneLogicAnalyzer._analyze_piston_t_flip_flop(cluster, focus_block)
+        for b in cluster.get_connected_pistons():
+            if b.is_sticky_piston:
+                return RedstoneLogicAnalyzer._analyze_piston_t_flip_flop(cluster, b)
+
+        # 4. Monostable
+        mono = RedstoneLogicAnalyzer._scan_monostable(cluster, focus_pos)
+        if mono:
+            return mono
+
+        # 5. Logic Gate
+        gate = RedstoneLogicAnalyzer._scan_logic_gate(cluster, focus_pos)
+        if gate:
+            return gate
+
+        return RedstoneLogicAnalyzer.empty()
+
+    @staticmethod
+    def _analyze_copper_bulb(cluster: LocalMachineCluster, bulb: LocalBlock) -> RedstoneLogicReport:
+        pos = bulb.pos
+        is_lit = bulb.is_copper_bulb_lit
+        is_powered = bulb.is_powered()
+
+        conflict_nodes = []
+        active_outputs = [pos] if is_lit else []
+        components = [pos]
+        issues = []
+        warnings = []
+
+        has_bulb_lock = False
+        has_loop_oscillation = False
+
+        if is_powered:
+            has_bulb_lock = True
+            conflict_nodes.append(pos)
+            issues.append("铜球当前处于持续充能状态 (powered=true)，若无断电过程无法响应后续红石脉冲切换 lit 状态！")
+
+        for n_pos in pos.neighbors():
+            nb = cluster.get_block(n_pos)
+            if nb and nb.is_comparator:
+                components.append(n_pos)
+                cFacing = nb.facing()
+                # Comparator reading from bulb
+                if n_pos.offset(facing=cFacing) == pos or n_pos.offset(facing=RedstoneLogicAnalyzer._reverse_facing(cFacing)) == pos:
+                    comp_out = n_pos.offset(facing=cFacing)
+                    if comp_out == pos or pos in comp_out.neighbors():
+                        has_loop_oscillation = True
+                        conflict_nodes.append(n_pos)
+                        issues.append("检测到铜球经由比较器直连自反馈回路，将引发 1-gt 极限高频啸叫振荡！")
+
+        is_healthy = not has_bulb_lock and not has_loop_oscillation
+        if has_loop_oscillation:
+            diag = "铜球与比较器构成无延时自反馈闭环，将诱发 1-gametick 极限高频啸叫自激！"
+            advice = "在比较器输出端接入红石中继器或断开直连反馈，避免服务器卡顿。"
+        elif has_bulb_lock:
+            diag = "1.21 铜球处于持续充能锁定状态 (powered=true)，后续红石脉冲将失效。"
+            advice = "断开持续供电信号（如将拉杆切为按钮，或确保前置信号能及时断电归零）。"
+        else:
+            diag = f"1.21 原生铜球 T 触发器状态正常 (lit={is_lit}, powered={is_powered})，具 1-gt 奇数刻极速延迟"
+            advice = "可后接红石比较器无损读取 15 级高信噪满信号，或用于奇数刻超紧凑时钟。"
+
+        return RedstoneLogicReport(
+            is_healthy=is_healthy,
+            has_race_conflict=False,
+            has_pulse_width_mismatch=False,
+            has_bulb_lock=has_bulb_lock or has_loop_oscillation,
+            has_glitch_risk=False,
+            target_pos=pos,
+            target_block_type=bulb.block_id,
+            logic_type="COPPER_BULB_T_FLIP_FLOP",
+            gate_kind="NONE",
+            output_state=is_lit,
+            signal_strength=15 if is_lit else 0,
+            conflict_nodes=conflict_nodes,
+            active_outputs=active_outputs,
+            logic_components=components,
+            issues=issues,
+            warnings=warnings,
+            primary_diagnosis=diag,
+            actionable_advice=advice
+        )
+
+    @staticmethod
+    def _scan_rs_nor_latch(cluster: LocalMachineCluster, focus_pos: BlockPos) -> Optional[RedstoneLogicReport]:
+        torches = [b for b in cluster.blocks.values() if b.is_redstone_torch]
+        if len(torches) < 2:
+            target = cluster.get_block(focus_pos)
+            if target and (target.get_property("latch", "false").lower() == "true" or target.get_property("circuit", "").lower() == "rs_nor"):
+                return RedstoneLogicAnalyzer._eval_explicit_latch(cluster, target)
+            return None
+
+        for i in range(len(torches)):
+            for j in range(i + 1, len(torches)):
+                tA = torches[i]
+                tB = torches[j]
+                dist = abs(tA.pos.x - tB.pos.x) + abs(tA.pos.y - tB.pos.y) + abs(tA.pos.z - tB.pos.z)
+                if dist <= 5:
+                    return RedstoneLogicAnalyzer._eval_rs_nor_pair(cluster, tA, tB)
+
+        target = cluster.get_block(focus_pos)
+        if target and (target.get_property("latch", "false").lower() == "true" or target.get_property("circuit", "").lower() == "rs_nor"):
+            return RedstoneLogicAnalyzer._eval_explicit_latch(cluster, target)
+        return None
+
+    @staticmethod
+    def _eval_rs_nor_pair(cluster: LocalMachineCluster, tA: LocalBlock, tB: LocalBlock) -> RedstoneLogicReport:
+        posA = tA.pos
+        posB = tB.pos
+        litA = tA.get_property("lit", "true").lower() != "false"
+        litB = tB.get_property("lit", "false").lower() != "false"
+
+        s_active = tA.get_property("set", "false").lower() == "true"
+        r_active = tB.get_property("reset", "false").lower() == "true"
+
+        for n in posA.neighbors():
+            nb = cluster.get_block(n)
+            if nb and (nb.is_button or nb.is_lever) and nb.is_powered():
+                s_active = True
+        for n in posB.neighbors():
+            nb = cluster.get_block(n)
+            if nb and (nb.is_button or nb.is_lever) and nb.is_powered():
+                r_active = True
+
+        has_race = s_active and r_active
+        conflict_nodes = [posA, posB] if has_race else []
+        issues = ["RS-NOR 保持锁存器检测到 Set 与 Reset 同时激活 (S=1, R=1)！两路输出均被强行熄灭，撤除时引发亚稳态竞争自激！"] if has_race else []
+
+        active_outputs = []
+        if litA: active_outputs.append(posA)
+        if litB: active_outputs.append(posB)
+
+        q_state = litB or (not litA and not r_active)
+
+        diag = "RS-NOR 保持锁存器检测到非法竞争状态 (S=1 & R=1)，两路火把熄灭，存在竞争冒险高危" if has_race else f"RS-NOR 保持锁存器工作正常 [Q={1 if q_state else 0}, Q_BAR={0 if q_state else 1}] (S={s_active}, R={r_active})"
+        advice = "在 Set 与 Reset 输入端增加前置互锁逻辑或双向仲裁电路，禁止双侧同时触发。" if has_race else "保持 Set 与 Reset 互斥脉冲输入，避免同时通电。"
+
+        return RedstoneLogicReport(
+            is_healthy=not has_race,
+            has_race_conflict=has_race,
+            has_pulse_width_mismatch=False,
+            has_bulb_lock=False,
+            has_glitch_risk=False,
+            target_pos=posB,
+            target_block_type="minecraft:redstone_torch",
+            logic_type="RS_NOR_LATCH",
+            gate_kind="NONE",
+            output_state=q_state,
+            signal_strength=15 if q_state else 0,
+            conflict_nodes=conflict_nodes,
+            active_outputs=active_outputs,
+            logic_components=[posA, posB],
+            issues=issues,
+            warnings=[],
+            primary_diagnosis=diag,
+            actionable_advice=advice
+        )
+
+    @staticmethod
+    def _eval_explicit_latch(cluster: LocalMachineCluster, target: LocalBlock) -> RedstoneLogicReport:
+        s_active = target.get_property("set", "false").lower() == "true"
+        r_active = target.get_property("reset", "false").lower() == "true"
+        has_race = s_active and r_active
+
+        q = s_active or (not r_active and target.get_property("q", "true").lower() != "false")
+        conflict_nodes = [target.pos] if has_race else []
+        issues = ["RS-NOR 保持锁存器检测到 Set 与 Reset 同时激活 (S=1, R=1)！"] if has_race else []
+
+        return RedstoneLogicReport(
+            is_healthy=not has_race,
+            has_race_conflict=has_race,
+            has_pulse_width_mismatch=False,
+            has_bulb_lock=False,
+            has_glitch_risk=False,
+            target_pos=target.pos,
+            target_block_type=target.block_id,
+            logic_type="RS_NOR_LATCH",
+            gate_kind="NONE",
+            output_state=q,
+            signal_strength=15 if q else 0,
+            conflict_nodes=conflict_nodes,
+            active_outputs=[target.pos] if (q and not has_race) else [],
+            logic_components=[target.pos],
+            issues=issues,
+            warnings=[],
+            primary_diagnosis="RS-NOR 保持锁存器检测到非法输入冲突 (S=1 & R=1)" if has_race else "RS-NOR 保持锁存器工作正常",
+            actionable_advice="增加前置互锁电路禁止双端同时通电" if has_race else "保持当前输入分离"
+        )
+
+    @staticmethod
+    def _analyze_piston_t_flip_flop(cluster: LocalMachineCluster, piston: LocalBlock) -> RedstoneLogicReport:
+        pos = piston.pos
+        facing = piston.facing()
+        spit_pos = pos.offset(facing=facing)
+
+        has_mono = piston.get_property("has_monostable", "false").lower() == "true"
+        pulse_width = int(piston.get_property("pulse_width", "0"))
+        has_button = False
+        source_pos = None
+
+        for n in pos.neighbors():
+            nb = cluster.get_block(n)
+            if not nb: continue
+            if nb.is_button:
+                has_button = True
+                source_pos = n
+                if pulse_width == 0:
+                    pulse_width = 30 if "wood" in nb.block_id.lower() else 20
+            elif nb.is_lever and nb.is_powered():
+                has_button = True
+                source_pos = n
+                if pulse_width == 0: pulse_width = 100
+            elif nb.is_repeater:
+                d = int(nb.get_property("delay", "1"))
+                if d >= 2 and pulse_width == 0:
+                    pulse_width = d * 2
+
+        has_mismatch = not has_mono and (pulse_width > 2 or has_button)
+        conflict_nodes = []
+        issues = []
+        if has_mismatch:
+            conflict_nodes.append(pos)
+            if source_pos: conflict_nodes.append(source_pos)
+            issues.append(f"粘性活塞 T 触发器输入脉冲宽度为 {pulse_width} gameticks (> 2 gt)！活塞伸缩后将吸回方块，无法脱离方块翻转！")
+
+        is_ext = piston.is_extended or piston.get_property("spit_out", "false").lower() == "true"
+        active_outputs = [spit_pos] if is_ext else []
+
+        diag = f"粘性活塞 T 触发器输入脉宽过长 ({pulse_width} gt > 2 gt)，活塞拉回方块无法吐出" if has_mismatch else "粘性活塞 1 刻吐方块 T 触发器工作正常 (脉冲 <= 2 gt 瞬间脱离)"
+        advice = "在输入端前置接入单稳态电路（如普通活塞切线单稳态或双路反相延时器），将脉宽精确裁剪至 <= 2 gameticks (1 redstone tick)。" if has_mismatch else "保持超短脉冲输入以维持可靠双稳态切换。"
+
+        return RedstoneLogicReport(
+            is_healthy=not has_mismatch,
+            has_race_conflict=False,
+            has_pulse_width_mismatch=has_mismatch,
+            has_bulb_lock=False,
+            has_glitch_risk=False,
+            target_pos=pos,
+            target_block_type=piston.block_id,
+            logic_type="STICKY_PISTON_T_FLIP_FLOP",
+            gate_kind="NONE",
+            output_state=is_ext,
+            signal_strength=15 if is_ext else 0,
+            conflict_nodes=conflict_nodes,
+            active_outputs=active_outputs,
+            logic_components=[pos],
+            issues=issues,
+            warnings=[],
+            primary_diagnosis=diag,
+            actionable_advice=advice
+        )
+
+    @staticmethod
+    def _scan_monostable(cluster: LocalMachineCluster, focus_pos: BlockPos) -> Optional[RedstoneLogicReport]:
+        target = cluster.get_block(focus_pos)
+        if target and (target.get_property("monostable", "false").lower() == "true" or target.get_property("circuit", "").lower() == "monostable"):
+            powered = target.is_powered()
+            return RedstoneLogicReport(
+                is_healthy=True,
+                has_race_conflict=False,
+                has_pulse_width_mismatch=False,
+                has_bulb_lock=False,
+                has_glitch_risk=False,
+                target_pos=target.pos,
+                target_block_type=target.block_id,
+                logic_type="MONOSTABLE_CIRCUIT",
+                gate_kind="NONE",
+                output_state=powered,
+                signal_strength=15 if powered else 0,
+                conflict_nodes=[],
+                active_outputs=[target.pos] if powered else [],
+                logic_components=[target.pos],
+                issues=[],
+                warnings=[],
+                primary_diagnosis="单稳态脉冲限制器工作正常，输出 1 redstone tick (2 gt) 极短脉冲",
+                actionable_advice="可用于粘性活塞吐方块、计数器或发射器点射"
+            )
+        return None
+
+    @staticmethod
+    def _scan_logic_gate(cluster: LocalMachineCluster, focus_pos: BlockPos) -> Optional[RedstoneLogicReport]:
+        target = cluster.get_block(focus_pos)
+        if not target: return None
+
+        circ = target.get_property("circuit", "").lower()
+        gate = target.get_property("gate", "").lower()
+
+        kind = "NONE"
+        if "and" in circ or "and" in gate: kind = "AND"
+        elif "xor" in circ or "xor" in gate: kind = "XOR"
+        elif "or" in circ or "or" in gate: kind = "OR"
+
+        if kind == "NONE": return None
+
+        in_a = target.get_property("input_a", "false").lower() == "true"
+        in_b = target.get_property("input_b", "false").lower() == "true"
+        delay_a = int(target.get_property("delay_a", "0"))
+        delay_b = int(target.get_property("delay_b", "0"))
+
+        has_glitch = abs(delay_a - delay_b) >= 2
+
+        out = False
+        if kind == "AND": out = in_a and in_b
+        elif kind == "OR": out = in_a or in_b
+        elif kind == "XOR": out = in_a != in_b
+
+        diag = f"复合门电路 ({kind} 门) 输入延迟不对齐 (差值 {abs(delay_a - delay_b)} ticks)，存在毛刺冒险" if has_glitch else f"复合门电路 ({kind} 门) 逻辑运算正常 [A={in_a}, B={in_b} -> OUT={out}]"
+        advice = "在延迟较短的输入通路上串联中继器平衡时间，避免瞬态毛刺误触下级机械。" if has_glitch else "逻辑信号对称，保持当前布线。"
+
+        return RedstoneLogicReport(
+            is_healthy=not has_glitch,
+            has_race_conflict=False,
+            has_pulse_width_mismatch=False,
+            has_bulb_lock=False,
+            has_glitch_risk=has_glitch,
+            target_pos=target.pos,
+            target_block_type=target.block_id,
+            logic_type="LOGIC_GATE",
+            gate_kind=kind,
+            output_state=out,
+            signal_strength=15 if out else 0,
+            conflict_nodes=[target.pos] if has_glitch else [],
+            active_outputs=[target.pos] if out else [],
+            logic_components=[target.pos],
+            issues=[],
+            warnings=[f"门电路双路输入延时差为 {abs(delay_a - delay_b)} ticks (>= 2 ticks)！"] if has_glitch else [],
+            primary_diagnosis=diag,
+            actionable_advice=advice
+        )
+
+    @staticmethod
+    def _reverse_facing(facing: str) -> str:
+        f = facing.lower()
+        return {"north": "south", "south": "north", "east": "west", "west": "east", "up": "down"}.get(f, "up")

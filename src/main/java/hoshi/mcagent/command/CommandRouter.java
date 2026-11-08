@@ -3,6 +3,7 @@ package hoshi.mcagent.command;
 import hoshi.mcagent.cluster.Ae2NetworkAnalyzer;
 import hoshi.mcagent.cluster.PistonRedstoneAnalyzer;
 import hoshi.mcagent.cluster.ComparatorRedstoneAnalyzer;
+import hoshi.mcagent.cluster.RedstoneLogicAnalyzer;
 import hoshi.mcagent.cluster.RedstoneTransmissionAnalyzer;
 import hoshi.mcagent.cluster.BlockPos;
 import hoshi.mcagent.spatial.SpatialDirectiveGenerator;
@@ -260,6 +261,12 @@ public class CommandRouter {
             case "power":
             case "wire": {
                 return handleTransmission(playerId, tokens, argStart, snapshot);
+            }
+            case "logic":
+            case "latch":
+            case "gate":
+            case "bulb": {
+                return handleLogic(playerId, tokens, argStart, snapshot);
             }
             case "cluster":
             case "topo": {
@@ -686,6 +693,25 @@ public class CommandRouter {
     }
 
     
+
+    private CommandResult handleLogic(String playerId, String[] tokens, int argStart, ContextSnapshot snapshot) {
+        LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
+        if (cluster == null || cluster.isEmpty()) {
+            String msg = "§e【红石时序逻辑与门电路因果诊断】§r\n" +
+                    "当前准星未捕捉到局部红石门电路、锁存器或触发器集群。\n" +
+                    "请将准星对准 1.21 铜球、红石火把、粘性活塞或门电路，然后输入 `/hoshi logic` 触发双稳态与时序因果分析！";
+            return CommandResult.success("LOGIC", msg, null, null, null);
+        }
+        BlockPos focus = (snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
+        var report = RedstoneLogicAnalyzer.analyzeLogic(cluster, focus);
+        String text = report.formatReport();
+        ChatPaginator.PagedResult paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page");
+        sessionManager.recordInteraction(playerId, "/hoshi logic", text, "LOGIC", paged);
+        var comps = MinecraftTextFormatter.parseComponents(paged.fullPageText(), "/hoshi logic");
+        String tellraw = TellrawJsonBuilder.toJson(comps);
+        var packet = SpatialDirectiveGenerator.generateLogicOverlay(cluster, report);
+        return CommandResult.success("LOGIC", paged.fullPageText(), null, tellraw, paged, packet);
+    }
     private CommandResult handleTransmission(String playerId, String[] tokens, int argStart, ContextSnapshot snapshot) {
         LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
         if (cluster == null || cluster.isEmpty()) {
@@ -845,6 +871,10 @@ public class CommandRouter {
             BlockPos focus = (snapshot != null && snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
             var t = RedstoneTransmissionAnalyzer.analyzeTransmission(cluster, focus);
             packet = SpatialDirectiveGenerator.generateTransmissionOverlay(cluster, t);
+        } else if ("logic".equals(sub) || "latch".equals(sub) || "gate".equals(sub) || "bulb".equals(sub)) {
+            BlockPos focus = (snapshot != null && snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
+            var l = RedstoneLogicAnalyzer.analyzeLogic(cluster, focus);
+            packet = SpatialDirectiveGenerator.generateLogicOverlay(cluster, l);
         } else if ("comparator".equals(sub) || "sorter".equals(sub)) {
             var c = ComparatorRedstoneAnalyzer.analyze(cluster, cluster.origin());
             packet = SpatialDirectiveGenerator.generateComparatorOverlay(cluster, c);
@@ -902,6 +932,17 @@ public class CommandRouter {
             BlockPos focus = (snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
             var t = RedstoneTransmissionAnalyzer.analyzeTransmission(cluster, focus);
             var packet = SpatialDirectiveGenerator.generateTransmissionOverlay(cluster, t);
+            return CommandResult.success("HIGHLIGHT", "§a[Hoshi 3D 高亮] " + packet.hudTitle(), null, packet.toTellrawFallback(), null, packet);
+        }
+
+        if ("logic".equals(sub) || "latch".equals(sub) || "gate".equals(sub) || "bulb".equals(sub)) {
+            LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
+            if (cluster == null || cluster.isEmpty()) {
+                return CommandResult.error("HIGHLIGHT", "§c准星未捕捉到红石逻辑组件，无法投射逻辑高亮。");
+            }
+            BlockPos focus = (snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
+            var l = RedstoneLogicAnalyzer.analyzeLogic(cluster, focus);
+            var packet = SpatialDirectiveGenerator.generateLogicOverlay(cluster, l);
             return CommandResult.success("HIGHLIGHT", "§a[Hoshi 3D 高亮] " + packet.hudTitle(), null, packet.toTellrawFallback(), null, packet);
         }
 
@@ -967,6 +1008,7 @@ public class CommandRouter {
                 "▸ §e/hoshi highlight multiblock <名称>§r - 在准星位置投射多方块虚影蓝图\n" +
                 "▸ §e/hoshi highlight mobfarm§r - 以自身为中心投射 24/32/128m 刷怪动力学清除圈\n" +
                 "▸ §e/hoshi highlight transmission§r - 投射红石火把烧毁高危、弱充能阻断点与偏转断路导线\n" +
+                "▸ §e/hoshi highlight logic§r - 投射锁存器冲突、活塞脉宽失配与 1.21 铜球触发器全息覆盖层\n" +
                 "▸ §e/hoshi highlight comparator§r - 投射比较器信号、串扰高危线路与漏斗负载\n" +
                 "▸ §e/hoshi highlight piston§r - 投射准连接 QC 隔电源、BUD 锁定与推块超载\n" +
                 "▸ §e/hoshi highlight clear§r - 清除所有世界高亮与全息虚影";
@@ -990,6 +1032,7 @@ public class CommandRouter {
                                 "▸ §e/hoshi ae2§r - 诊断准星 AE2 数字化网络拓扑、控制器合法性与 8/32 频道溢出\n" +
                 "▸ §e/hoshi highlight ae2§r - 投射 AE2 频道过载红线与掉线设备 3D 空间全息覆盖层\n" +
                 "▸ §e/hoshi transmission§r - 诊断红石火把极速自激烧毁、强弱充能传递阻断与导线偏转断路\n" +
+                "▸ §e/hoshi logic§r - 诊断 RS-NOR 保持锁存器竞争、活塞 1 刻吐方块脉宽与 1.21 铜球状态机\n" +
                 "▸ §e/hoshi comparator§r - 诊断准星比较器信号强度、分类机满溢串扰与防溢出保护\n" +
                 "▸ §e/hoshi piston§r - 诊断准星活塞准连接 (QC)、BUD 锁定与推块链超载\n" +
                 "▸ §e/hoshi cluster [kinetics/hopper/crafter]§r - 诊断局部机器拓扑、齿轮卡死与漏斗回路\n" +

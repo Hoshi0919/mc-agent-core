@@ -2161,3 +2161,122 @@ def test_redstone_transmission_analyzer_and_powering_dynamics():
 
     r_help = router.execute("Steve", "/hoshi help", None)
     assert "/hoshi transmission" in r_help.message
+
+
+def test_v27_redstone_logic_copper_bulb_latch_piston():
+    from mc_agent_core.cluster import RedstoneLogicAnalyzer, LocalMachineCluster, BlockPos
+    from mc_agent_core.spatial import SpatialDirectiveGenerator
+    from mc_agent_core.fast_path import FastPathResolver
+    from mc_agent_core.command import CommandRouter
+    from mc_agent_core.context import ContextSnapshot
+    from mc_agent_core.dispatcher import AsyncQueryDispatcher
+
+    # 1. 1.21 Copper Bulb Native T-Flip-Flop (lit=true, comparator 15 signal)
+    bulb_cluster = LocalMachineCluster(BlockPos(0, 64, 0)) \
+        .add(0, 64, 0, "minecraft:copper_bulb", {"lit": "true", "powered": "false"}) \
+        .add(1, 64, 0, "minecraft:comparator", {"facing": "east"})
+
+    bulb_rep = RedstoneLogicAnalyzer.analyze(bulb_cluster, BlockPos(0, 64, 0))
+    assert bulb_rep.is_healthy
+    assert bulb_rep.logic_type == "COPPER_BULB_T_FLIP_FLOP"
+    assert bulb_rep.output_state is True
+    assert bulb_rep.signal_strength == 15
+    assert not bulb_rep.has_bulb_lock
+
+    # 2. 1.21 Copper Bulb Powered Hold Lock
+    locked_cluster = LocalMachineCluster(BlockPos(0, 64, 0)) \
+        .add(0, 64, 0, "minecraft:copper_bulb", {"lit": "true", "powered": "true"})
+    locked_rep = RedstoneLogicAnalyzer.analyze(locked_cluster, BlockPos(0, 64, 0))
+    assert not locked_rep.is_healthy
+    assert locked_rep.has_bulb_lock
+    assert BlockPos(0, 64, 0) in locked_rep.conflict_nodes
+
+    # 3. RS-NOR Latch Bi-stable Normal State (Set=1 -> Q=1)
+    latch_normal = LocalMachineCluster(BlockPos(10, 64, 10)) \
+        .add(10, 64, 10, "minecraft:redstone_torch", {"lit": "false", "set": "true"}) \
+        .add(12, 64, 10, "minecraft:redstone_torch", {"lit": "true", "reset": "false"})
+    latch_rep = RedstoneLogicAnalyzer.analyze(latch_normal, BlockPos(12, 64, 10))
+    assert latch_rep.is_healthy
+    assert latch_rep.logic_type == "RS_NOR_LATCH"
+    assert not latch_rep.has_race_conflict
+    assert latch_rep.output_state is True
+
+    # 4. RS-NOR Latch Illegal Race Condition (Set=1 & Reset=1)
+    latch_conflict = LocalMachineCluster(BlockPos(10, 64, 10)) \
+        .add(10, 64, 10, "minecraft:redstone_torch", {"lit": "false", "set": "true"}) \
+        .add(12, 64, 10, "minecraft:redstone_torch", {"lit": "false", "reset": "true"})
+    conflict_rep = RedstoneLogicAnalyzer.analyze(latch_conflict, BlockPos(12, 64, 10))
+    assert not conflict_rep.is_healthy
+    assert conflict_rep.has_race_conflict
+    assert len(conflict_rep.conflict_nodes) == 2
+    assert "(S=1, R=1)" in conflict_rep.issues[0]
+
+    # 5. Sticky Piston 1-Tick Spit: Normal 2gt pulse
+    piston_normal = LocalMachineCluster(BlockPos(20, 64, 20)) \
+        .add(20, 64, 20, "minecraft:sticky_piston", {"facing": "east", "pulse_width": "2"}) \
+        .add(21, 64, 20, "minecraft:redstone_block")
+    piston_rep = RedstoneLogicAnalyzer.analyze(piston_normal, BlockPos(20, 64, 20))
+    assert piston_rep.is_healthy
+    assert piston_rep.logic_type == "STICKY_PISTON_T_FLIP_FLOP"
+    assert not piston_rep.has_pulse_width_mismatch
+
+    # 6. Sticky Piston Pulse Width Mismatch (Button input without monostable)
+    piston_mismatch = LocalMachineCluster(BlockPos(20, 64, 20)) \
+        .add(20, 64, 20, "minecraft:sticky_piston", {"facing": "east"}) \
+        .add(19, 64, 20, "minecraft:oak_button", {"powered": "true"})
+    mismatch_rep = RedstoneLogicAnalyzer.analyze(piston_mismatch, BlockPos(20, 64, 20))
+    assert not mismatch_rep.is_healthy
+    assert mismatch_rep.has_pulse_width_mismatch
+    assert BlockPos(20, 64, 20) in mismatch_rep.conflict_nodes
+
+    # 7. Logic Gate: AND gate with latency mismatch glitch risk
+    gate_cluster = LocalMachineCluster(BlockPos(30, 64, 30)) \
+        .add(30, 64, 30, "minecraft:stone", {"circuit": "and", "input_a": "true", "input_b": "true", "delay_a": "0", "delay_b": "3"})
+    gate_rep = RedstoneLogicAnalyzer.analyze(gate_cluster, BlockPos(30, 64, 30))
+    assert not gate_rep.is_healthy
+    assert gate_rep.has_glitch_risk
+    assert gate_rep.output_state is True
+
+    # 8. 3D Spatial Overlay Integration
+    logic_overlay = SpatialDirectiveGenerator.generate_logic_overlay(latch_conflict, conflict_rep)
+    assert logic_overlay.category == "REDSTONE_LOGIC"
+    json_str = logic_overlay.to_json()
+    assert "LATCH RACE CONFLICT" in json_str
+    assert "CONFLICT NODE" in json_str
+
+    # 9. Fast Path Rules 66, 67, 68
+    r_latch = FastPathResolver.try_resolve("RS-NOR锁存器冲突怎么解决？")
+    assert r_latch is not None
+    assert r_latch.category == "REDSTONE_RS_NOR_LATCH_DYNAMICS"
+    assert "S=1" in r_latch.text_response
+
+    r_bulb = FastPathResolver.try_resolve("1.21铜球触发器原理是什么？")
+    assert r_bulb is not None
+    assert r_bulb.category == "REDSTONE_COPPER_BULB_DYNAMICS"
+    assert "铜球" in r_bulb.text_response
+    assert "奇数" in r_bulb.text_response
+
+    r_spit = FastPathResolver.try_resolve("粘性活塞单稳态电路脉冲限制器怎么做？")
+    assert r_spit is not None
+    assert r_spit.category == "STICKY_PISTON_MONOSTABLE_SPIT"
+    assert "单稳态" in r_spit.text_response
+
+    # 10. Command Router Integration
+    router = CommandRouter(AsyncQueryDispatcher())
+    r_empty = router.execute("Steve", "/hoshi logic", None)
+    assert r_empty.is_success
+    assert "当前准星未捕捉到局部红石门电路" in r_empty.message
+
+    ctx = ContextSnapshot("Steve", "overworld", 0.0, 64.0, 0.0, machine_cluster=latch_conflict)
+    r_cmd = router.execute("Steve", "/hoshi logic", ctx)
+    assert r_cmd.is_success
+    assert "红石门电路、时序锁存器与铜球触发器因果诊断报告" in r_cmd.message
+    assert r_cmd.has_spatial_directive
+
+    r_hl = router.execute("Steve", "/hoshi highlight logic", ctx)
+    assert r_hl.is_success
+    assert r_hl.has_spatial_directive
+    assert r_hl.spatial_directive.category == "REDSTONE_LOGIC"
+
+    r_help = router.execute("Steve", "/hoshi help", None)
+    assert "/hoshi logic" in r_help.message

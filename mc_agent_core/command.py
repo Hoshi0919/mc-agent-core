@@ -189,6 +189,8 @@ class CommandRouter:
             return self._handle_comparator(player_id, tokens, arg_start, snapshot)
         elif sub in ("transmission", "power", "wire"):
             return self._handle_transmission(player_id, tokens, arg_start, snapshot)
+        elif sub in ("logic", "latch", "gate", "bulb"):
+            return self._handle_logic(player_id, tokens, arg_start, snapshot)
         elif sub in ("cluster", "topo"):
             return self._handle_cluster(player_id, tokens, arg_start, snapshot)
         elif sub in ("highlight", "hl"):
@@ -571,6 +573,11 @@ class CommandRouter:
             t_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
             t = RedstoneTransmissionAnalyzer.analyze(cluster, t_pos)
             packet = SpatialDirectiveGenerator.generate_transmission_overlay(cluster, t)
+        elif sub in ("logic", "latch", "gate", "bulb"):
+            from mc_agent_core.cluster import RedstoneLogicAnalyzer, BlockPos
+            focus_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
+            l = RedstoneLogicAnalyzer.analyze(cluster, focus_pos)
+            packet = SpatialDirectiveGenerator.generate_logic_overlay(cluster, l)
         elif sub in ("comparator", "sorter"):
             from mc_agent_core.cluster import ComparatorRedstoneAnalyzer
             c = ComparatorRedstoneAnalyzer.analyze(cluster, cluster.origin)
@@ -590,6 +597,24 @@ class CommandRouter:
 
         return CommandResult(status="SUCCESS", action="CLUSTER", message="\n".join(sb), spatial_directive=packet)
 
+
+    def _handle_logic(self, player_id: Optional[str], tokens: list, arg_start: int, snapshot: Optional[ContextSnapshot]) -> CommandResult:
+        cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
+        if not cluster or cluster.is_empty:
+            msg = ("§e【红石时序逻辑与门电路因果诊断】§r\n"
+                   "当前准星未捕捉到局部红石门电路、锁存器或触发器集群。\n"
+                   "请将准星对准 1.21 铜球、红石火把、粘性活塞或门电路，然后输入 `/hoshi logic` 触发双稳态与时序因果分析！")
+            return CommandResult(status="SUCCESS", action="LOGIC", message=msg)
+        from mc_agent_core.cluster import RedstoneLogicAnalyzer, BlockPos
+        target_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
+        report = RedstoneLogicAnalyzer.analyze(cluster, target_pos)
+        text = report.format_report()
+        paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page")
+        self.session_manager.record_interaction(player_id, "/hoshi logic", text, "LOGIC", paged)
+        comps = MinecraftTextFormatter.parse_components(paged.full_page_text, "/hoshi logic")
+        tellraw = TellrawJsonBuilder.to_json(comps)
+        pkt = SpatialDirectiveGenerator.generate_logic_overlay(cluster, report)
+        return CommandResult(status="SUCCESS", action="LOGIC", message=paged.full_page_text, tellraw_json=tellraw, paged_result=paged, spatial_directive=pkt)
     def _handle_transmission(self, player_id: Optional[str], tokens: list, arg_start: int, snapshot: Optional[ContextSnapshot]) -> CommandResult:
         cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
         if not cluster or cluster.is_empty:
@@ -685,6 +710,16 @@ class CommandRouter:
             pkt = SpatialDirectiveGenerator.generate_transmission_overlay(cluster, t)
             return CommandResult(status="SUCCESS", action="HIGHLIGHT", message=f"§a[Hoshi 3D 高亮] {pkt.hud_title}", spatial_directive=pkt)
 
+        if sub in ("logic", "latch", "gate", "bulb"):
+            cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
+            if not cluster or cluster.is_empty:
+                return CommandResult(status="ERROR", action="HIGHLIGHT", message="§c准星未捕捉到红石逻辑组件，无法投射逻辑高亮。")
+            from mc_agent_core.cluster import RedstoneLogicAnalyzer, BlockPos
+            focus_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
+            l = RedstoneLogicAnalyzer.analyze(cluster, focus_pos)
+            pkt = SpatialDirectiveGenerator.generate_logic_overlay(cluster, l)
+            return CommandResult(status="SUCCESS", action="HIGHLIGHT", message=f"§a[Hoshi 3D 高亮] {pkt.hud_title}", spatial_directive=pkt)
+
         if sub in ("comparator", "sorter", "comp"):
             cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
             if not cluster or cluster.is_empty or not cluster.get_connected_comparators():
@@ -746,7 +781,8 @@ class CommandRouter:
         msg = ("§6【Hoshi 3D 空间全息高亮指令】§r\n"
                "▸ §e/hoshi highlight kinetics§r - 在游戏世界高亮冲突齿轮与流向\n"
                "▸ §e/hoshi highlight hopper§r - 投射漏斗死锁环路与物流方向箭头\n"
-               "▸ §e/hoshi highlight transmission§r - 投射红石火把烧毁高危、弱充能阻断点与偏转断路导线\n" +
+               "▸ §e/hoshi highlight transmission§r - 投射红石火把烧毁高危、弱充能阻断点与偏转断路导线\n"
+            "▸ §e/hoshi highlight logic§r - 投射锁存器冲突、活塞脉宽失配与 1.21 铜球触发器全息覆盖层\n" +
                "▸ §e/hoshi highlight comparator§r - 投射比较器信号、串扰高危线路与漏斗负载\n" +
                "▸ §e/hoshi highlight piston§r - 投射准连接 QC 隔电源、BUD 锁定与推块超载\n"
                "▸ §e/hoshi highlight multiblock <名称>§r - 在准星位置投射多方块虚影蓝图\n"
@@ -769,7 +805,8 @@ class CommandRouter:
             "▸ §e/hoshi anvil <装备> [附魔:等级...]§r - 规划二叉树最优附魔工序规避过于昂贵\n"
             "▸ §e/hoshi create stress <动力源> [规模]§r - 诊断 Create 模组动力网应力与过载转速\n"
             "▸ §e/hoshi ae2§r - 诊断准星 AE2 数字化网络拓扑、控制器合法性与 8/32 频道溢出\n"
-            "▸ §e/hoshi transmission§r - 诊断红石火把极速自激烧毁、强弱充能传递阻断与导线偏转断路\n" +
+            "▸ §e/hoshi transmission§r - 诊断红石火把极速自激烧毁、强弱充能传递阻断与导线偏转断路\n"
+            "▸ §e/hoshi logic§r - 诊断 RS-NOR 保持锁存器竞争、活塞 1 刻吐方块脉宽与 1.21 铜球状态机\n" +
             "▸ §e/hoshi comparator§r - 诊断准星比较器信号强度、分类机满溢串扰与防溢出保护\n" +
             "▸ §e/hoshi piston§r - 诊断准星活塞准连接 (QC)、BUD 锁定与推块链超载\n"
             "▸ §e/hoshi highlight ae2§r - 投射 AE2 频道过载红线与掉线设备 3D 空间全息覆盖层\n"

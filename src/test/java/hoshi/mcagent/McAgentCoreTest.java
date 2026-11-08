@@ -42,6 +42,7 @@ import hoshi.mcagent.cluster.Ae2NetworkAnalyzer;
 import hoshi.mcagent.cluster.PistonRedstoneAnalyzer;
 import hoshi.mcagent.cluster.ComparatorRedstoneAnalyzer;
 import hoshi.mcagent.cluster.RedstoneTransmissionAnalyzer;
+import hoshi.mcagent.cluster.RedstoneLogicAnalyzer;
 import hoshi.mcagent.cluster.BlockPos;
 import hoshi.mcagent.cluster.LocalBlock;
 import hoshi.mcagent.cluster.LocalMachineCluster;
@@ -144,6 +145,7 @@ public class McAgentCoreTest {
         testPistonDynamicsAndQuasiConnectivityBudAnalyzer();
         testComparatorRedstoneAnalyzerAndSpatialProtocol();
         testRedstoneTransmissionAnalyzerAndPoweringDynamics();
+        testRedstoneLogicAnalyzerAndLatchesDynamics();
 
         System.out.println(String.format("\n🎉 All %d/%d Java tests passed successfully!", testsPassed, testsRun));
     }
@@ -2477,6 +2479,136 @@ public class McAgentCoreTest {
 
         var resHelp = router.execute("Steve", "/hoshi help", null);
         assertTrue(resHelp.getMessage().contains("/hoshi transmission"), "Help mentions /hoshi transmission");
+    }
+
+
+    private static void testRedstoneLogicAnalyzerAndLatchesDynamics() throws Exception {
+        // 1. 1.21 Copper Bulb Native T-Flip-Flop Dynamics (lit=true, comparator 15 signal, odd-tick delay)
+        var bulbClusterBuilder = LocalMachineCluster.builder(0, 64, 0);
+        bulbClusterBuilder.add(0, 64, 0, "minecraft:copper_bulb", Map.of("lit", "true", "powered", "false"));
+        bulbClusterBuilder.add(1, 64, 0, "minecraft:comparator", Map.of("facing", "east"));
+        var bulbCluster = bulbClusterBuilder.build();
+
+        var bulbReport = RedstoneLogicAnalyzer.analyzeLogic(bulbCluster, new BlockPos(0, 64, 0));
+        assertTrue(bulbReport.isHealthy(), "Copper bulb is healthy when not held powered");
+        assertTrue(bulbReport.logicType() == RedstoneLogicAnalyzer.LogicType.COPPER_BULB_T_FLIP_FLOP, "LogicType is COPPER_BULB_T_FLIP_FLOP");
+        assertTrue(bulbReport.outputState(), "Copper bulb outputState is lit (true)");
+        assertTrue(bulbReport.signalStrength() == 15, "Copper bulb lit outputs 15 signal through comparator");
+        assertTrue(!bulbReport.hasBulbLock(), "No bulb lock when powered is false");
+
+        // 2. 1.21 Copper Bulb Powered Hold Lock
+        var lockedBulbBuilder = LocalMachineCluster.builder(0, 64, 0);
+        lockedBulbBuilder.add(0, 64, 0, "minecraft:copper_bulb", Map.of("lit", "true", "powered", "true"));
+        var lockedBulbCluster = lockedBulbBuilder.build();
+
+        var lockedReport = RedstoneLogicAnalyzer.analyzeLogic(lockedBulbCluster, new BlockPos(0, 64, 0));
+        assertTrue(!lockedReport.isHealthy(), "Bulb held powered is not healthy");
+        assertTrue(lockedReport.hasBulbLock(), "Detected bulb lock on continuous power");
+        assertTrue(lockedReport.conflictNodes().contains(new BlockPos(0, 64, 0)), "Conflict nodes contains locked bulb pos");
+        assertTrue(lockedReport.issues().get(0).contains("powered=true"), "Issue mentions continuous powered state");
+
+        // 3. RS-NOR Latch Bi-stable normal state (Set=1 -> Q=1)
+        var latchNormalBuilder = LocalMachineCluster.builder(10, 64, 10);
+        latchNormalBuilder.add(10, 64, 10, "minecraft:redstone_torch", Map.of("lit", "false", "set", "true")); // Torch A (Set)
+        latchNormalBuilder.add(12, 64, 10, "minecraft:redstone_torch", Map.of("lit", "true", "reset", "false")); // Torch B (Q)
+        var latchNormalCluster = latchNormalBuilder.build();
+
+        var latchNormalReport = RedstoneLogicAnalyzer.analyzeLogic(latchNormalCluster, new BlockPos(12, 64, 10));
+        assertTrue(latchNormalReport.isHealthy(), "RS-NOR latch is healthy under Set=1, Reset=0");
+        assertTrue(latchNormalReport.logicType() == RedstoneLogicAnalyzer.LogicType.RS_NOR_LATCH, "LogicType is RS_NOR_LATCH");
+        assertTrue(!latchNormalReport.hasRaceConflict(), "No race conflict under single-side Set");
+        assertTrue(latchNormalReport.outputState(), "Latch Q output is active (true)");
+
+        // 4. RS-NOR Latch Illegal Race Condition (Set=1 & Reset=1 simultaneously)
+        var latchConflictBuilder = LocalMachineCluster.builder(10, 64, 10);
+        latchConflictBuilder.add(10, 64, 10, "minecraft:redstone_torch", Map.of("lit", "false", "set", "true"));
+        latchConflictBuilder.add(12, 64, 10, "minecraft:redstone_torch", Map.of("lit", "false", "reset", "true"));
+        var latchConflictCluster = latchConflictBuilder.build();
+
+        var latchConflictReport = RedstoneLogicAnalyzer.analyzeLogic(latchConflictCluster, new BlockPos(12, 64, 10));
+        assertTrue(!latchConflictReport.isHealthy(), "RS-NOR with S=1 & R=1 is unhealthy");
+        assertTrue(latchConflictReport.hasRaceConflict(), "Detected RS-NOR race conflict");
+        assertTrue(latchConflictReport.conflictNodes().size() == 2, "Conflict nodes has both Set and Reset positions");
+        assertTrue(latchConflictReport.issues().get(0).contains("(S=1, R=1)"), "Issue reports illegal (S=1, R=1) state");
+
+        // 5. Sticky Piston 1-Tick Spit: Normal <= 2 gt pulse
+        var pistonNormalBuilder = LocalMachineCluster.builder(20, 64, 20);
+        pistonNormalBuilder.add(20, 64, 20, "minecraft:sticky_piston", Map.of("facing", "east", "pulse_width", "2"));
+        pistonNormalBuilder.add(21, 64, 20, "minecraft:redstone_block"); // Spit block
+        var pistonNormalCluster = pistonNormalBuilder.build();
+
+        var pistonNormalReport = RedstoneLogicAnalyzer.analyzeLogic(pistonNormalCluster, new BlockPos(20, 64, 20));
+        assertTrue(pistonNormalReport.isHealthy(), "Sticky piston T-flip-flop healthy with 2gt pulse");
+        assertTrue(pistonNormalReport.logicType() == RedstoneLogicAnalyzer.LogicType.STICKY_PISTON_T_FLIP_FLOP, "LogicType is STICKY_PISTON_T_FLIP_FLOP");
+        assertTrue(!pistonNormalReport.hasPulseWidthMismatch(), "No pulse width mismatch with 2gt");
+
+        // 6. Sticky Piston Pulse Width Mismatch (Oak button 30 gt directly driving)
+        var pistonMismatchBuilder = LocalMachineCluster.builder(20, 64, 20);
+        pistonMismatchBuilder.add(20, 64, 20, "minecraft:sticky_piston", Map.of("facing", "east"));
+        pistonMismatchBuilder.add(19, 64, 20, "minecraft:oak_button", Map.of("powered", "true"));
+        var pistonMismatchCluster = pistonMismatchBuilder.build();
+
+        var pistonMismatchReport = RedstoneLogicAnalyzer.analyzeLogic(pistonMismatchCluster, new BlockPos(20, 64, 20));
+        assertTrue(!pistonMismatchReport.isHealthy(), "Sticky piston with button is unhealthy without monostable");
+        assertTrue(pistonMismatchReport.hasPulseWidthMismatch(), "Detected pulse width mismatch > 2gt");
+        assertTrue(pistonMismatchReport.conflictNodes().contains(new BlockPos(20, 64, 20)), "Conflict nodes contains piston pos");
+        assertTrue(pistonMismatchReport.issues().get(0).contains("> 2 gt"), "Issue explains > 2gt pulse width failure");
+
+        // 7. Logic Gate: AND gate with latency mismatch glitch risk
+        var gateBuilder = LocalMachineCluster.builder(30, 64, 30);
+        gateBuilder.add(30, 64, 30, "minecraft:stone", Map.of("circuit", "and", "input_a", "true", "input_b", "true", "delay_a", "0", "delay_b", "3"));
+        var gateCluster = gateBuilder.build();
+
+        var gateReport = RedstoneLogicAnalyzer.analyzeLogic(gateCluster, new BlockPos(30, 64, 30));
+        assertTrue(!gateReport.isHealthy(), "AND gate with 3 ticks delay difference is unhealthy");
+        assertTrue(gateReport.hasGlitchRisk(), "Detected glitch hazard in mismatched AND gate");
+        assertTrue(gateReport.outputState(), "AND gate with true & true evaluates true");
+
+        // 8. 3D Spatial Overlay Integration
+        var logicOverlay = SpatialDirectiveGenerator.generateLogicOverlay(latchConflictCluster, latchConflictReport);
+        assertTrue(logicOverlay.category().equals("REDSTONE_LOGIC"), "Overlay category is REDSTONE_LOGIC");
+        assertTrue(logicOverlay.toJson().contains("LATCH RACE CONFLICT"), "Overlay JSON contains LATCH RACE CONFLICT");
+        assertTrue(logicOverlay.toJson().contains("CONFLICT NODE"), "Overlay JSON contains CONFLICT NODE");
+
+        var bulbOverlay = SpatialDirectiveGenerator.generateLogicOverlay(bulbCluster, bulbReport);
+        assertTrue(bulbOverlay.toJson().contains("LOGIC HEALTHY"), "Bulb overlay JSON contains LOGIC HEALTHY");
+
+        // 9. Fast Path Rules 66, 67, 68
+        McAgentCore core = new McAgentCore();
+        var qLatch = core.query("Steve", "RS-NOR锁存器冲突怎么解决？", null).get();
+        assertTrue(qLatch.category().equals("REDSTONE_RS_NOR_LATCH_DYNAMICS"), "Category is REDSTONE_RS_NOR_LATCH_DYNAMICS");
+        assertTrue(qLatch.rawAnswer().contains("S=1"), "Response mentions S=1 & R=1 conflict");
+
+        var qBulb = core.query("Alex", "1.21铜球触发器原理是什么？", null).get();
+        assertTrue(qBulb.category().equals("REDSTONE_COPPER_BULB_DYNAMICS"), "Category is REDSTONE_COPPER_BULB_DYNAMICS");
+        assertTrue(qBulb.rawAnswer().contains("铜球"), "Response mentions 铜球");
+        assertTrue(qBulb.rawAnswer().contains("奇数"), "Response mentions 奇数刻延迟");
+
+        var qSpit = core.query("Engineer", "粘性活塞单稳态电路脉冲限制器怎么做？", null).get();
+        assertTrue(qSpit.category().equals("STICKY_PISTON_MONOSTABLE_SPIT"), "Category is STICKY_PISTON_MONOSTABLE_SPIT");
+        assertTrue(qSpit.rawAnswer().contains("单稳态"), "Response mentions 单稳态");
+
+        // 10. Command Router Integration
+        PlayerSessionManager sm = new PlayerSessionManager();
+        CommandRouter router = new CommandRouter(core, sm);
+
+        var resEmpty = router.execute("Steve", "/hoshi logic", null);
+        assertTrue(resEmpty.isSuccess(), "Empty logic command succeeds");
+        assertTrue(resEmpty.getMessage().contains("当前准星未捕捉到局部红石门电路"), "Reports no logic targeted");
+
+        ContextSnapshot ctx = ContextSnapshot.builder().cluster(latchConflictCluster).build();
+        var resCmd = router.execute("Steve", "/hoshi logic", ctx);
+        assertTrue(resCmd.isSuccess(), "Logic command succeeds on cluster");
+        assertTrue(resCmd.getMessage().contains("红石门电路、时序锁存器与铜球触发器因果诊断报告"), "Message contains header");
+        assertTrue(resCmd.hasSpatialDirective(), "Result has spatial directive");
+
+        var resHl = router.execute("Steve", "/hoshi highlight logic", ctx);
+        assertTrue(resHl.isSuccess(), "Highlight logic succeeds");
+        assertTrue(resHl.hasSpatialDirective(), "Highlight logic has spatial directive");
+        assertTrue(resHl.getSpatialDirective().category().equals("REDSTONE_LOGIC"), "Directive is REDSTONE_LOGIC");
+
+        var resHelp = router.execute("Steve", "/hoshi help", null);
+        assertTrue(resHelp.getMessage().contains("/hoshi logic"), "Help mentions /hoshi logic");
     }
 
 }

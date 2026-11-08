@@ -86,6 +86,12 @@ public record LocalMachineCluster(
                 .collect(Collectors.toList());
     }
 
+    public List<LocalBlock> getConnectedCopperBulbs() {
+        return blocks.values().stream()
+                .filter(LocalBlock::isCopperBulb)
+                .collect(Collectors.toList());
+    }
+
     public String toSummary() {
         if (isEmpty()) {
             return "EmptyCluster (0 blocks)";

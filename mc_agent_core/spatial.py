@@ -560,3 +560,48 @@ class SpatialDirectiveGenerator:
             hud_title=report.primary_diagnosis,
             hud_description=report.actionable_advice
         )
+
+    @classmethod
+    def generate_logic_overlay(cls, cluster: Optional[Any], report: Optional[Any]) -> SpatialDirectivePacket:
+        if not report:
+            return SpatialDirectivePacket.empty()
+
+        primitives = []
+        duration = 300
+        t_pos = report.target_pos
+
+        if report.has_race_conflict:
+            primitives.append(SpatialPrimitive.box_outline(t_pos, SpatialColor.RED, "LATCH RACE CONFLICT", duration))
+            primitives.append(SpatialPrimitive.billboard(t_pos.offset("up"), "⚠ 锁存器竞争冲突 (S=1, R=1)", SpatialColor.RED, duration))
+        elif report.has_pulse_width_mismatch:
+            primitives.append(SpatialPrimitive.box_outline(t_pos, SpatialColor.YELLOW, "PULSE WIDTH MISMATCH", duration))
+            primitives.append(SpatialPrimitive.billboard(t_pos.offset("up"), "⚠ 脉冲>2gt 活塞无法吐方块", SpatialColor.YELLOW, duration))
+        elif report.has_bulb_lock:
+            primitives.append(SpatialPrimitive.box_outline(t_pos, SpatialColor.ORANGE, "BULB LOCKED", duration))
+            primitives.append(SpatialPrimitive.billboard(t_pos.offset("up"), "💡 铜球未断电锁定", SpatialColor.ORANGE, duration))
+        elif report.has_glitch_risk:
+            primitives.append(SpatialPrimitive.box_outline(t_pos, SpatialColor.YELLOW, "GATE GLITCH RISK", duration))
+            primitives.append(SpatialPrimitive.billboard(t_pos.offset("up"), "↷ 门电路延时毛刺高危", SpatialColor.YELLOW, duration))
+        else:
+            primitives.append(SpatialPrimitive.box_outline(t_pos, SpatialColor.GREEN, "LOGIC HEALTHY", duration))
+            primitives.append(SpatialPrimitive.billboard(t_pos.offset("up"), f"✓ 逻辑正常 (输出: {'ON' if report.output_state else 'OFF'})", SpatialColor.GREEN, duration))
+
+        for c_pos in report.conflict_nodes:
+            primitives.append(SpatialPrimitive.box_outline(c_pos, SpatialColor.RED, "CONFLICT NODE", duration))
+            primitives.append(SpatialPrimitive.billboard(c_pos.offset("up"), "✖ 冲突节点", SpatialColor.RED, duration))
+
+        for a_pos in report.active_outputs:
+            primitives.append(SpatialPrimitive.box_outline(a_pos, SpatialColor.CYAN, "ACTIVE OUTPUT", duration))
+            primitives.append(SpatialPrimitive.billboard(a_pos.offset("up"), "⚡ 激活输出 Q=1", SpatialColor.CYAN, duration))
+
+        for l_pos in report.logic_components:
+            if l_pos != t_pos and l_pos not in report.conflict_nodes:
+                primitives.append(SpatialPrimitive.box_outline(l_pos, SpatialColor.BLUE, "LOGIC COMPONENT", duration))
+
+        return SpatialDirectivePacket(
+            id=f"redstone-logic-{int(time.time()*1000)}",
+            category="REDSTONE_LOGIC",
+            primitives=primitives,
+            hud_title=report.primary_diagnosis,
+            hud_description=report.actionable_advice
+        )

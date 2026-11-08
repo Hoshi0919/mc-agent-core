@@ -3,6 +3,7 @@ package hoshi.mcagent.spatial;
 import hoshi.mcagent.cluster.Ae2NetworkAnalyzer;
 import hoshi.mcagent.cluster.PistonRedstoneAnalyzer;
 import hoshi.mcagent.cluster.ComparatorRedstoneAnalyzer;
+import hoshi.mcagent.cluster.RedstoneLogicAnalyzer;
 import hoshi.mcagent.cluster.RedstoneTransmissionAnalyzer;
 import hoshi.mcagent.cluster.BlockPos;
 import hoshi.mcagent.cluster.HopperNetworkAnalyzer;
@@ -557,6 +558,67 @@ public final class SpatialDirectiveGenerator {
         return SpatialDirectivePacket.of(
                 "redstone-transmission-" + System.currentTimeMillis(),
                 "REDSTONE_TRANSMISSION",
+                primitives,
+                report.primaryDiagnosis(),
+                report.actionableAdvice()
+        );
+    }
+
+    /**
+     * Generates in-world holographic overlays for redstone logic, latches, flip-flops, and gates.
+     */
+    public static SpatialDirectivePacket generateLogicOverlay(
+            LocalMachineCluster cluster,
+            RedstoneLogicAnalyzer.LogicReport report
+    ) {
+        if (report == null) {
+            return SpatialDirectivePacket.empty();
+        }
+
+        List<SpatialPrimitive> primitives = new ArrayList<>();
+        int duration = 300; // 15 seconds
+        BlockPos tPos = report.targetPos();
+
+        // 1. Target block bounding box and state
+        if (report.hasRaceConflict()) {
+            primitives.add(SpatialPrimitive.boxOutline(tPos, SpatialColor.RED, "LATCH RACE CONFLICT", duration));
+            primitives.add(SpatialPrimitive.billboard(tPos.offset("up"), "⚠ 锁存器竞争冲突 (S=1, R=1)", SpatialColor.RED, duration));
+        } else if (report.hasPulseWidthMismatch()) {
+            primitives.add(SpatialPrimitive.boxOutline(tPos, SpatialColor.YELLOW, "PULSE WIDTH MISMATCH", duration));
+            primitives.add(SpatialPrimitive.billboard(tPos.offset("up"), "⚠ 脉冲>2gt 活塞无法吐方块", SpatialColor.YELLOW, duration));
+        } else if (report.hasBulbLock()) {
+            primitives.add(SpatialPrimitive.boxOutline(tPos, SpatialColor.ORANGE, "BULB LOCKED", duration));
+            primitives.add(SpatialPrimitive.billboard(tPos.offset("up"), "💡 铜球未断电锁定", SpatialColor.ORANGE, duration));
+        } else if (report.hasGlitchRisk()) {
+            primitives.add(SpatialPrimitive.boxOutline(tPos, SpatialColor.YELLOW, "GATE GLITCH RISK", duration));
+            primitives.add(SpatialPrimitive.billboard(tPos.offset("up"), "↷ 门电路延时毛刺高危", SpatialColor.YELLOW, duration));
+        } else {
+            primitives.add(SpatialPrimitive.boxOutline(tPos, SpatialColor.GREEN, "LOGIC HEALTHY", duration));
+            primitives.add(SpatialPrimitive.billboard(tPos.offset("up"), String.format("✓ 逻辑正常 (输出: %s)", report.outputState() ? "ON" : "OFF"), SpatialColor.GREEN, duration));
+        }
+
+        // 2. Conflict nodes
+        for (BlockPos cPos : report.conflictNodes()) {
+            primitives.add(SpatialPrimitive.boxOutline(cPos, SpatialColor.RED, "CONFLICT NODE", duration));
+            primitives.add(SpatialPrimitive.billboard(cPos.offset("up"), "✖ 冲突节点", SpatialColor.RED, duration));
+        }
+
+        // 3. Active outputs
+        for (BlockPos aPos : report.activeOutputs()) {
+            primitives.add(SpatialPrimitive.boxOutline(aPos, SpatialColor.CYAN, "ACTIVE OUTPUT", duration));
+            primitives.add(SpatialPrimitive.billboard(aPos.offset("up"), "⚡ 激活输出 Q=1", SpatialColor.CYAN, duration));
+        }
+
+        // 4. Logic components
+        for (BlockPos lPos : report.logicComponents()) {
+            if (!lPos.equals(tPos) && !report.conflictNodes().contains(lPos)) {
+                primitives.add(SpatialPrimitive.boxOutline(lPos, SpatialColor.BLUE, "LOGIC COMPONENT", duration));
+            }
+        }
+
+        return SpatialDirectivePacket.of(
+                "redstone-logic-" + System.currentTimeMillis(),
+                "REDSTONE_LOGIC",
                 primitives,
                 report.primaryDiagnosis(),
                 report.actionableAdvice()
