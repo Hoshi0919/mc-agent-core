@@ -658,3 +658,67 @@ class SpatialDirectiveGenerator:
             hud_title=report.primary_diagnosis,
             hud_description=report.actionable_advice
         )
+
+    @staticmethod
+    def generate_water_overlay(cluster: LocalMachineCluster, report: Any) -> SpatialDirectivePacket:
+        if not report or not cluster:
+            return SpatialDirectivePacket.empty()
+
+        primitives = []
+        duration = 300
+        t_pos = report.target_pos
+
+        # 1. Broken Bubble Column
+        if report.has_broken_bubble_column:
+            for c_pos in report.conflict_nodes:
+                primitives.append(SpatialPrimitive.box_outline(c_pos, SpatialColor.RED, "BROKEN BUBBLE COLUMN", duration))
+                primitives.append(SpatialPrimitive.billboard(c_pos.offset("up"), "✖ 气泡柱中断：此处为流动水而非水源", SpatialColor.RED, duration))
+            for g_pos in report.ghost_block_placements:
+                primitives.append(SpatialPrimitive.ghost_block(g_pos, "minecraft:kelp", color=SpatialColor.CYAN, duration_ticks=duration))
+                primitives.append(SpatialPrimitive.billboard(g_pos.offset("up"), "➕ 种植海带转化为水源", SpatialColor.CYAN, duration))
+
+        # 2. Top Spill Deflector
+        if report.has_top_spill_risk:
+            for g_pos in report.ghost_block_placements:
+                primitives.append(SpatialPrimitive.box_outline(g_pos, SpatialColor.YELLOW, "TOP SPILL DEFLECTOR", duration))
+                primitives.append(SpatialPrimitive.ghost_block(g_pos, "minecraft:smooth_stone_slab", color=SpatialColor.YELLOW, duration_ticks=duration))
+                primitives.append(SpatialPrimitive.billboard(g_pos.offset("up"), "⚠ 补全导流顶盖防飞溅", SpatialColor.YELLOW, duration))
+
+        # 3. Flow Stall Risk
+        if report.has_flow_stall_risk:
+            for c_pos in report.conflict_nodes:
+                primitives.append(SpatialPrimitive.box_outline(c_pos, SpatialColor.ORANGE, "FLOW STALL RISK", duration))
+                primitives.append(SpatialPrimitive.billboard(c_pos.offset("up"), "⚠ 水流动力衰竭：超出8格流动极限", SpatialColor.ORANGE, duration))
+
+        # 4. Misaligned Item Stream
+        if report.has_misaligned_stream:
+            for c_pos in report.conflict_nodes:
+                primitives.append(SpatialPrimitive.box_outline(c_pos, SpatialColor.PURPLE, "MISALIGNED ITEM STREAM", duration))
+                primitives.append(SpatialPrimitive.billboard(c_pos.offset("up"), "⚠ 物品未对齐：双漏斗无法满速吞吐", SpatialColor.PURPLE, duration))
+            for g_pos in report.ghost_block_placements:
+                primitives.append(SpatialPrimitive.ghost_block(g_pos, "minecraft:honey_block", color=SpatialColor.GREEN, duration_ticks=duration))
+                primitives.append(SpatialPrimitive.billboard(g_pos.offset("up"), "➕ 放置蜂蜜块对齐双漏斗", SpatialColor.GREEN, duration))
+
+        # 5. Despawn Vortex Risk
+        if report.has_despawn_vortex_risk:
+            for c_pos in report.conflict_nodes:
+                primitives.append(SpatialPrimitive.box_outline(c_pos, SpatialColor.RED, "DESPAWN VORTEX RISK", duration))
+                primitives.append(SpatialPrimitive.billboard(c_pos.offset("up"), "✖ 涡流对冲死角：物品将滞留5分钟后清除", SpatialColor.RED, duration))
+
+        # 6. Healthy water components
+        if report.is_healthy:
+            primitives.append(SpatialPrimitive.box_outline(t_pos, SpatialColor.GREEN, "WATER LOGISTICS HEALTHY", duration))
+            primitives.append(SpatialPrimitive.billboard(t_pos.offset("up"), "✔ 水流/气泡柱物流动力健康", SpatialColor.GREEN, duration))
+
+        # 7. Other water components
+        for w_pos in report.water_components:
+            if w_pos != t_pos and w_pos not in report.conflict_nodes:
+                primitives.append(SpatialPrimitive.box_outline(w_pos, SpatialColor.BLUE, "WATER STREAM", duration))
+
+        return SpatialDirectivePacket(
+            id=f"water-logistics-{int(time.time()*1000)}",
+            category="WATER_LOGISTICS",
+            primitives=primitives,
+            hud_title=report.primary_diagnosis,
+            hud_description=report.actionable_advice
+        )

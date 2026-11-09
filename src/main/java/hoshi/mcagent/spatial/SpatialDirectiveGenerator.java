@@ -6,6 +6,7 @@ import hoshi.mcagent.cluster.ComparatorRedstoneAnalyzer;
 import hoshi.mcagent.cluster.RedstoneLogicAnalyzer;
 import hoshi.mcagent.cluster.RedstoneTransmissionAnalyzer;
 import hoshi.mcagent.cluster.RailNetworkAnalyzer;
+import hoshi.mcagent.cluster.WaterLogisticsAnalyzer;
 import hoshi.mcagent.cluster.BlockPos;
 import hoshi.mcagent.cluster.HopperNetworkAnalyzer;
 import hoshi.mcagent.cluster.KineticNetworkAnalyzer;
@@ -688,6 +689,86 @@ public final class SpatialDirectiveGenerator {
         return SpatialDirectivePacket.of(
                 "rail-network-" + System.currentTimeMillis(),
                 "RAIL_NETWORK",
+                primitives,
+                report.primaryDiagnosis(),
+                report.actionableAdvice()
+        );
+    }
+
+    public static SpatialDirectivePacket generateWaterOverlay(LocalMachineCluster cluster, WaterLogisticsAnalyzer.WaterReport report) {
+        if (report == null || cluster == null) {
+            return SpatialDirectivePacket.empty();
+        }
+
+        List<SpatialPrimitive> primitives = new ArrayList<>();
+        int duration = 300;
+        BlockPos tPos = report.targetPos();
+
+        // 1. Broken Bubble Column
+        if (report.hasBrokenBubbleColumn()) {
+            for (BlockPos cPos : report.conflictNodes()) {
+                primitives.add(SpatialPrimitive.boxOutline(cPos, SpatialColor.RED, "BROKEN BUBBLE COLUMN", duration));
+                primitives.add(SpatialPrimitive.billboard(cPos.offset("up"), "✖ 气泡柱中断：此处为流动水而非水源", SpatialColor.RED, duration));
+            }
+            for (BlockPos gPos : report.ghostBlockPlacements()) {
+                primitives.add(SpatialPrimitive.ghostBlock(gPos, "minecraft:kelp", SpatialColor.CYAN, duration));
+                primitives.add(SpatialPrimitive.billboard(gPos.offset("up"), "➕ 种植海带转化为水源", SpatialColor.CYAN, duration));
+            }
+        }
+
+        // 2. Top Spill Deflector
+        if (report.hasTopSpillRisk()) {
+            for (BlockPos gPos : report.ghostBlockPlacements()) {
+                primitives.add(SpatialPrimitive.boxOutline(gPos, SpatialColor.YELLOW, "TOP SPILL DEFLECTOR", duration));
+                primitives.add(SpatialPrimitive.ghostBlock(gPos, "minecraft:smooth_stone_slab", SpatialColor.YELLOW, duration));
+                primitives.add(SpatialPrimitive.billboard(gPos.offset("up"), "⚠ 补全导流顶盖防飞溅", SpatialColor.YELLOW, duration));
+            }
+        }
+
+        // 3. Flow Stall Risk
+        if (report.hasFlowStallRisk()) {
+            for (BlockPos cPos : report.conflictNodes()) {
+                primitives.add(SpatialPrimitive.boxOutline(cPos, SpatialColor.ORANGE, "FLOW STALL RISK", duration));
+                primitives.add(SpatialPrimitive.billboard(cPos.offset("up"), "⚠ 水流动力衰竭：超出8格流动极限", SpatialColor.ORANGE, duration));
+            }
+        }
+
+        // 4. Misaligned Item Stream
+        if (report.hasMisalignedStream()) {
+            for (BlockPos cPos : report.conflictNodes()) {
+                primitives.add(SpatialPrimitive.boxOutline(cPos, SpatialColor.PURPLE, "MISALIGNED ITEM STREAM", duration));
+                primitives.add(SpatialPrimitive.billboard(cPos.offset("up"), "⚠ 物品未对齐：双漏斗无法满速吞吐", SpatialColor.PURPLE, duration));
+            }
+            for (BlockPos gPos : report.ghostBlockPlacements()) {
+                primitives.add(SpatialPrimitive.ghostBlock(gPos, "minecraft:honey_block", SpatialColor.GREEN, duration));
+                primitives.add(SpatialPrimitive.billboard(gPos.offset("up"), "➕ 放置蜂蜜块对齐双漏斗", SpatialColor.GREEN, duration));
+            }
+        }
+
+        // 5. Despawn Vortex Risk
+        if (report.hasDespawnVortexRisk()) {
+            for (BlockPos cPos : report.conflictNodes()) {
+                primitives.add(SpatialPrimitive.boxOutline(cPos, SpatialColor.RED, "DESPAWN VORTEX RISK", duration));
+                primitives.add(SpatialPrimitive.billboard(cPos.offset("up"), "✖ 涡流对冲死角：物品将滞留5分钟后清除", SpatialColor.RED, duration));
+            }
+        }
+
+        // 6. Healthy water components
+        if (report.isHealthy()) {
+            primitives.add(SpatialPrimitive.boxOutline(tPos, SpatialColor.GREEN, "WATER LOGISTICS HEALTHY", duration));
+            primitives.add(SpatialPrimitive.billboard(tPos.offset("up"), "✔ 水流/气泡柱物流动力健康", SpatialColor.GREEN, duration));
+        }
+
+        // 7. Water components
+        for (BlockPos wPos : report.waterComponents()) {
+            if (!wPos.equals(tPos) && !report.conflictNodes().contains(wPos)) {
+                primitives.add(SpatialPrimitive.boxOutline(wPos, SpatialColor.BLUE, "WATER STREAM", duration));
+            }
+        }
+
+        return SpatialDirectivePacket.of(
+                "water-logistics-" + System.currentTimeMillis(),
+                "WATER_LOGISTICS",
                 primitives,
                 report.primaryDiagnosis(),
                 report.actionableAdvice()

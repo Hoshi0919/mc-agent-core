@@ -150,6 +150,30 @@ class FastPathResolver:
             return Resolution(text_response=resp, suggested_command="/hoshi logic", category="STICKY_PISTON_MONOSTABLE_SPIT")
 
 
+                # 72. Water Bubble Column Integrity & Kelp Source Transformation
+        if any(k in q for k in ["气泡柱中断", "气泡柱不升", "气泡柱断了", "气泡柱海带"]) or ("气泡柱" in q and any(k in q for k in ["断了", "卡住", "不升", "流动水"])):
+            resp = ("§b【灵魂沙全源水气泡柱物理法则与海带催熟补全】§r\n"
+                    "▸ §c全源水硬法则§r：气泡柱垂直通道每格必须全部是全源水 (level=0)！只要有 1 格是流动水，气泡柱在此处彻底中断，浮力消失物品卡死！\n"
+                    "▸ §a海带极速转换法§r：顶层倒一桶水，自底部灵魂沙种植海带一路催熟到顶，海带会将沿途流动水瞬间转为全源水；打掉海带底部即成完整气泡柱！\n"
+                    "▸ §e防飞出顶盖§r：气泡柱冲力极大，顶端上方 1 格必须安装半砖/活板门阻挡，并侧向导流，防止物品高高跃出水面飞溅散落。")
+            return Resolution(text_response=resp, suggested_command="/hoshi water", category="WATER_BUBBLE_COLUMN_INTEGRITY")
+
+        # 73. Ice Canal 8-Block Limit & Dry-Ice Splicing
+        if any(k in q for k in ["冰道水流", "水流冰道", "蓝冰水流", "水流8格"]) or ("水流" in q and any(k in q for k in ["告示牌", "断水", "滑冰", "拼接"])):
+            resp = ("§b【蓝冰水流 8 格极限与干冰惯性滑行断点】§r\n"
+                    "▸ §c8格流动极限§r：平面单水源流动上限 8 格（1 水源 + 7 流水）；末端推力归零，物品停滞！\n"
+                    "▸ §a干燥冰面拼接§r：在第 8 格用告示牌阻水，下方保留 1~2 格干燥冰面（物品靠蓝冰 0.989 极低摩擦力惯性滑过），紧接放置下一水源开启新水流！\n"
+                    "▸ §6严禁直接对冲§r：切勿在第 8 格直接放水源，相冲对流会导致物品卡在对冲死角 5 分钟后 Despawn。")
+            return Resolution(text_response=resp, suggested_command="/hoshi water", category="ICE_WATER_CANAL_SPLICING_AND_MOMENTUM")
+
+        # 74. Honey Block Item Alignment & Dual-Hopper Overlap
+        if any(k in q for k in ["蜂蜜块对齐", "蜜脾对齐", "双漏斗对齐", "漏斗吸不完"]) or ("物品对齐" in q and any(k in q for k in ["漏斗", "蜂蜜", "箱子"])):
+            resp = ("§b【蜜脾/蜂蜜块边缘 0.125 格物理对齐与双漏斗吞吐翻倍】§r\n"
+                    "▸ §e单漏斗吞吐瓶颈§r：单漏斗吸收上限仅 2.5 items/s (8 ticks/item)，大产线极易溢出！\n"
+                    "▸ §d蜂蜜块 0.875 碰撞箱§r：蜂蜜块/箱子宽度为 14/16 (0.875格)，侧面内缩 0.125 格；水流贴边冲刷将物品精确定位在内凹缝隙处！\n"
+                    "▸ §a双漏斗并联 5.0 items/s§r：对齐后的物品中心骑在两排并列漏斗的分界线上，同时触发两个漏斗吸取盒，吞吐量直接翻倍！")
+            return Resolution(text_response=resp, suggested_command="/hoshi water", category="ITEM_ALIGNMENT_HONEY_BLOCK_DUAL_HOPPER")
+
         # 69. Powered Rail Spacing & Sloped Momentum Dynamics
         if any(k in q for k in ["充能铁轨间距", "爬坡铁轨", "铁轨爬坡", "矿车倒溜"]) or ("充能铁轨" in q and any(k in q for k in ["隔几格", "间隔", "平地", "爬坡", "斜坡"])):
             resp = ("§e【充能铁轨平地与爬坡间距动力学】§r\n"

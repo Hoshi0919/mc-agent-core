@@ -222,7 +222,7 @@ public record LocalBlock(
                id.contains("glowstone") || id.contains("leaves") || id.contains("ice") ||
                id.contains("hopper") || id.contains("chest") || id.contains("fence") ||
                id.contains("wall") || id.contains("piston") || id.contains("door") ||
-               id.contains("trapdoor") || id.contains("wire") || isRedstoneTorch() ||
+               id.contains("trapdoor") || id.contains("wire") || id.contains("water") || id.contains("lava") || isRedstoneTorch() ||
                isRepeater() || isComparator();
     }
 
@@ -286,6 +286,72 @@ public record LocalBlock(
 
     public boolean isAscendingRail() {
         return railShape().startsWith("ascending");
+    }
+
+    
+    public boolean isDropper() {
+        if (blockId == null) return false;
+        return blockId.toLowerCase().contains("dropper");
+    }
+
+    public boolean isChest() {
+        if (blockId == null) return false;
+        String id = blockId.toLowerCase();
+        return id.contains("chest") && !id.contains("ender");
+    }
+
+    public boolean isWater() {
+        if (blockId == null) return false;
+        String id = blockId.toLowerCase();
+        return id.contains("water") || id.contains("bubble_column");
+    }
+
+    public boolean isWaterSource() {
+        if (!isWater()) return false;
+        if (blockId.toLowerCase().contains("bubble_column")) return true;
+        String level = getProperty("level", "0");
+        return "0".equals(level);
+    }
+
+    public boolean isFlowingWater() {
+        return isWater() && !isWaterSource();
+    }
+
+    public boolean isSoulSand() {
+        if (blockId == null) return false;
+        return blockId.toLowerCase().contains("soul_sand");
+    }
+
+    public boolean isMagmaBlock() {
+        if (blockId == null) return false;
+        return blockId.toLowerCase().contains("magma_block");
+    }
+
+    public boolean isBubbleColumn() {
+        if (blockId == null) return false;
+        return blockId.toLowerCase().contains("bubble_column");
+    }
+
+    public boolean isIce() {
+        if (blockId == null) return false;
+        String id = blockId.toLowerCase();
+        return id.contains("ice");
+    }
+
+    public boolean isBlueIce() {
+        if (blockId == null) return false;
+        return blockId.toLowerCase().contains("blue_ice");
+    }
+
+    public boolean isPackedIce() {
+        if (blockId == null) return false;
+        return blockId.toLowerCase().contains("packed_ice");
+    }
+
+    public boolean isSign() {
+        if (blockId == null) return false;
+        String id = blockId.toLowerCase();
+        return id.contains("sign");
     }
 
     public boolean isAir() {

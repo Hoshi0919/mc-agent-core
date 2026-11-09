@@ -121,6 +121,64 @@ class LocalBlock:
         return any(k in bid for k in ["bus", "drive", "terminal", "interface", "provider", "assembler"]) or self.is_ae2_p2p_tunnel
 
     @property
+    def is_water(self) -> bool:
+        if not self.block_id:
+            return False
+        bid = self.block_id.lower()
+        return "water" in bid or "bubble_column" in bid
+
+    @property
+    def is_water_source(self) -> bool:
+        if not self.is_water:
+            return False
+        if "bubble_column" in self.block_id.lower():
+            return True
+        return self.get_property("level", "0") == "0"
+
+    @property
+    def is_flowing_water(self) -> bool:
+        return self.is_water and not self.is_water_source
+
+    @property
+    def is_soul_sand(self) -> bool:
+        return bool(self.block_id and "soul_sand" in self.block_id.lower())
+
+    @property
+    def is_magma_block(self) -> bool:
+        return bool(self.block_id and "magma_block" in self.block_id.lower())
+
+    @property
+    def is_bubble_column(self) -> bool:
+        return bool(self.block_id and "bubble_column" in self.block_id.lower())
+
+    @property
+    def is_ice(self) -> bool:
+        return bool(self.block_id and "ice" in self.block_id.lower())
+
+    @property
+    def is_blue_ice(self) -> bool:
+        return bool(self.block_id and "blue_ice" in self.block_id.lower())
+
+    @property
+    def is_honey_block(self) -> bool:
+        return bool(self.block_id and "honey_block" in self.block_id.lower())
+
+    @property
+    def is_chest(self) -> bool:
+        if not self.block_id:
+            return False
+        bid = self.block_id.lower()
+        return "chest" in bid and "ender" not in bid
+
+    @property
+    def is_dropper(self) -> bool:
+        return bool(self.block_id and "dropper" in self.block_id.lower())
+
+    @property
+    def is_sign(self) -> bool:
+        return bool(self.block_id and "sign" in self.block_id.lower())
+
+    @property
     def is_air(self) -> bool:
         if not self.block_id:
             return True
@@ -2539,6 +2597,265 @@ class RailNetworkAnalyzer:
             conflict_nodes=conflict_nodes,
             ghost_block_placements=[],
             rail_components=rail_components,
+            issues=issues,
+            warnings=warnings,
+            primary_diagnosis=diag,
+            actionable_advice=adv
+        )
+
+@dataclass
+class WaterReport:
+    is_healthy: bool
+    has_broken_bubble_column: bool
+    has_top_spill_risk: bool
+    has_flow_stall_risk: bool
+    has_misaligned_stream: bool
+    has_despawn_vortex_risk: bool
+    target_pos: BlockPos
+    target_block_type: str
+    logistics_type: str
+    water_block_count: int
+    ice_block_count: int
+    conflict_nodes: List[BlockPos] = field(default_factory=list)
+    ghost_block_placements: List[BlockPos] = field(default_factory=list)
+    water_components: List[BlockPos] = field(default_factory=list)
+    issues: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    primary_diagnosis: str = ""
+    actionable_advice: str = ""
+
+    def format_report(self) -> str:
+        sb = []
+        sb.append("§b【水流传输网络、气泡柱动力学与物品对齐因果诊断报告】§r")
+        sb.append(f"▸ 目标组件坐标：{self.target_pos} ({self.target_block_type.upper()})")
+        sb.append(f"▸ 物流类型：{self.logistics_type} | 水体单元数: {self.water_block_count} (冰道方块: §b{self.ice_block_count}§r)")
+
+        if self.has_broken_bubble_column:
+            sb.append("  ⚡ §c[气泡柱中断卡死] 灵魂沙垂直水柱中检测到流动水！§r")
+            for c in self.conflict_nodes:
+                sb.append(f"     ✖ 流动水断点: {c} (非全源水导致浮力消失，掉落物卡死)")
+            for g in self.ghost_block_placements:
+                sb.append(f"     ➕ 建议在此种植海带转化为水源: {g}")
+
+        if self.has_top_spill_risk:
+            sb.append("  ⚡ §e[顶端外溢散落高危] 气泡柱顶端缺乏坚固顶盖或侧向承接导流水渠！§r")
+            for g in self.ghost_block_placements:
+                sb.append(f"     ➕ 建议在顶端上方补全防喷顶盖/半砖: {g}")
+
+        if self.has_flow_stall_risk:
+            sb.append("  ⚡ §c[水流动量衰竭停摆] 水道已达到或超过 8 格流动极限！§r")
+            for c in self.conflict_nodes:
+                sb.append(f"     ✖ 推力枯竭点: {c} (水平速度降为0，物品停滞)")
+
+        if self.has_misaligned_stream:
+            sb.append("  ⚡ §d[物品流未对齐高危] 并排双漏斗上方水渠缺乏蜂蜜块/箱子边缘内凹对齐！§r")
+            for g in self.ghost_block_placements:
+                sb.append(f"     ➕ 建议水渠边缘放置蜂蜜块 (0.125格缝隙对齐): {g}")
+
+        if self.has_despawn_vortex_risk:
+            sb.append("  ⚡ §c[对冲涡流与5分钟清除高危] 检测到对向流动水死角！§r")
+            for c in self.conflict_nodes:
+                sb.append(f"     ✖ 滞流死角: {c} (合速度为0，物品积聚5分钟后必定Despawn)")
+
+        if self.is_healthy:
+            sb.append("  ✔ §a[物流动力健康] 水流连续性、气泡柱全源与物品导向拓扑正常。§r")
+
+        sb.append(f"▸ §6核心诊断§r：{self.primary_diagnosis}")
+        if self.actionable_advice:
+            sb.append(f"▸ §a修复建议§r：{self.actionable_advice}")
+        return "\\n".join(sb)
+
+
+class WaterLogisticsAnalyzer:
+    @staticmethod
+    def analyze(cluster: LocalMachineCluster, focus: BlockPos) -> WaterReport:
+        if not cluster or cluster.is_empty:
+            return WaterReport(
+                is_healthy=True,
+                has_broken_bubble_column=False,
+                has_top_spill_risk=False,
+                has_flow_stall_risk=False,
+                has_misaligned_stream=False,
+                has_despawn_vortex_risk=False,
+                target_pos=BlockPos(0, 0, 0),
+                target_block_type="none",
+                logistics_type="NONE",
+                water_block_count=0,
+                ice_block_count=0,
+                primary_diagnosis="未检测到水流、气泡柱、冰道物流或物品对齐组件"
+            )
+
+        target = cluster.get_block(focus) or cluster.origin_block
+        if not target or (not target.is_water and not target.is_soul_sand and not target.is_ice and not target.is_honey_block and not target.is_dropper):
+            target = next((b for b in cluster.blocks.values() if b.is_water or b.is_soul_sand or b.is_ice or b.is_honey_block or b.is_dropper), None)
+
+        if not target:
+            return WaterReport(
+                is_healthy=True,
+                has_broken_bubble_column=False,
+                has_top_spill_risk=False,
+                has_flow_stall_risk=False,
+                has_misaligned_stream=False,
+                has_despawn_vortex_risk=False,
+                target_pos=BlockPos(0, 0, 0),
+                target_block_type="none",
+                logistics_type="NONE",
+                water_block_count=0,
+                ice_block_count=0,
+                primary_diagnosis="未检测到水流、气泡柱、冰道物流或物品对齐组件"
+            )
+
+        target_pos = target.pos
+        target_block_type = target.block_id
+
+        conflict_nodes = []
+        ghost_block_placements = []
+        water_components = []
+        issues = []
+        warnings = []
+
+        water_count = sum(1 for b in cluster.blocks.values() if b.is_water)
+        ice_count = sum(1 for b in cluster.blocks.values() if b.is_ice)
+        water_components = [b.pos for b in cluster.blocks.values() if b.is_water]
+
+        has_broken_bubble = False
+        has_top_spill = False
+        has_flow_stall = False
+        has_misaligned = False
+        has_despawn_vortex = False
+
+        logistics_type = "NONE"
+
+        # Check 1: Soul Sand Bubble Column
+        soul_sand_block = next((b for b in cluster.blocks.values() if b.is_soul_sand), None)
+        if soul_sand_block:
+            logistics_type = "SOUL_SAND_BUBBLE_ELEVATOR"
+            base = soul_sand_block.pos
+            cur_y = base.y + 1
+            highest_water = None
+
+            while True:
+                col_pos = BlockPos(base.x, cur_y, base.z)
+                col_block = cluster.get_block(col_pos)
+                if not col_block or not col_block.is_water:
+                    break
+                highest_water = col_pos
+                if col_block.is_flowing_water:
+                    has_broken_bubble = True
+                    conflict_nodes.append(col_pos)
+                    ghost_block_placements.append(col_pos)
+                    issues.append(f"气泡柱中断卡死：坐标 {col_pos} 为流动水而非全源水源！气泡浮力在此处彻底消失，掉落物无法上升。")
+                cur_y += 1
+
+            if highest_water:
+                top_cap_pos = highest_water.offset("up")
+                top_cap_block = cluster.get_block(top_cap_pos)
+                if not top_cap_block or top_cap_block.is_air:
+                    has_top_spill = True
+                    ghost_block_placements.append(top_cap_pos)
+                    warnings.append(f"气泡柱顶端外溢高危：顶端 {top_cap_pos} 缺乏坚固挡板顶盖，垂直高速冲击力将导致掉落物飞出水渠散落丢失。")
+
+        # Check 2: Ice canal 8-block flow stall
+        if ice_count > 0:
+            if logistics_type == "NONE":
+                logistics_type = "ICE_WATER_CANAL"
+            water_by_y = {}
+            for b in cluster.blocks.values():
+                if b.is_water:
+                    water_by_y.setdefault(b.pos.y, []).append(b)
+
+            for y, layer in water_by_y.items():
+                min_x = min(b.pos.x for b in layer)
+                max_x = max(b.pos.x for b in layer)
+                min_z = min(b.pos.z for b in layer)
+                max_z = max(b.pos.z for b in layer)
+                span_x = max_x - min_x + 1
+                span_z = max_z - min_z + 1
+
+                has_sign = any(b.is_sign for b in cluster.blocks.values())
+                if span_x >= 8 and not has_sign:
+                    has_flow_stall = True
+                    stall_pos = BlockPos(max_x, y, min_z)
+                    conflict_nodes.append(stall_pos)
+                    issues.append(f"水流动力耗尽停摆：X轴水流长度达 {span_x} 格，超出 8 格流动极限 (坐标 {stall_pos})，水流推力归零卡死。")
+                if span_z >= 8 and not has_sign:
+                    has_flow_stall = True
+                    stall_pos = BlockPos(min_x, y, max_z)
+                    conflict_nodes.append(stall_pos)
+                    issues.append(f"水流动力耗尽停摆：Z轴水流长度达 {span_z} 格，超出 8 格流动极限 (坐标 {stall_pos})，水流推力归零卡死。")
+
+        # Check 3: Dual-hopper Item Alignment (Honey Block / Chest edge)
+        hoppers = [b for b in cluster.blocks.values() if b.is_hopper]
+        if len(hoppers) >= 2:
+            is_parallel_hoppers = any(
+                h1.pos.y == h2.pos.y and h1.pos.manhattan_distance(h2.pos) == 1
+                for i, h1 in enumerate(hoppers) for h2 in hoppers[i+1:]
+            )
+            if is_parallel_hoppers:
+                if logistics_type == "NONE":
+                    logistics_type = "ALIGNED_HOPPER_STREAM"
+                has_honey = any(b.is_honey_block for b in cluster.blocks.values())
+                has_chest = any(b.is_chest for b in cluster.blocks.values())
+                if not has_honey and not has_chest:
+                    has_misaligned = True
+                    for h in hoppers:
+                        conflict_nodes.append(h.pos)
+                    rec_pos = hoppers[0].pos.offset("up").offset("north")
+                    ghost_block_placements.append(rec_pos)
+                    warnings.append("物品流未对齐高危：并排双漏斗上方水渠未检测到蜂蜜块或箱子等 0.125 格边缘内凹对齐构件！掉落物无法跨双漏斗吸取盒，吞吐量折半且易溢出丢物。")
+
+        # Check 4: Opposing Eddy Currents & Despawn Vortex
+        sources = [b for b in cluster.blocks.values() if b.is_water and b.is_water_source]
+        if len(sources) >= 2:
+            for i, s1 in enumerate(sources):
+                for s2 in sources[i+1:]:
+                    if s1.pos.y == s2.pos.y and 1 < s1.pos.manhattan_distance(s2.pos) <= 4:
+                        mid = BlockPos((s1.pos.x + s2.pos.x)//2, s1.pos.y, (s1.pos.z + s2.pos.z)//2)
+                        mid_block = cluster.get_block(mid)
+                        if mid_block and mid_block.is_water:
+                            has_despawn_vortex = True
+                            conflict_nodes.append(mid)
+                            issues.append(f"对冲涡流滞流死角：水源 {s1.pos} 与 {s2.pos} 对向冲击，中间点 {mid} 合速度为零形成滞流漩涡！掉落物滞留 5 分钟后必定被清除 (Despawn)。")
+
+        if logistics_type == "NONE" and (water_count > 0 or ice_count > 0):
+            logistics_type = "ICE_WATER_CANAL"
+
+        is_healthy = not has_broken_bubble and not has_top_spill and not has_flow_stall and not has_misaligned and not has_despawn_vortex
+
+        if has_broken_bubble:
+            diag = "气泡柱水体中断：存在流动水破坏了全源水连续性，浮力推力消失"
+            adv = "在流动水方块处种植海带并催熟至顶层，或在其位置放置冰块打碎转化为水源。"
+        elif has_flow_stall:
+            diag = "水流超出 8 格流动极限，末端推力衰竭导致物品停摆卡死"
+            adv = "在第 8 格放置告示牌阻断水流，留出 1~2 格干燥冰面（依靠惯性滑行），紧接放置新水源开启下一段流水。"
+        elif has_despawn_vortex:
+            diag = "双向水源对冲形成零速度滞流漩涡，物品面临 5 分钟 Despawn 清除"
+            adv = "拆除对冲水源或用告示牌/实体方块建立单向导流挡板，消除对流死角。"
+        elif has_misaligned:
+            diag = "双漏斗上方水流未对齐，掉落物无法同时覆盖两个漏斗的吸取体积"
+            adv = "在水渠侧壁放置蜂蜜块或箱子，利用 14/16 (0.875格) 碰撞箱让物品在 0.125 格边缘内凹处对齐双漏斗中缝。"
+        elif has_top_spill:
+            diag = "气泡柱顶端缺乏防喷顶盖，高速冲出的掉落物存在外溢散落风险"
+            adv = "在气泡柱顶水方块上方 1 格安装平滑石半砖或活板门作为导流顶盖，并布置 90° 横向导流。"
+        else:
+            diag = "水流与气泡柱物流网络动力学完整健康"
+            adv = "水路拓扑规范，全源水连续性与物品推进正常。"
+
+        return WaterReport(
+            is_healthy=is_healthy,
+            has_broken_bubble_column=has_broken_bubble,
+            has_top_spill_risk=has_top_spill,
+            has_flow_stall_risk=has_flow_stall,
+            has_misaligned_stream=has_misaligned,
+            has_despawn_vortex_risk=has_despawn_vortex,
+            target_pos=target_pos,
+            target_block_type=target_block_type,
+            logistics_type=logistics_type,
+            water_block_count=water_count,
+            ice_block_count=ice_count,
+            conflict_nodes=conflict_nodes,
+            ghost_block_placements=ghost_block_placements,
+            water_components=water_components,
             issues=issues,
             warnings=warnings,
             primary_diagnosis=diag,

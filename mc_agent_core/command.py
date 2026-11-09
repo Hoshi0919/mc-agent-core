@@ -189,8 +189,15 @@ class CommandRouter:
             return self._handle_comparator(player_id, tokens, arg_start, snapshot)
         elif sub in ("transmission", "power", "wire"):
             return self._handle_transmission(player_id, tokens, arg_start, snapshot)
+        elif sub in ("water", "fluid", "stream", "bubble"):
+            return self._handle_water(player_id, tokens, arg_start, snapshot)
         elif sub in ("rail", "track", "minecart"):
             return self._handle_rail(player_id, tokens, arg_start, snapshot)
+        elif sub in ("water", "fluid", "stream", "bubble"):
+            from mc_agent_core.cluster import WaterLogisticsAnalyzer, BlockPos
+            focus_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
+            w = WaterLogisticsAnalyzer.analyze(cluster, focus_pos)
+            packet = SpatialDirectiveGenerator.generate_water_overlay(cluster, w)
         elif sub in ("rail", "minecart", "track"):
             from mc_agent_core.cluster import RailNetworkAnalyzer, BlockPos
             focus_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
@@ -613,6 +620,24 @@ class CommandRouter:
 
 
 
+    def _handle_water(self, player_id: Optional[str], tokens: list, arg_start: int, snapshot: Optional[ContextSnapshot]) -> CommandResult:
+        cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
+        if not cluster or cluster.is_empty:
+            msg = ("§b【水流传输网络、气泡柱动力学与物品对齐因果诊断】§r\n"
+                   "当前准星未捕捉到局部水流、气泡柱、冰道物流或物品对齐网络集群。\n"
+                   "请将准星对准灵魂沙水柱、流动水渠、冰道滑道、蜂蜜块对齐器或双并列漏斗，然后输入 `/hoshi water` 触发水流物流因果诊断！")
+            return CommandResult(status="SUCCESS", action="WATER", message=msg)
+        from mc_agent_core.cluster import WaterLogisticsAnalyzer, BlockPos
+        target_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
+        report = WaterLogisticsAnalyzer.analyze(cluster, target_pos)
+        text = report.format_report()
+        paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page")
+        self.session_manager.record_interaction(player_id, "/hoshi water", text, "WATER", paged)
+        comps = MinecraftTextFormatter.parse_components(paged.full_page_text, "/hoshi water")
+        tellraw = TellrawJsonBuilder.to_json(comps)
+        pkt = SpatialDirectiveGenerator.generate_water_overlay(cluster, report)
+        return CommandResult(status="SUCCESS", action="WATER", message=paged.full_page_text, tellraw_json=tellraw, paged_result=paged, spatial_directive=pkt)
+
     def _handle_rail(self, player_id: Optional[str], tokens: list, arg_start: int, snapshot: Optional[ContextSnapshot]) -> CommandResult:
         cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
         if not cluster or cluster.is_empty:
@@ -743,6 +768,16 @@ class CommandRouter:
             pkt = SpatialDirectiveGenerator.generate_transmission_overlay(cluster, t)
             return CommandResult(status="SUCCESS", action="HIGHLIGHT", message=f"§a[Hoshi 3D 高亮] {pkt.hud_title}", spatial_directive=pkt)
 
+        if sub in ("water", "fluid", "stream", "bubble"):
+            cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
+            if not cluster or cluster.is_empty:
+                return CommandResult(status="ERROR", action="HIGHLIGHT", message="§c准星未捕捉到水流、气泡柱或冰道物流组件，无法投射水流高亮。")
+            from mc_agent_core.cluster import WaterLogisticsAnalyzer, BlockPos
+            focus_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
+            w = WaterLogisticsAnalyzer.analyze(cluster, focus_pos)
+            pkt = SpatialDirectiveGenerator.generate_water_overlay(cluster, w)
+            return CommandResult(status="SUCCESS", action="HIGHLIGHT", message=f"§a[Hoshi 3D 高亮] {pkt.hud_title}", spatial_directive=pkt)
+
         if sub in ("rail", "minecart", "track"):
             cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
             if not cluster or cluster.is_empty:
@@ -825,6 +860,7 @@ class CommandRouter:
                "▸ §e/hoshi highlight kinetics§r - 在游戏世界高亮冲突齿轮与流向\n"
                "▸ §e/hoshi highlight hopper§r - 投射漏斗死锁环路与物流方向箭头\n"
                "▸ §e/hoshi highlight transmission§r - 投射红石火把烧毁高危、弱充能阻断点与偏转断路导线\n"
+            "▸ §e/hoshi highlight water§r - 投射气泡柱中断流水、水流8格停摆与蜂蜜块对齐虚影\n" +
             "▸ §e/hoshi highlight rail§r - 投射铁轨坡道倒溜赤字、卸货站缺失挡板与激活铁轨停用覆盖层\n" +
             "▸ §e/hoshi highlight logic§r - 投射锁存器冲突、活塞脉宽失配与 1.21 铜球触发器全息覆盖层\n" +
                "▸ §e/hoshi highlight comparator§r - 投射比较器信号、串扰高危线路与漏斗负载\n" +
@@ -850,6 +886,7 @@ class CommandRouter:
             "▸ §e/hoshi create stress <动力源> [规模]§r - 诊断 Create 模组动力网应力与过载转速\n"
             "▸ §e/hoshi ae2§r - 诊断准星 AE2 数字化网络拓扑、控制器合法性与 8/32 频道溢出\n"
             "▸ §e/hoshi transmission§r - 诊断红石火把极速自激烧毁、强弱充能传递阻断与导线偏转断路\n"
+            "▸ §e/hoshi water§r - 诊断灵魂沙气泡柱中断、冰道水流8格极限与双漏斗蜂蜜块对齐\n" +
             "▸ §e/hoshi rail§r - 诊断充能铁轨间距、斜坡爬坡倒溜、漏斗矿车卸料站与激活铁轨锁死\n"
             "▸ §e/hoshi logic§r - 诊断 RS-NOR 保持锁存器竞争、活塞 1 刻吐方块脉宽与 1.21 铜球状态机\n" +
             "▸ §e/hoshi comparator§r - 诊断准星比较器信号强度、分类机满溢串扰与防溢出保护\n" +

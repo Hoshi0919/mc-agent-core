@@ -102,6 +102,9 @@ public final class PromptSafetyFence {
         userPrompt.append(LocalGameRules.RAIL_POWERED_SPACING_MOMENTUM_RULES).append("\n\n");
         userPrompt.append(LocalGameRules.HOPPER_MINECART_SMART_UNLOADER_BACKSTOP_RULES).append("\n\n");
         userPrompt.append(LocalGameRules.ACTIVATOR_RAIL_INTERLOCK_AND_DISABLING_RULES).append("\n");
+        userPrompt.append(LocalGameRules.WATER_BUBBLE_COLUMN_INTEGRITY_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.ICE_WATER_CANAL_SPLICING_AND_MOMENTUM_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.ITEM_ALIGNMENT_HONEY_BLOCK_DUAL_HOPPER_RULES).append("\n");
         userPrompt.append("</canonical_rules>\n\n");
 
         userPrompt.append("<player_query>\n");

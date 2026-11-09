@@ -2413,3 +2413,145 @@ def test_v28_rail_network_and_station_dynamics():
 
     r_help = router.execute("Steve", "/hoshi help", None)
     assert "/hoshi rail" in r_help.message
+
+def test_v29_water_logistics_and_bubble_elevator_dynamics():
+    from mc_agent_core.cluster import WaterLogisticsAnalyzer, LocalMachineCluster, BlockPos
+    from mc_agent_core.spatial import SpatialDirectiveGenerator
+    from mc_agent_core.fast_path import FastPathResolver
+    from mc_agent_core.command import CommandRouter
+    from mc_agent_core.dispatcher import AsyncQueryDispatcher
+    from mc_agent_core.context import ContextSnapshot
+
+    # 1. Empty cluster returns empty report
+    empty_cluster = LocalMachineCluster(BlockPos(0, 64, 0))
+    rep_empty = WaterLogisticsAnalyzer.analyze(empty_cluster, BlockPos(0, 64, 0))
+    assert rep_empty.is_healthy
+    assert rep_empty.water_block_count == 0
+
+    # 2. Healthy soul sand bubble elevator (with source water and deflector cap)
+    healthy_bubble = LocalMachineCluster(BlockPos(10, 60, 10)) \
+        .add(10, 60, 10, "minecraft:soul_sand") \
+        .add(10, 61, 10, "minecraft:water", {"level": "0"}) \
+        .add(10, 62, 10, "minecraft:water", {"level": "0"}) \
+        .add(10, 63, 10, "minecraft:water", {"level": "0"}) \
+        .add(10, 64, 10, "minecraft:smooth_stone_slab")
+    rep_healthy = WaterLogisticsAnalyzer.analyze(healthy_bubble, BlockPos(10, 60, 10))
+    assert rep_healthy.is_healthy
+    assert rep_healthy.logistics_type == "SOUL_SAND_BUBBLE_ELEVATOR"
+    assert not rep_healthy.has_broken_bubble_column
+    assert not rep_healthy.has_top_spill_risk
+
+    # 3. Broken bubble column (flowing water at y=62)
+    broken_bubble = LocalMachineCluster(BlockPos(10, 60, 10)) \
+        .add(10, 60, 10, "minecraft:soul_sand") \
+        .add(10, 61, 10, "minecraft:water", {"level": "0"}) \
+        .add(10, 62, 10, "minecraft:water", {"level": "3"}) \
+        .add(10, 63, 10, "minecraft:water", {"level": "0"}) \
+        .add(10, 64, 10, "minecraft:smooth_stone_slab")
+    rep_broken = WaterLogisticsAnalyzer.analyze(broken_bubble, BlockPos(10, 60, 10))
+    assert not rep_broken.is_healthy
+    assert rep_broken.has_broken_bubble_column
+    assert BlockPos(10, 62, 10) in rep_broken.conflict_nodes
+    assert BlockPos(10, 62, 10) in rep_broken.ghost_block_placements
+    assert "流动水" in rep_broken.issues[0]
+
+    # 4. Bubble column with top spill risk (missing cap)
+    spill_bubble = LocalMachineCluster(BlockPos(10, 60, 10)) \
+        .add(10, 60, 10, "minecraft:soul_sand") \
+        .add(10, 61, 10, "minecraft:water", {"level": "0"}) \
+        .add(10, 62, 10, "minecraft:water", {"level": "0"})
+    rep_spill = WaterLogisticsAnalyzer.analyze(spill_bubble, BlockPos(10, 60, 10))
+    assert not rep_spill.is_healthy
+    assert rep_spill.has_top_spill_risk
+    assert BlockPos(10, 63, 10) in rep_spill.ghost_block_placements
+    assert "顶端外溢" in rep_spill.warnings[0]
+
+    # 5. Ice canal exceeding 8 blocks flow stall
+    ice_canal = LocalMachineCluster(BlockPos(0, 64, 0))
+    for x in range(9):
+        ice_canal = ice_canal.add(x, 63, 0, "minecraft:blue_ice")
+        ice_canal = ice_canal.add(x, 64, 0, "minecraft:water", {"level": str(min(7, x))})
+    rep_ice = WaterLogisticsAnalyzer.analyze(ice_canal, BlockPos(0, 64, 0))
+    assert not rep_ice.is_healthy
+    assert rep_ice.has_flow_stall_risk
+    assert len(rep_ice.conflict_nodes) > 0
+    assert "8 格流动极限" in rep_ice.issues[0]
+
+    # 6. Dual hopper misaligned stream (no honey block)
+    misaligned_hoppers = LocalMachineCluster(BlockPos(20, 63, 20)) \
+        .add(20, 63, 20, "minecraft:hopper") \
+        .add(21, 63, 20, "minecraft:hopper") \
+        .add(20, 64, 20, "minecraft:water", {"level": "0"}) \
+        .add(21, 64, 20, "minecraft:water", {"level": "1"})
+    rep_misaligned = WaterLogisticsAnalyzer.analyze(misaligned_hoppers, BlockPos(20, 63, 20))
+    assert not rep_misaligned.is_healthy
+    assert rep_misaligned.has_misaligned_stream
+    assert BlockPos(20, 63, 20) in rep_misaligned.conflict_nodes
+    assert "未对齐" in rep_misaligned.warnings[0]
+
+    # 7. Dual hopper aligned stream with honey block
+    aligned_hoppers = misaligned_hoppers.add(19, 64, 20, "minecraft:honey_block")
+    rep_aligned = WaterLogisticsAnalyzer.analyze(aligned_hoppers, BlockPos(20, 63, 20))
+    assert not rep_aligned.has_misaligned_stream
+
+    # 8. Opposing water eddy vortex despawn hazard
+    vortex_cluster = LocalMachineCluster(BlockPos(30, 64, 30)) \
+        .add(30, 64, 30, "minecraft:water", {"level": "0"}) \
+        .add(32, 64, 30, "minecraft:water", {"level": "0"}) \
+        .add(31, 64, 30, "minecraft:water", {"level": "1"})
+    rep_vortex = WaterLogisticsAnalyzer.analyze(vortex_cluster, BlockPos(30, 64, 30))
+    assert not rep_vortex.is_healthy
+    assert rep_vortex.has_despawn_vortex_risk
+    assert BlockPos(31, 64, 30) in rep_vortex.conflict_nodes
+    assert "对冲涡流" in rep_vortex.issues[0]
+
+    # 9. 3D Spatial Overlay Integration
+    overlay_broken = SpatialDirectiveGenerator.generate_water_overlay(broken_bubble, rep_broken)
+    assert overlay_broken.category == "WATER_LOGISTICS"
+    json_str = overlay_broken.to_json()
+    assert "BROKEN BUBBLE COLUMN" in json_str
+    assert "minecraft:kelp" in json_str
+
+    overlay_honey = SpatialDirectiveGenerator.generate_water_overlay(misaligned_hoppers, rep_misaligned)
+    assert "MISALIGNED ITEM STREAM" in overlay_honey.to_json()
+    assert "minecraft:honey_block" in overlay_honey.to_json()
+
+    # 10. Fast Path Rules 72, 73, 74
+    r_bubble = FastPathResolver.try_resolve("气泡柱为什么不升了？气泡柱中间断了怎么解决？")
+    assert r_bubble is not None
+    assert r_bubble.category == "WATER_BUBBLE_COLUMN_INTEGRITY"
+    assert "全源水" in r_bubble.text_response
+    assert "海带" in r_bubble.text_response
+
+    r_ice = FastPathResolver.try_resolve("蓝冰水流怎么拼接？冰道水流最多流几格？")
+    assert r_ice is not None
+    assert r_ice.category == "ICE_WATER_CANAL_SPLICING_AND_MOMENTUM"
+    assert "8 格" in r_ice.text_response or "8格" in r_ice.text_response
+    assert "告示牌" in r_ice.text_response
+
+    r_honey = FastPathResolver.try_resolve("生电双漏斗怎么对齐？为什么漏斗吸不完物品？")
+    assert r_honey is not None
+    assert r_honey.category == "ITEM_ALIGNMENT_HONEY_BLOCK_DUAL_HOPPER"
+    assert "0.875" in r_honey.text_response
+    assert "5.0 items/s" in r_honey.text_response
+
+    # 11. Command Router Integration
+    router = CommandRouter(AsyncQueryDispatcher())
+    r_empty = router.execute("Steve", "/hoshi water", None)
+    assert r_empty.is_success
+    assert "当前准星未捕捉到局部水流" in r_empty.message
+
+    ctx = ContextSnapshot("Steve", "overworld", 10.0, 60.0, 10.0, machine_cluster=broken_bubble)
+    r_cmd = router.execute("Steve", "/hoshi water", ctx)
+    assert r_cmd.is_success
+    assert "水流传输网络、气泡柱动力学与物品对齐因果诊断报告" in r_cmd.message
+    assert r_cmd.has_spatial_directive
+
+    r_hl = router.execute("Steve", "/hoshi highlight water", ctx)
+    assert r_hl.is_success
+    assert r_hl.has_spatial_directive
+    assert r_hl.spatial_directive.category == "WATER_LOGISTICS"
+
+    r_help = router.execute("Steve", "/hoshi help", None)
+    assert "/hoshi water" in r_help.message
+

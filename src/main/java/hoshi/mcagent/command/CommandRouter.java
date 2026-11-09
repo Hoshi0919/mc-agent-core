@@ -6,6 +6,7 @@ import hoshi.mcagent.cluster.ComparatorRedstoneAnalyzer;
 import hoshi.mcagent.cluster.RedstoneLogicAnalyzer;
 import hoshi.mcagent.cluster.RedstoneTransmissionAnalyzer;
 import hoshi.mcagent.cluster.RailNetworkAnalyzer;
+import hoshi.mcagent.cluster.WaterLogisticsAnalyzer;
 import hoshi.mcagent.cluster.BlockPos;
 import hoshi.mcagent.spatial.SpatialDirectiveGenerator;
 import hoshi.mcagent.spatial.SpatialDirectivePacket;
@@ -262,6 +263,12 @@ public class CommandRouter {
             case "power":
             case "wire": {
                 return handleTransmission(playerId, tokens, argStart, snapshot);
+            }
+            case "water":
+            case "fluid":
+            case "stream":
+            case "bubble": {
+                return handleWater(playerId, tokens, argStart, snapshot);
             }
             case "rail":
             case "track":
@@ -700,7 +707,26 @@ public class CommandRouter {
 
     
 
-        private CommandResult handleRail(String playerId, String[] tokens, int argStart, ContextSnapshot snapshot) {
+        private CommandResult handleWater(String playerId, String[] tokens, int argStart, ContextSnapshot snapshot) {
+        LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
+        if (cluster == null || cluster.isEmpty()) {
+            String msg = "§b【水流传输网络、气泡柱动力学与物品对齐因果诊断】§r\n" +
+                    "当前准星未捕捉到局部水流、气泡柱、冰道物流或物品对齐网络集群。\n" +
+                    "请将准星对准灵魂沙水柱、流动水渠、冰道滑道、蜂蜜块对齐器或双并列漏斗，然后输入 `/hoshi water` 触发水流物流因果诊断！";
+            return CommandResult.success("WATER", msg, null, null, null);
+        }
+        BlockPos focus = (snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
+        var report = WaterLogisticsAnalyzer.analyzeWater(cluster, focus);
+        String text = report.formatReport();
+        ChatPaginator.PagedResult paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page");
+        sessionManager.recordInteraction(playerId, "/hoshi water", text, "WATER", paged);
+        var comps = MinecraftTextFormatter.parseComponents(paged.fullPageText(), "/hoshi water");
+        String tellraw = TellrawJsonBuilder.toJson(comps);
+        var packet = SpatialDirectiveGenerator.generateWaterOverlay(cluster, report);
+        return CommandResult.success("WATER", paged.fullPageText(), null, tellraw, paged, packet);
+    }
+
+    private CommandResult handleRail(String playerId, String[] tokens, int argStart, ContextSnapshot snapshot) {
         LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
         if (cluster == null || cluster.isEmpty()) {
             String msg = "§e【矿车铁轨网络与装卸站因果诊断】§r\n" +
@@ -896,6 +922,10 @@ public class CommandRouter {
             BlockPos focus = (snapshot != null && snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
             var t = RedstoneTransmissionAnalyzer.analyzeTransmission(cluster, focus);
             packet = SpatialDirectiveGenerator.generateTransmissionOverlay(cluster, t);
+        } else if ("water".equals(sub) || "fluid".equals(sub) || "stream".equals(sub) || "bubble".equals(sub)) {
+            BlockPos focus = (snapshot != null && snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
+            var w = WaterLogisticsAnalyzer.analyzeWater(cluster, focus);
+            packet = SpatialDirectiveGenerator.generateWaterOverlay(cluster, w);
         } else if ("rail".equals(sub) || "minecart".equals(sub) || "track".equals(sub)) {
             BlockPos focus = (snapshot != null && snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
             var r = RailNetworkAnalyzer.analyzeRail(cluster, focus);
@@ -961,6 +991,17 @@ public class CommandRouter {
             BlockPos focus = (snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
             var t = RedstoneTransmissionAnalyzer.analyzeTransmission(cluster, focus);
             var packet = SpatialDirectiveGenerator.generateTransmissionOverlay(cluster, t);
+            return CommandResult.success("HIGHLIGHT", "§a[Hoshi 3D 高亮] " + packet.hudTitle(), null, packet.toTellrawFallback(), null, packet);
+        }
+
+        if ("water".equals(sub) || "fluid".equals(sub) || "stream".equals(sub) || "bubble".equals(sub)) {
+            LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
+            if (cluster == null || cluster.isEmpty()) {
+                return CommandResult.error("HIGHLIGHT", "§c准星未捕捉到水流、气泡柱或冰道物流组件，无法投射水流高亮。");
+            }
+            BlockPos focus = (snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
+            var w = WaterLogisticsAnalyzer.analyzeWater(cluster, focus);
+            var packet = SpatialDirectiveGenerator.generateWaterOverlay(cluster, w);
             return CommandResult.success("HIGHLIGHT", "§a[Hoshi 3D 高亮] " + packet.hudTitle(), null, packet.toTellrawFallback(), null, packet);
         }
 
@@ -1048,6 +1089,7 @@ public class CommandRouter {
                 "▸ §e/hoshi highlight multiblock <名称>§r - 在准星位置投射多方块虚影蓝图\n" +
                 "▸ §e/hoshi highlight mobfarm§r - 以自身为中心投射 24/32/128m 刷怪动力学清除圈\n" +
                 "▸ §e/hoshi highlight transmission§r - 投射红石火把烧毁高危、弱充能阻断点与偏转断路导线\n" +
+                "▸ §e/hoshi highlight water§r - 投射气泡柱中断流水、水流8格停摆与蜂蜜块对齐虚影\n" +
                 "▸ §e/hoshi highlight rail§r - 投射铁轨坡道倒溜赤字、卸货站缺失挡板与激活铁轨停用覆盖层\n" +
                 "▸ §e/hoshi highlight logic§r - 投射锁存器冲突、活塞脉宽失配与 1.21 铜球触发器全息覆盖层\n" +
                 "▸ §e/hoshi highlight comparator§r - 投射比较器信号、串扰高危线路与漏斗负载\n" +
@@ -1073,6 +1115,7 @@ public class CommandRouter {
                                 "▸ §e/hoshi ae2§r - 诊断准星 AE2 数字化网络拓扑、控制器合法性与 8/32 频道溢出\n" +
                 "▸ §e/hoshi highlight ae2§r - 投射 AE2 频道过载红线与掉线设备 3D 空间全息覆盖层\n" +
                 "▸ §e/hoshi transmission§r - 诊断红石火把极速自激烧毁、强弱充能传递阻断与导线偏转断路\n" +
+                "▸ §e/hoshi water§r - 诊断灵魂沙气泡柱中断、冰道水流8格极限与双漏斗蜂蜜块对齐\n" +
                 "▸ §e/hoshi rail§r - 诊断充能铁轨间距、斜坡爬坡倒溜、漏斗矿车卸料站与激活铁轨锁死\n" +
                 "▸ §e/hoshi logic§r - 诊断 RS-NOR 保持锁存器竞争、活塞 1 刻吐方块脉宽与 1.21 铜球状态机\n" +
                 "▸ §e/hoshi comparator§r - 诊断准星比较器信号强度、分类机满溢串扰与防溢出保护\n" +

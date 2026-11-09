@@ -4,6 +4,41 @@
 
 ---
 
+## 🌟 核心特性（v2.9.0 里程碑：水流传输网络、气泡柱动力学与蜂蜜块双漏斗边缘对齐 3D 全息因果分析）
+
+针对 Minecraft 原版与大型生电物流中应用极广却故障率极高的流体与物品传输子系统——**灵魂沙垂直气泡柱全源水中断 (Soul Sand Bubble Column Broken Continuity)**、**顶端高速喷涌外溢散落 (Top Ejection Spill Hazard)**、**蓝冰低摩擦水流 8 格极限与干冰惯性断点 (Ice Canal 8-Block Flow Horizon & Splicing)**、**生电极客蜂蜜块/箱子 0.125 格边缘内凹双漏斗吞吐翻倍 (Honey Block 0.125-Block Item Alignment & Dual-Hopper Overlap)** 与 **对冲水流零速度死角导致的 5 分钟物品清除 (Despawn Vortex Hazard)**，构建 0ms 纯确定性状态机与 3D 空间全息投射：
+
+1. **灵魂沙垂直气泡柱全源水硬法则与顶端防喷 (Soul Sand Bubble Column Dynamics)**：
+   - **全源水严格硬法则**：灵魂沙上方垂直通道中的每一格必须全部为水水源 (`level=0`)！只要其中有 1 格为流动水 (`level > 0`)，气泡柱就会在该处彻底中断，上方完全失去向上推力，掉落物中途卡死；
+   - **海带极速催熟转换法**：顶层倒一桶水，自底部灵魂沙种植海带一路催熟到顶，海带会将沿途流动水瞬态转化为全源水源；收割海带底部后立即生成完整高速气泡柱；
+   - **顶端外溢与防飞出顶盖**：气泡柱垂直上升极速可达数十格/秒，到达顶端若无实体顶盖阻拦，物品将垂直高高跃出水面散落四周；必须在顶格水上方 1 格设置平滑石半砖/活板门顶盖，并配合 90° 横向导流水渠平滑承接。
+
+2. **蓝冰低摩擦水流 8 格极限与干冰惯性滑行断点 (Ice Canal 8-Block Limit & Dry-Ice Splicing)**：
+   - **水流 8 格流动视界**：平面单格水源在同层最多延伸 7 格流动水（总长 8 格：1 水源 + 7 流水）；到达第 8 格末端水平推力衰竭为 0，物品停滞卡死；
+   - **干燥冰面惯性拼接拓扑**：在第 8 格上方放置告示牌 (Sign) 阻断前段水流，下方冰面留出 1~2 格干燥冰面（物品凭借蓝冰 0.989 极低摩擦力保持惯性飞速滑过），紧接着放置下一段水源开启新水流；严禁在第 8 格直接放水源，相冲对流会导致物品卡死并在 5 分钟后 Despawn；
+   - **超长干燥冰面警告**：若平地连续干燥冰面超过 3 格，物品滑行动量耗尽停滞。
+
+3. **生电极客蜜脾/蜂蜜块边缘 0.125 格对齐与双漏斗吞吐翻倍 (Honey Block Item Alignment & 5.0 items/s)**：
+   - **漏斗吞吐瓶颈与溢出痛点**：单漏斗每 8 ticks (0.4s) 仅能吸取 1 件物品（吞吐上限 2.5 items/s）；大产线喷涌时单漏斗必定溢出并在 5 分钟后 Despawn；
+   - **蜂蜜块 14/16 (0.875格) 碰撞箱内凹力学**：蜂蜜块与箱子的物理碰撞箱并非 1.0 满格，而是 0.875 格宽，侧面内缩 2 个像素 (0.125格)；
+   - **双漏斗跨界并联判定**：水流推动物品贴着蜂蜜块或箱子侧边滑行，物品被物理挤压在 0.125 格边缘内凹处，其中心正好跨越下方两排并列漏斗的中心分界缝隙，同时触发左右两个漏斗的吸取盒 (AABB)，实现吞吐量瞬间翻倍至 5.0 items/s！
+
+4. **3D 空间全息诊断覆盖层整合 (`generateWaterOverlay`)**：
+   - **气泡柱中断**：红色线框高亮流动水断点 (`BROKEN BUBBLE COLUMN`) + 建议位置投射青色海带虚影 (`GHOST_BLOCK`) + 悬浮标牌 `✖ 气泡柱中断：此处为流动水而非水源`；
+   - **顶端防喷缺失**：黄色线框高亮 (`TOP SPILL DEFLECTOR`) + 建议位置投射平滑石半砖虚影 + 悬浮标牌 `⚠ 补全导流顶盖防飞溅`；
+   - **水流动力枯竭**：橙色线框高亮 (`FLOW STALL RISK`) + 悬浮标牌 `⚠ 水流动力衰竭：超出8格流动极限`；
+   - **双漏斗未对齐**：紫色线框高亮漏斗列 (`MISALIGNED ITEM STREAM`) + 投射绿色蜂蜜块对齐虚影 + 悬浮标牌 `⚠ 物品未对齐：双漏斗无法满速吞吐`；
+   - **对冲涡流死角**：红色线框高亮 (`DESPAWN VORTEX RISK`) + 悬浮标牌 `✖ 涡流对冲死角：物品将滞留5分钟后清除`；
+   - **水路健康**：绿色线框高亮 (`WATER LOGISTICS HEALTHY`) + 悬浮标牌 `✔ 水流/气泡柱物流动力健康`。
+
+5. **游戏内交互指令与问答接入**：
+   - **`/hoshi water`**：对准星水流/气泡柱/冰道/对齐器输出完整因果诊断；
+   - **`/hoshi cluster water`**：局部水流网络子图专属分析；
+   - **`/hoshi highlight water`**：向客户端投射 3D 全息水流覆盖层；
+   - 快速问答路径收录规则 72（气泡柱全源水与海带催熟）、规则 73（蓝冰水流 8 格极限与干冰断点）、规则 74（蜂蜜块边缘对齐与双漏斗吞吐翻倍）。
+
+---
+
 ## 🌟 核心特性（v2.8.0 里程碑：矿车铁轨网络拓扑、充能爬坡动量衰减、智能卸货站与激活铁轨 3D 全息因果分析）
 
 针对 Minecraft 原版与大型生电物流中最关键的运载与集约化运输子系统——**充能铁轨间距与动量衰减 (Powered Rail Spacing & Momentum Physics)**、**斜坡爬坡重力衰减与倒溜卡死 (Sloped Rail Ascent & Rollback Stalling)**、**漏斗矿车智能单向/往返卸料站与挡板缺失 (Smart Hopper Minecart Unloader & Terminal Backstop)**、**卸货站比较器防瞬断脉冲延长滤波 (Pulse Extender Anti-Glitch Filtering)** 与 **激活铁轨误用导致的货运漏斗车锁定瘫痪 (Activator Rail Lockout Hazard)**，构建 0ms 纯确定性图论拓扑与 3D 空间全息投射：
@@ -499,7 +534,7 @@ mc-agent-core/
 ```bash
 javac -encoding UTF-8 -d bin $(find src/main/java src/test/java -name '*.java')
 java -cp bin hoshi.mcagent.McAgentCoreTest
-# 🎉 All 988/988 Java tests passed successfully!
+# 🎉 All 988/1040 Java tests passed successfully!
 ```
 
 ### Python 仿真套件

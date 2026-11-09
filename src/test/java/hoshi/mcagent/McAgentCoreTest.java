@@ -44,6 +44,7 @@ import hoshi.mcagent.cluster.ComparatorRedstoneAnalyzer;
 import hoshi.mcagent.cluster.RedstoneTransmissionAnalyzer;
 import hoshi.mcagent.cluster.RedstoneLogicAnalyzer;
 import hoshi.mcagent.cluster.RailNetworkAnalyzer;
+import hoshi.mcagent.cluster.WaterLogisticsAnalyzer;
 import hoshi.mcagent.cluster.BlockPos;
 import hoshi.mcagent.cluster.LocalBlock;
 import hoshi.mcagent.cluster.LocalMachineCluster;
@@ -148,6 +149,7 @@ public class McAgentCoreTest {
         testRedstoneTransmissionAnalyzerAndPoweringDynamics();
         testRedstoneLogicAnalyzerAndLatchesDynamics();
         testRailNetworkAnalyzerAndStationDynamics();
+        testWaterLogisticsAndBubbleColumnDynamics();
 
         System.out.println(String.format("\n🎉 All %d/%d Java tests passed successfully!", testsPassed, testsRun));
     }
@@ -2739,4 +2741,144 @@ public class McAgentCoreTest {
         assertTrue(resHelp.getMessage().contains("/hoshi rail"), "Help mentions /hoshi rail");
     }
 
+private static void testWaterLogisticsAndBubbleColumnDynamics() throws ExecutionException, InterruptedException {
+        // 1. Empty cluster returns empty report
+        var emptyCluster = LocalMachineCluster.empty(new BlockPos(0, 64, 0));
+        var repEmpty = WaterLogisticsAnalyzer.analyzeWater(emptyCluster, new BlockPos(0, 64, 0));
+        assertTrue(repEmpty.isHealthy(), "Empty water cluster is healthy");
+        assertTrue(repEmpty.waterBlockCount() == 0, "0 water blocks in empty");
+        assertTrue(repEmpty.logisticsType() == WaterLogisticsAnalyzer.WaterLogisticsType.NONE, "LogisticsType is NONE");
+
+        // 2. Healthy soul sand bubble elevator (with source water and deflector cap)
+        var healthyBubble = LocalMachineCluster.builder(10, 60, 10)
+                .add(10, 60, 10, "minecraft:soul_sand")
+                .add(10, 61, 10, "minecraft:water", Map.of("level", "0"))
+                .add(10, 62, 10, "minecraft:water", Map.of("level", "0"))
+                .add(10, 63, 10, "minecraft:water", Map.of("level", "0"))
+                .add(10, 64, 10, "minecraft:smooth_stone_slab");
+        var repHealthy = WaterLogisticsAnalyzer.analyzeWater(healthyBubble.build(), new BlockPos(10, 60, 10));
+        assertTrue(repHealthy.isHealthy(), "Healthy bubble elevator is healthy");
+        assertTrue(repHealthy.logisticsType() == WaterLogisticsAnalyzer.WaterLogisticsType.SOUL_SAND_BUBBLE_ELEVATOR, "LogisticsType is SOUL_SAND_BUBBLE_ELEVATOR");
+        assertTrue(!repHealthy.hasBrokenBubbleColumn(), "No broken bubble column in healthy elevator");
+        assertTrue(!repHealthy.hasTopSpillRisk(), "No top spill risk with slab ceiling");
+
+        // 3. Broken bubble column (flowing water at y=62)
+        var brokenBubble = LocalMachineCluster.builder(10, 60, 10)
+                .add(10, 60, 10, "minecraft:soul_sand")
+                .add(10, 61, 10, "minecraft:water", Map.of("level", "0"))
+                .add(10, 62, 10, "minecraft:water", Map.of("level", "3"))
+                .add(10, 63, 10, "minecraft:water", Map.of("level", "0"))
+                .add(10, 64, 10, "minecraft:smooth_stone_slab");
+        var repBroken = WaterLogisticsAnalyzer.analyzeWater(brokenBubble.build(), new BlockPos(10, 60, 10));
+        assertTrue(!repBroken.isHealthy(), "Broken bubble elevator is unhealthy");
+        assertTrue(repBroken.hasBrokenBubbleColumn(), "Detected broken bubble column");
+        assertTrue(repBroken.conflictNodes().contains(new BlockPos(10, 62, 10)), "Conflict nodes contains flowing water pos");
+        assertTrue(repBroken.ghostBlockPlacements().contains(new BlockPos(10, 62, 10)), "Ghost blocks suggest kelp pos");
+        assertTrue(repBroken.issues().get(0).contains("流动水"), "Issue explains flowing water lift failure");
+
+        // 4. Bubble column with top spill risk (missing cap)
+        var spillBubble = LocalMachineCluster.builder(10, 60, 10)
+                .add(10, 60, 10, "minecraft:soul_sand")
+                .add(10, 61, 10, "minecraft:water", Map.of("level", "0"))
+                .add(10, 62, 10, "minecraft:water", Map.of("level", "0"));
+        var repSpill = WaterLogisticsAnalyzer.analyzeWater(spillBubble.build(), new BlockPos(10, 60, 10));
+        assertTrue(!repSpill.isHealthy(), "Uncapped bubble elevator is unhealthy");
+        assertTrue(repSpill.hasTopSpillRisk(), "Detected top spill risk");
+        assertTrue(repSpill.ghostBlockPlacements().contains(new BlockPos(10, 63, 10)), "Ghost block suggests deflector slab pos");
+        assertTrue(repSpill.warnings().get(0).contains("顶端外溢"), "Warning explains top ejection spill");
+
+        // 5. Ice canal exceeding 8 blocks flow stall
+        var iceCanal = LocalMachineCluster.builder(0, 64, 0);
+        for (int x = 0; x < 9; x++) {
+            iceCanal.add(x, 63, 0, "minecraft:blue_ice");
+            iceCanal.add(x, 64, 0, "minecraft:water", Map.of("level", String.valueOf(Math.min(7, x))));
+        }
+        var repIce = WaterLogisticsAnalyzer.analyzeWater(iceCanal.build(), new BlockPos(0, 64, 0));
+        assertTrue(!repIce.isHealthy(), "Ice canal exceeding 8 blocks is unhealthy");
+        assertTrue(repIce.hasFlowStallRisk(), "Detected flow stall risk");
+        assertTrue(!repIce.conflictNodes().isEmpty(), "Conflict nodes populated for flow stall");
+        assertTrue(repIce.issues().get(0).contains("8 格流动极限"), "Issue explains 8 block flow limit");
+
+        // 6. Dual hopper misaligned stream (no honey block)
+        var misalignedHoppers = LocalMachineCluster.builder(20, 63, 20)
+                .add(20, 63, 20, "minecraft:hopper")
+                .add(21, 63, 20, "minecraft:hopper")
+                .add(20, 64, 20, "minecraft:water", Map.of("level", "0"))
+                .add(21, 64, 20, "minecraft:water", Map.of("level", "1"));
+        var repMisaligned = WaterLogisticsAnalyzer.analyzeWater(misalignedHoppers.build(), new BlockPos(20, 63, 20));
+        assertTrue(!repMisaligned.isHealthy(), "Misaligned dual hopper stream is unhealthy");
+        assertTrue(repMisaligned.hasMisalignedStream(), "Detected misaligned item stream");
+        assertTrue(repMisaligned.conflictNodes().contains(new BlockPos(20, 63, 20)), "Conflict nodes contains hopper pos");
+        assertTrue(repMisaligned.warnings().get(0).contains("未对齐"), "Warning explains dual hopper pickup deficit");
+
+        // 7. Dual hopper aligned stream with honey block
+        var alignedHoppers = LocalMachineCluster.builder(20, 63, 20)
+                .add(20, 63, 20, "minecraft:hopper")
+                .add(21, 63, 20, "minecraft:hopper")
+                .add(20, 64, 20, "minecraft:water", Map.of("level", "0"))
+                .add(21, 64, 20, "minecraft:water", Map.of("level", "1"))
+                .add(19, 64, 20, "minecraft:honey_block");
+        var repAligned = WaterLogisticsAnalyzer.analyzeWater(alignedHoppers.build(), new BlockPos(20, 63, 20));
+        assertTrue(!repAligned.hasMisalignedStream(), "Aligned dual hoppers with honey block has no misaligned stream");
+
+        // 8. Opposing water eddy vortex despawn hazard
+        var vortexCluster = LocalMachineCluster.builder(30, 64, 30)
+                .add(30, 64, 30, "minecraft:water", Map.of("level", "0"))
+                .add(32, 64, 30, "minecraft:water", Map.of("level", "0"))
+                .add(31, 64, 30, "minecraft:water", Map.of("level", "1"));
+        var repVortex = WaterLogisticsAnalyzer.analyzeWater(vortexCluster.build(), new BlockPos(30, 64, 30));
+        assertTrue(!repVortex.isHealthy(), "Opposing water sources is unhealthy");
+        assertTrue(repVortex.hasDespawnVortexRisk(), "Detected despawn vortex risk");
+        assertTrue(repVortex.conflictNodes().contains(new BlockPos(31, 64, 30)), "Conflict nodes contains midpoint vortex pos");
+        assertTrue(repVortex.issues().get(0).contains("对冲涡流"), "Issue explains 5-minute despawn hazard");
+
+        // 9. 3D Spatial Overlay Integration
+        var overlayBroken = SpatialDirectiveGenerator.generateWaterOverlay(brokenBubble.build(), repBroken);
+        assertTrue(overlayBroken.category().equals("WATER_LOGISTICS"), "Overlay category is WATER_LOGISTICS");
+        assertTrue(overlayBroken.toJson().contains("BROKEN BUBBLE COLUMN"), "Overlay JSON contains BROKEN BUBBLE COLUMN");
+        assertTrue(overlayBroken.toJson().contains("minecraft:kelp"), "Overlay JSON contains kelp ghost block");
+
+        var overlayHoney = SpatialDirectiveGenerator.generateWaterOverlay(misalignedHoppers.build(), repMisaligned);
+        assertTrue(overlayHoney.toJson().contains("MISALIGNED ITEM STREAM"), "Overlay JSON contains MISALIGNED ITEM STREAM");
+        assertTrue(overlayHoney.toJson().contains("minecraft:honey_block"), "Overlay JSON contains honey block ghost");
+
+        // 10. Fast Path Rules 72, 73, 74
+        McAgentCore core = new McAgentCore();
+        var qBubble = core.query("Steve", "气泡柱为什么不升了？气泡柱中间断了怎么解决？", null).get();
+        assertTrue(qBubble.category().equals("WATER_BUBBLE_COLUMN_INTEGRITY"), "Category is WATER_BUBBLE_COLUMN_INTEGRITY");
+        assertTrue(qBubble.rawAnswer().contains("全源水"), "Response mentions water source requirement");
+        assertTrue(qBubble.rawAnswer().contains("海带"), "Response mentions kelp transformation");
+
+        var qIce = core.query("Alex", "蓝冰水流怎么拼接？冰道水流最多流几格？", null).get();
+        assertTrue(qIce.category().equals("ICE_WATER_CANAL_SPLICING_AND_MOMENTUM"), "Category is ICE_WATER_CANAL_SPLICING_AND_MOMENTUM");
+        assertTrue(qIce.rawAnswer().contains("8 格") || qIce.rawAnswer().contains("8格"), "Response mentions 8 block limit");
+        assertTrue(qIce.rawAnswer().contains("告示牌"), "Response mentions sign splicing");
+
+        var qHoney = core.query("Engineer", "生电双漏斗怎么对齐？为什么漏斗吸不完物品？", null).get();
+        assertTrue(qHoney.category().equals("ITEM_ALIGNMENT_HONEY_BLOCK_DUAL_HOPPER"), "Category is ITEM_ALIGNMENT_HONEY_BLOCK_DUAL_HOPPER");
+        assertTrue(qHoney.rawAnswer().contains("0.875"), "Response mentions 0.875 hitbox");
+        assertTrue(qHoney.rawAnswer().contains("5.0 items/s"), "Response mentions 5.0 items/s");
+
+        // 11. Command Router Integration
+        PlayerSessionManager sm = new PlayerSessionManager();
+        CommandRouter router = new CommandRouter(core, sm);
+
+        var resEmpty = router.execute("Steve", "/hoshi water", null);
+        assertTrue(resEmpty.isSuccess(), "Empty water command succeeds");
+        assertTrue(resEmpty.getMessage().contains("当前准星未捕捉到局部水流"), "Reports no water targeted");
+
+        ContextSnapshot ctx = ContextSnapshot.builder().cluster(brokenBubble.build()).build();
+        var resCmd = router.execute("Steve", "/hoshi water", ctx);
+        assertTrue(resCmd.isSuccess(), "Water command succeeds on cluster");
+        assertTrue(resCmd.getMessage().contains("水流传输网络、气泡柱动力学与物品对齐因果诊断报告"), "Message contains header");
+        assertTrue(resCmd.hasSpatialDirective(), "Result has spatial directive");
+
+        var resHl = router.execute("Steve", "/hoshi highlight water", ctx);
+        assertTrue(resHl.isSuccess(), "Highlight water succeeds");
+        assertTrue(resHl.hasSpatialDirective(), "Highlight water has spatial directive");
+        assertTrue(resHl.getSpatialDirective().category().equals("WATER_LOGISTICS"), "Directive is WATER_LOGISTICS");
+
+        var resHelp = router.execute("Steve", "/hoshi help", null);
+        assertTrue(resHelp.getMessage().contains("/hoshi water"), "Help mentions /hoshi water");
+    }
 }
