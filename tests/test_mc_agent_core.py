@@ -2280,3 +2280,136 @@ def test_v27_redstone_logic_copper_bulb_latch_piston():
 
     r_help = router.execute("Steve", "/hoshi help", None)
     assert "/hoshi logic" in r_help.message
+
+
+def test_v28_rail_network_and_station_dynamics():
+    from mc_agent_core.cluster import RailNetworkAnalyzer, LocalMachineCluster, BlockPos
+    from mc_agent_core.spatial import SpatialDirectiveGenerator
+    from mc_agent_core.fast_path import FastPathResolver
+    from mc_agent_core.command import CommandRouter
+    from mc_agent_core.dispatcher import AsyncQueryDispatcher
+    from mc_agent_core.context import ContextSnapshot
+
+    # 1. Empty cluster returns empty report
+    empty_cluster = LocalMachineCluster(BlockPos(0, 64, 0))
+    rep_empty = RailNetworkAnalyzer.analyze(empty_cluster, BlockPos(0, 64, 0))
+    assert rep_empty.is_healthy
+    assert rep_empty.rail_count == 0
+
+    # 2. Healthy unloader station
+    healthy_station = LocalMachineCluster(BlockPos(0, 64, 0)) \
+        .add(0, 64, 0, "minecraft:powered_rail") \
+        .add(0, 64, 1, "minecraft:powered_rail") \
+        .add(0, 64, 2, "minecraft:powered_rail") \
+        .add(0, 64, -1, "minecraft:stone") \
+        .add(0, 63, 0, "minecraft:hopper") \
+        .add(1, 63, 0, "minecraft:comparator", {"facing": "east"}) \
+        .add(2, 63, 0, "minecraft:repeater", {"delay": "3"})
+    rep_healthy = RailNetworkAnalyzer.analyze(healthy_station, BlockPos(0, 64, 0))
+    assert rep_healthy.is_healthy
+    assert rep_healthy.rail_type == "UNLOADER_STATION"
+    assert not rep_healthy.has_missing_backstop
+    assert not rep_healthy.has_unloader_glitch_risk
+
+    # 3. Missing backstop unloader station
+    missing_backstop = LocalMachineCluster(BlockPos(10, 64, 10)) \
+        .add(10, 64, 10, "minecraft:powered_rail") \
+        .add(10, 64, 11, "minecraft:powered_rail") \
+        .add(10, 64, 9, "minecraft:air") \
+        .add(10, 63, 10, "minecraft:hopper")
+    rep_backstop = RailNetworkAnalyzer.analyze(missing_backstop, BlockPos(10, 64, 10))
+    assert not rep_backstop.is_healthy
+    assert rep_backstop.has_missing_backstop
+    assert BlockPos(10, 64, 9) in rep_backstop.ghost_block_placements
+    assert BlockPos(10, 64, 10) in rep_backstop.conflict_nodes
+
+    # 4. Glitch risk without pulse extender
+    glitch_station = LocalMachineCluster(BlockPos(20, 64, 20)) \
+        .add(20, 64, 20, "minecraft:powered_rail") \
+        .add(20, 64, 21, "minecraft:powered_rail") \
+        .add(20, 64, 19, "minecraft:stone") \
+        .add(20, 63, 20, "minecraft:hopper") \
+        .add(21, 63, 20, "minecraft:comparator", {"facing": "east"}) \
+        .add(22, 63, 20, "minecraft:redstone_torch")
+    rep_glitch = RailNetworkAnalyzer.analyze(glitch_station, BlockPos(20, 64, 20))
+    assert rep_glitch.has_unloader_glitch_risk
+    assert BlockPos(21, 63, 20) in rep_glitch.conflict_nodes
+
+    # 5. Sloped ascent healthy (1:1 / alternating)
+    healthy_slope = LocalMachineCluster(BlockPos(30, 64, 30)) \
+        .add(30, 64, 30, "minecraft:powered_rail", {"shape": "ascending_east"}) \
+        .add(31, 65, 30, "minecraft:rail", {"shape": "ascending_east"}) \
+        .add(32, 66, 30, "minecraft:powered_rail", {"shape": "ascending_east"}) \
+        .add(33, 67, 30, "minecraft:rail", {"shape": "ascending_east"})
+    rep_slope_healthy = RailNetworkAnalyzer.analyze(healthy_slope, BlockPos(30, 64, 30))
+    assert rep_slope_healthy.is_healthy
+    assert not rep_slope_healthy.has_slope_stall_risk
+
+    # 6. Sloped ascent with stall risk (consecutive normal rails >= 2)
+    stall_slope = LocalMachineCluster(BlockPos(40, 64, 40)) \
+        .add(40, 64, 40, "minecraft:powered_rail", {"shape": "ascending_east"}) \
+        .add(41, 65, 40, "minecraft:rail", {"shape": "ascending_east"}) \
+        .add(42, 66, 40, "minecraft:rail", {"shape": "ascending_east"}) \
+        .add(43, 67, 40, "minecraft:rail", {"shape": "ascending_east"})
+    rep_slope_stall = RailNetworkAnalyzer.analyze(stall_slope, BlockPos(40, 64, 40))
+    assert not rep_slope_stall.is_healthy
+    assert rep_slope_stall.has_slope_stall_risk
+    assert len(rep_slope_stall.conflict_nodes) >= 2
+    assert "重力倒溜卡死" in rep_slope_stall.issues[0]
+
+    # 7. Activator rail lockout on cargo line
+    activator_cluster = LocalMachineCluster(BlockPos(50, 64, 50)) \
+        .add(50, 64, 50, "minecraft:activator_rail", {"powered": "true"}) \
+        .add(51, 64, 50, "minecraft:rail")
+    rep_activator = RailNetworkAnalyzer.analyze(activator_cluster, BlockPos(50, 64, 50))
+    assert not rep_activator.is_healthy
+    assert rep_activator.has_activator_lockout
+    assert BlockPos(50, 64, 50) in rep_activator.conflict_nodes
+    assert "停止吸取" in rep_activator.issues[0]
+
+    # 8. 3D Spatial Overlay Integration
+    overlay_backstop = SpatialDirectiveGenerator.generate_rail_overlay(missing_backstop, rep_backstop)
+    assert overlay_backstop.category == "RAIL_NETWORK"
+    json_str = overlay_backstop.to_json()
+    assert "MISSING BACKSTOP" in json_str
+    assert "GHOST_BLOCK" in json_str
+
+    overlay_slope = SpatialDirectiveGenerator.generate_rail_overlay(stall_slope, rep_slope_stall)
+    assert "SLOPE STALL RISK" in overlay_slope.to_json()
+
+    # 9. Fast Path Rules 69, 70, 71
+    r_spacing = FastPathResolver.try_resolve("充能铁轨间距一般隔几格？爬坡铁轨怎么放？")
+    assert r_spacing is not None
+    assert r_spacing.category == "RAIL_POWERED_SPACING_MOMENTUM"
+    assert "8.0 m/s" in r_spacing.text_response
+    assert "重力倒溜" in r_spacing.text_response
+
+    r_unloader = FastPathResolver.try_resolve("漏斗矿车卸货站为什么不发车？矿车卡在卸料站怎么解决？")
+    assert r_unloader is not None
+    assert r_unloader.category == "HOPPER_MINECART_SMART_UNLOADER_BACKSTOP"
+    assert "坚固实体方块" in r_unloader.text_response
+
+    r_activator = FastPathResolver.try_resolve("激活铁轨和充能铁轨有什么区别？漏斗矿车为什么不吸东西了？")
+    assert r_activator is not None
+    assert r_activator.category == "ACTIVATOR_RAIL_INTERLOCK_AND_DISABLING"
+    assert "禁用标记" in r_activator.text_response
+
+    # 10. Command Router Integration
+    router = CommandRouter(AsyncQueryDispatcher())
+    r_empty = router.execute("Steve", "/hoshi rail", None)
+    assert r_empty.is_success
+    assert "当前准星未捕捉到局部铁轨" in r_empty.message
+
+    ctx = ContextSnapshot("Steve", "overworld", 0.0, 64.0, 0.0, machine_cluster=missing_backstop)
+    r_cmd = router.execute("Steve", "/hoshi rail", ctx)
+    assert r_cmd.is_success
+    assert "矿车铁轨网络、坡道动量与智能装卸站因果诊断报告" in r_cmd.message
+    assert r_cmd.has_spatial_directive
+
+    r_hl = router.execute("Steve", "/hoshi highlight rail", ctx)
+    assert r_hl.is_success
+    assert r_hl.has_spatial_directive
+    assert r_hl.spatial_directive.category == "RAIL_NETWORK"
+
+    r_help = router.execute("Steve", "/hoshi help", None)
+    assert "/hoshi rail" in r_help.message

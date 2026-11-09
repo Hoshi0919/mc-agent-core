@@ -43,6 +43,7 @@ import hoshi.mcagent.cluster.PistonRedstoneAnalyzer;
 import hoshi.mcagent.cluster.ComparatorRedstoneAnalyzer;
 import hoshi.mcagent.cluster.RedstoneTransmissionAnalyzer;
 import hoshi.mcagent.cluster.RedstoneLogicAnalyzer;
+import hoshi.mcagent.cluster.RailNetworkAnalyzer;
 import hoshi.mcagent.cluster.BlockPos;
 import hoshi.mcagent.cluster.LocalBlock;
 import hoshi.mcagent.cluster.LocalMachineCluster;
@@ -146,6 +147,7 @@ public class McAgentCoreTest {
         testComparatorRedstoneAnalyzerAndSpatialProtocol();
         testRedstoneTransmissionAnalyzerAndPoweringDynamics();
         testRedstoneLogicAnalyzerAndLatchesDynamics();
+        testRailNetworkAnalyzerAndStationDynamics();
 
         System.out.println(String.format("\n🎉 All %d/%d Java tests passed successfully!", testsPassed, testsRun));
     }
@@ -2609,6 +2611,132 @@ public class McAgentCoreTest {
 
         var resHelp = router.execute("Steve", "/hoshi help", null);
         assertTrue(resHelp.getMessage().contains("/hoshi logic"), "Help mentions /hoshi logic");
+    }
+
+
+    private static void testRailNetworkAnalyzerAndStationDynamics() throws Exception {
+        // 1. Empty cluster returns empty report
+        LocalMachineCluster emptyCluster = LocalMachineCluster.empty(new BlockPos(0, 64, 0));
+        var repEmpty = RailNetworkAnalyzer.analyzeRail(emptyCluster, new BlockPos(0, 64, 0));
+        assertTrue(repEmpty.isHealthy(), "Empty rail cluster is healthy");
+        assertTrue(repEmpty.railCount() == 0, "0 rails in empty");
+
+        // 2. Healthy unloader station
+        var healthyStation = LocalMachineCluster.builder(0, 64, 0)
+                .add(0, 64, 0, "minecraft:powered_rail")
+                .add(0, 64, 1, "minecraft:powered_rail")
+                .add(0, 64, 2, "minecraft:powered_rail")
+                .add(0, 64, -1, "minecraft:stone") // Solid backstop
+                .add(0, 63, 0, "minecraft:hopper")
+                .add(1, 63, 0, "minecraft:comparator", Map.of("facing", "east"))
+                .add(2, 63, 0, "minecraft:repeater", Map.of("delay", "3"));
+        var repHealthy = RailNetworkAnalyzer.analyzeRail(healthyStation.build(), new BlockPos(0, 64, 0));
+        assertTrue(repHealthy.isHealthy(), "Healthy unloader station is healthy");
+        assertTrue(repHealthy.railType() == RailNetworkAnalyzer.RailType.UNLOADER_STATION, "RailType is UNLOADER_STATION");
+        assertTrue(!repHealthy.hasMissingBackstop(), "No missing backstop in healthy station");
+        assertTrue(!repHealthy.hasUnloaderGlitchRisk(), "No glitch risk with repeater delay 3");
+
+        // 3. Missing backstop unloader station
+        var missingBackstop = LocalMachineCluster.builder(10, 64, 10)
+                .add(10, 64, 10, "minecraft:powered_rail")
+                .add(10, 64, 11, "minecraft:powered_rail")
+                .add(10, 64, 9, "minecraft:air") // missing backstop!
+                .add(10, 63, 10, "minecraft:hopper");
+        var repBackstop = RailNetworkAnalyzer.analyzeRail(missingBackstop.build(), new BlockPos(10, 64, 10));
+        assertTrue(!repBackstop.isHealthy(), "Missing backstop station is unhealthy");
+        assertTrue(repBackstop.hasMissingBackstop(), "Detected missing backstop");
+        assertTrue(repBackstop.ghostBlockPlacements().contains(new BlockPos(10, 64, 9)), "Ghost block suggests backstop position");
+        assertTrue(repBackstop.conflictNodes().contains(new BlockPos(10, 64, 10)), "Conflict nodes contains terminal rail");
+
+        // 4. Glitch risk without pulse extender
+        var glitchStation = LocalMachineCluster.builder(20, 64, 20)
+                .add(20, 64, 20, "minecraft:powered_rail")
+                .add(20, 64, 21, "minecraft:powered_rail")
+                .add(20, 64, 19, "minecraft:stone")
+                .add(20, 63, 20, "minecraft:hopper")
+                .add(21, 63, 20, "minecraft:comparator", Map.of("facing", "east"))
+                .add(22, 63, 20, "minecraft:redstone_torch");
+        var repGlitch = RailNetworkAnalyzer.analyzeRail(glitchStation.build(), new BlockPos(20, 64, 20));
+        assertTrue(repGlitch.hasUnloaderGlitchRisk(), "Detected unloader glitch risk without pulse extender");
+        assertTrue(repGlitch.conflictNodes().contains(new BlockPos(21, 63, 20)), "Conflict nodes contains comparator");
+
+        // 5. Sloped ascent healthy (1 powered + 1 normal)
+        var healthySlope = LocalMachineCluster.builder(30, 64, 30)
+                .add(30, 64, 30, "minecraft:powered_rail", Map.of("shape", "ascending_east"))
+                .add(31, 65, 30, "minecraft:rail", Map.of("shape", "ascending_east"))
+                .add(32, 66, 30, "minecraft:powered_rail", Map.of("shape", "ascending_east"))
+                .add(33, 67, 30, "minecraft:rail", Map.of("shape", "ascending_east"));
+        var repSlopeHealthy = RailNetworkAnalyzer.analyzeRail(healthySlope.build(), new BlockPos(30, 64, 30));
+        assertTrue(repSlopeHealthy.isHealthy(), "Alternating powered slope is healthy");
+        assertTrue(!repSlopeHealthy.hasSlopeStallRisk(), "No slope stall risk with 1:1 powered rail");
+
+        // 6. Sloped ascent with stall risk (consecutive normal rails >= 2)
+        var stallSlope = LocalMachineCluster.builder(40, 64, 40)
+                .add(40, 64, 40, "minecraft:powered_rail", Map.of("shape", "ascending_east"))
+                .add(41, 65, 40, "minecraft:rail", Map.of("shape", "ascending_east"))
+                .add(42, 66, 40, "minecraft:rail", Map.of("shape", "ascending_east"))
+                .add(43, 67, 40, "minecraft:rail", Map.of("shape", "ascending_east"));
+        var repSlopeStall = RailNetworkAnalyzer.analyzeRail(stallSlope.build(), new BlockPos(40, 64, 40));
+        assertTrue(!repSlopeStall.isHealthy(), "Slope with 3 consecutive regular rails is unhealthy");
+        assertTrue(repSlopeStall.hasSlopeStallRisk(), "Detected slope stall risk");
+        assertTrue(repSlopeStall.conflictNodes().size() >= 2, "Conflict nodes contains consecutive regular rails on slope");
+        assertTrue(repSlopeStall.issues().get(0).contains("重力倒溜卡死"), "Issue explains gravity rollback stall");
+
+        // 7. Activator rail lockout on collection line
+        var activatorCluster = LocalMachineCluster.builder(50, 64, 50)
+                .add(50, 64, 50, "minecraft:activator_rail", Map.of("powered", "true"))
+                .add(51, 64, 50, "minecraft:rail");
+        var repActivator = RailNetworkAnalyzer.analyzeRail(activatorCluster.build(), new BlockPos(50, 64, 50));
+        assertTrue(!repActivator.isHealthy(), "Powered activator rail is flagged unhealthy for cargo line");
+        assertTrue(repActivator.hasActivatorLockout(), "Detected activator lockout");
+        assertTrue(repActivator.conflictNodes().contains(new BlockPos(50, 64, 50)), "Conflict nodes contains activator rail pos");
+        assertTrue(repActivator.issues().get(0).contains("停止吸取"), "Issue explains hopper minecart cargo disabling");
+
+        // 8. 3D Spatial Overlay Integration
+        var overlayBackstop = SpatialDirectiveGenerator.generateRailOverlay(missingBackstop.build(), repBackstop);
+        assertTrue(overlayBackstop.category().equals("RAIL_NETWORK"), "Overlay category is RAIL_NETWORK");
+        assertTrue(overlayBackstop.toJson().contains("MISSING BACKSTOP"), "Overlay JSON contains MISSING BACKSTOP");
+        assertTrue(overlayBackstop.toJson().contains("GHOST_BLOCK"), "Overlay JSON contains GHOST_BLOCK");
+
+        var overlaySlope = SpatialDirectiveGenerator.generateRailOverlay(stallSlope.build(), repSlopeStall);
+        assertTrue(overlaySlope.toJson().contains("SLOPE STALL RISK"), "Overlay JSON contains SLOPE STALL RISK");
+
+        // 9. Fast Path Rules 69, 70, 71
+        McAgentCore core = new McAgentCore();
+        var qSpacing = core.query("Steve", "充能铁轨间距一般隔几格？爬坡铁轨怎么放？", null).get();
+        assertTrue(qSpacing.category().equals("RAIL_POWERED_SPACING_MOMENTUM"), "Category is RAIL_POWERED_SPACING_MOMENTUM");
+        assertTrue(qSpacing.rawAnswer().contains("8.0 m/s"), "Response mentions 8.0 m/s");
+        assertTrue(qSpacing.rawAnswer().contains("重力倒溜"), "Response mentions gravity rollback");
+
+        var qUnloader = core.query("Alex", "漏斗矿车卸货站为什么不发车？矿车卡在卸料站怎么解决？", null).get();
+        assertTrue(qUnloader.category().equals("HOPPER_MINECART_SMART_UNLOADER_BACKSTOP"), "Category is HOPPER_MINECART_SMART_UNLOADER_BACKSTOP");
+        assertTrue(qUnloader.rawAnswer().contains("坚固实体方块"), "Response mentions solid backstop");
+
+        var qActivator = core.query("Engineer", "激活铁轨和充能铁轨有什么区别？漏斗矿车为什么不吸东西了？", null).get();
+        assertTrue(qActivator.category().equals("ACTIVATOR_RAIL_INTERLOCK_AND_DISABLING"), "Category is ACTIVATOR_RAIL_INTERLOCK_AND_DISABLING");
+        assertTrue(qActivator.rawAnswer().contains("禁用标记"), "Response mentions disabled flag");
+
+        // 10. Command Router Integration
+        PlayerSessionManager sm = new PlayerSessionManager();
+        CommandRouter router = new CommandRouter(core, sm);
+
+        var resEmpty = router.execute("Steve", "/hoshi rail", null);
+        assertTrue(resEmpty.isSuccess(), "Empty rail command succeeds");
+        assertTrue(resEmpty.getMessage().contains("当前准星未捕捉到局部铁轨"), "Reports no rail targeted");
+
+        ContextSnapshot ctx = ContextSnapshot.builder().cluster(missingBackstop.build()).build();
+        var resCmd = router.execute("Steve", "/hoshi rail", ctx);
+        assertTrue(resCmd.isSuccess(), "Rail command succeeds on cluster");
+        assertTrue(resCmd.getMessage().contains("矿车铁轨网络、坡道动量与智能装卸站因果诊断报告"), "Message contains header");
+        assertTrue(resCmd.hasSpatialDirective(), "Result has spatial directive");
+
+        var resHl = router.execute("Steve", "/hoshi highlight rail", ctx);
+        assertTrue(resHl.isSuccess(), "Highlight rail succeeds");
+        assertTrue(resHl.hasSpatialDirective(), "Highlight rail has spatial directive");
+        assertTrue(resHl.getSpatialDirective().category().equals("RAIL_NETWORK"), "Directive is RAIL_NETWORK");
+
+        var resHelp = router.execute("Steve", "/hoshi help", null);
+        assertTrue(resHelp.getMessage().contains("/hoshi rail"), "Help mentions /hoshi rail");
     }
 
 }

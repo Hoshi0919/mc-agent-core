@@ -255,6 +255,39 @@ public record LocalBlock(
         return id.contains("lever");
     }
 
+    public boolean isRail() {
+        if (blockId == null) return false;
+        String id = blockId.toLowerCase();
+        return id.contains("rail");
+    }
+
+    public boolean isPoweredRail() {
+        if (blockId == null) return false;
+        return blockId.toLowerCase().contains("powered_rail");
+    }
+
+    public boolean isDetectorRail() {
+        if (blockId == null) return false;
+        return blockId.toLowerCase().contains("detector_rail");
+    }
+
+    public boolean isActivatorRail() {
+        if (blockId == null) return false;
+        return blockId.toLowerCase().contains("activator_rail");
+    }
+
+    public boolean isNormalRail() {
+        return isRail() && !isPoweredRail() && !isDetectorRail() && !isActivatorRail();
+    }
+
+    public String railShape() {
+        return getProperty("shape", "north_south").toLowerCase();
+    }
+
+    public boolean isAscendingRail() {
+        return railShape().startsWith("ascending");
+    }
+
     public boolean isAir() {
         return blockId == null || blockId.equals("minecraft:air") || blockId.equals("minecraft:cave_air") || blockId.equals("minecraft:void_air");
     }

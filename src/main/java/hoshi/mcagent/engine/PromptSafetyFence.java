@@ -96,6 +96,12 @@ public final class PromptSafetyFence {
         userPrompt.append(LocalGameRules.COMPARATOR_CONTAINER_SIGNAL_FORMULA_RULES).append("\n\n");
         userPrompt.append(LocalGameRules.ITEM_SORTER_ANTI_OVERFLOW_AND_CROSSTALK_RULES).append("\n\n");
         userPrompt.append(LocalGameRules.COMPARATOR_SUBTRACTION_MODE_AND_CLOCK_DYNAMICS_RULES).append("\n");
+        userPrompt.append(LocalGameRules.REDSTONE_RS_NOR_LATCH_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.REDSTONE_COPPER_BULB_DYNAMICS_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.STICKY_PISTON_MONOSTABLE_SPIT_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.RAIL_POWERED_SPACING_MOMENTUM_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.HOPPER_MINECART_SMART_UNLOADER_BACKSTOP_RULES).append("\n\n");
+        userPrompt.append(LocalGameRules.ACTIVATOR_RAIL_INTERLOCK_AND_DISABLING_RULES).append("\n");
         userPrompt.append("</canonical_rules>\n\n");
 
         userPrompt.append("<player_query>\n");

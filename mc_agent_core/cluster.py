@@ -127,6 +127,45 @@ class LocalBlock:
         bid = self.block_id.lower()
         return bid in ("air", "minecraft:air", "cave_air", "minecraft:cave_air", "void_air", "minecraft:void_air")
 
+
+    @property
+    def is_rail(self) -> bool:
+        return bool(self.block_id and "rail" in self.block_id.lower())
+
+    @property
+    def is_powered_rail(self) -> bool:
+        return bool(self.block_id and "powered_rail" in self.block_id.lower())
+
+    @property
+    def is_detector_rail(self) -> bool:
+        return bool(self.block_id and "detector_rail" in self.block_id.lower())
+
+    @property
+    def is_activator_rail(self) -> bool:
+        return bool(self.block_id and "activator_rail" in self.block_id.lower())
+
+    @property
+    def is_normal_rail(self) -> bool:
+        return self.is_rail and not (self.is_powered_rail or self.is_detector_rail or self.is_activator_rail)
+
+    @property
+    def rail_shape(self) -> str:
+        return self.get_property("shape", "north_south").lower()
+
+    @property
+    def is_ascending_rail(self) -> bool:
+        return self.rail_shape.startswith("ascending")
+
+
+    @property
+    def is_solid_conductive_block(self) -> bool:
+        if not self.block_id or self.is_air:
+            return False
+        bid = self.block_id.lower()
+        if any(k in bid for k in ["glass", "slab", "stairs", "glowstone", "leaves", "ice", "hopper", "chest", "fence", "wall", "piston", "door", "trapdoor", "wire", "torch", "lever", "button", "pressure_plate", "rail"]):
+            return False
+        return True
+
     @property
     def is_comparator(self) -> bool:
         return bool(self.block_id and "comparator" in self.block_id.lower())
@@ -272,6 +311,10 @@ class LocalMachineCluster:
     def get_connected_comparators(self) -> List[LocalBlock]:
         return [b for b in self.blocks.values() if b.is_comparator]
 
+
+
+    def get_connected_rails(self) -> List[LocalBlock]:
+        return [b for b in self.blocks.values() if b.is_rail]
 
     def get_connected_copper_bulbs(self) -> List[LocalBlock]:
         return [b for b in self.blocks.values() if b.is_copper_bulb]
@@ -2121,3 +2164,383 @@ class RedstoneLogicAnalyzer:
     def _reverse_facing(facing: str) -> str:
         f = facing.lower()
         return {"north": "south", "south": "north", "east": "west", "west": "east", "up": "down"}.get(f, "up")
+
+
+@dataclass
+class RailReport:
+    is_healthy: bool
+    has_slope_stall_risk: bool
+    has_missing_backstop: bool
+    has_activator_lockout: bool
+    has_unloader_glitch_risk: bool
+    has_underpowered_launch: bool
+    target_pos: BlockPos
+    target_block_type: str
+    rail_type: str  # UNLOADER_STATION, LOADER_STATION, SLOPED_ASCENT, CRUISING_LINE, ACTIVATOR_SECTION, NONE
+    rail_count: int
+    powered_rail_count: int
+    conflict_nodes: List[BlockPos]
+    ghost_block_placements: List[BlockPos]
+    rail_components: List[BlockPos]
+    issues: List[str]
+    warnings: List[str]
+    primary_diagnosis: str
+    actionable_advice: str
+
+    def format_report(self) -> str:
+        sb = []
+        sb.append("§e【矿车铁轨网络、坡道动量与智能装卸站因果诊断报告】§r")
+        sb.append(f"▸ 目标组件坐标：{self.target_pos} ({self.target_block_type.upper()})")
+        sb.append(f"▸ 轨道类型：{self._format_rail_type()} | 铁轨总数: {self.rail_count} (充能铁轨: §6{self.powered_rail_count}§r)")
+        if self.has_missing_backstop:
+            sb.append("  ⚡ §c[终端缺失坚固挡板] 卸货站充能铁轨后方未检测到坚固实体方块！§r")
+            for c in self.conflict_nodes:
+                sb.append(f"     ✖ 悬空/无依托站台: {c} (静止矿车无法凭空起步，通电后原地卡死)")
+            for g in self.ghost_block_placements:
+                sb.append(f"     ➕ 建议补全实体方块位置: {g}")
+        if self.has_slope_stall_risk:
+            sb.append("  ⚡ §e[坡道动量不足/倒溜高危] 斜坡铁轨检测到连续 ≥2 格普通铁轨！§r")
+            for c in self.conflict_nodes:
+                sb.append(f"     ✖ 爬坡动力赤字段: {c} (重力衰减导致动量耗尽，矿车将倒溜卡死)")
+        if self.has_activator_lockout:
+            sb.append("  ⚡ §c[激活铁轨停用锁死] 检测到通电激活铁轨 (Activator Rail) 接入货运线路！§r")
+            for c in self.conflict_nodes:
+                sb.append(f"     ✖ 锁定禁用节点: {c} (漏斗矿车压过将被锁定停用，停止吸取掉落物)")
+        if self.has_unloader_glitch_risk:
+            sb.append("  ⚡ §6[卸货站提前发车隐患] 比较器直连反相火把，缺失双比较器脉冲延长器 (Pulse Extender)！§r")
+            for c in self.conflict_nodes:
+                sb.append(f"     ↷ 无滤波检测端: {c} (8-tick 物品抽取间歇可能导致信号瞬断提前弹走矿车)")
+        if self.has_underpowered_launch:
+            sb.append("  ⚡ §e[起步冲力不足] 站台起步段仅铺设 1 根充能铁轨，出站速度不足 2.4 m/s (极速仅 30%)！§r")
+        if self.is_healthy:
+            sb.append("  ✓ §a[铁轨健康] 铁轨间距合理，站台挡板完备，卸货滤波与动力坡道配置健康无倒溜隐患。§r")
+        sb.append(f"▸ 核心诊断：{self.primary_diagnosis}")
+        if self.actionable_advice:
+            sb.append(f"▸ 修复建议：{self.actionable_advice}")
+        return "\n".join(sb)
+
+    def _format_rail_type(self) -> str:
+        types = {
+            "UNLOADER_STATION": "§b智能漏斗矿车卸货站 (Smart Unloader Station)§r",
+            "LOADER_STATION": "§a智能矿车装货站 (Smart Loader Station)§r",
+            "SLOPED_ASCENT": "§e斜坡爬坡动力段 (Sloped Rail Ascent)§r",
+            "CRUISING_LINE": "§3平地极速巡航干线 (Cruising Rail Line)§r",
+            "ACTIVATOR_SECTION": "§d激活铁轨功能段 (Activator Functional Rail)§r",
+            "NONE": "§7常规铁轨轨道§r",
+        }
+        return types.get(self.rail_type, "§7常规铁轨轨道§r")
+
+
+class RailNetworkAnalyzer:
+    @staticmethod
+    def empty() -> RailReport:
+        return RailReport(
+            is_healthy=True,
+            has_slope_stall_risk=False,
+            has_missing_backstop=False,
+            has_activator_lockout=False,
+            has_unloader_glitch_risk=False,
+            has_underpowered_launch=False,
+            target_pos=BlockPos(0, 0, 0),
+            target_block_type="none",
+            rail_type="NONE",
+            rail_count=0,
+            powered_rail_count=0,
+            conflict_nodes=[],
+            ghost_block_placements=[],
+            rail_components=[],
+            issues=[],
+            warnings=[],
+            primary_diagnosis="未检测到铁轨、矿车站台或物流轨道网络组件",
+            actionable_advice=""
+        )
+
+    @staticmethod
+    def analyze(cluster: Optional[LocalMachineCluster], target_pos: BlockPos) -> RailReport:
+        if not cluster or cluster.is_empty:
+            return RailNetworkAnalyzer.empty()
+
+        rails = cluster.get_connected_rails()
+        if not rails:
+            target = cluster.get_block(target_pos)
+            if target and target.is_hopper:
+                above = cluster.get_block(target_pos.offset("up"))
+                if above and above.is_rail:
+                    rails = [above]
+
+        if not rails:
+            return RailNetworkAnalyzer.empty()
+
+        target_block = cluster.get_block(target_pos)
+        focus_pos = target_pos if (target_block and not target_block.is_air) else cluster.origin
+
+        # 1. Unloader station (rail over hopper)
+        for r in rails:
+            down_pos = r.pos.offset("down")
+            below = cluster.get_block(down_pos)
+            if below and below.is_hopper:
+                return RailNetworkAnalyzer._analyze_unloader_station(cluster, r, below, rails)
+
+        # 2. Activator rail
+        for r in rails:
+            if r.is_activator_rail:
+                return RailNetworkAnalyzer._analyze_activator_rail(cluster, r, rails)
+
+        # 3. Sloped ascent
+        has_slope = False
+        for r in rails:
+            if r.is_ascending_rail:
+                has_slope = True
+                break
+            for r2 in rails:
+                if r.pos != r2.pos and abs(r.pos.y - r2.pos.y) == 1:
+                    dist = abs(r.pos.x - r2.pos.x) + abs(r.pos.z - r2.pos.z)
+                    if dist == 1:
+                        has_slope = True
+                        break
+            if has_slope:
+                break
+
+        if has_slope:
+            return RailNetworkAnalyzer._analyze_sloped_ascent(cluster, focus_pos, rails)
+
+        # 4. Cruising line
+        return RailNetworkAnalyzer._analyze_cruising_line(cluster, focus_pos, rails)
+
+    @staticmethod
+    def _analyze_unloader_station(cluster: LocalMachineCluster, unloader_rail: LocalBlock, hopper: LocalBlock, all_rails: List[LocalBlock]) -> RailReport:
+        rail_pos = unloader_rail.pos
+        hopper_pos = hopper.pos
+
+        conflict_nodes = []
+        ghost_blocks = []
+        rail_components = [r.pos for r in all_rails] + [hopper_pos]
+        issues = []
+        warnings = []
+
+        directions = ["north", "south", "east", "west"]
+        track_direction = None
+        for d in directions:
+            nb = cluster.get_block(rail_pos.offset(d))
+            if nb and nb.is_rail:
+                track_direction = d
+                break
+
+        rev = {"north": "south", "south": "north", "east": "west", "west": "east"}
+        backstop_pos = rail_pos.offset(rev.get(track_direction, "south"))
+
+        backstop_block = cluster.get_block(backstop_pos)
+        has_missing_backstop = not backstop_block or not backstop_block.is_solid_conductive_block
+        if has_missing_backstop:
+            conflict_nodes.append(rail_pos)
+            ghost_blocks.append(backstop_pos)
+            issues.append("卸货站终端充能铁轨后方未检测到坚固实体方块！静止矿车无法凭空起动，通电后将卡死在站台！")
+
+        # Check comparator & pulse extender
+        comparator_block = None
+        for d in directions:
+            c = cluster.get_block(hopper_pos.offset(d))
+            if c and c.is_comparator:
+                comparator_block = c
+                rail_components.append(c.pos)
+                break
+
+        has_unloader_glitch = False
+        if comparator_block:
+            has_pulse_extender = False
+            comp_out = comparator_block.pos.offset(comparator_block.facing())
+            out_block = cluster.get_block(comp_out)
+            if out_block:
+                rail_components.append(comp_out)
+                if out_block.is_repeater and int(out_block.get_property("delay", "1")) >= 3:
+                    has_pulse_extender = True
+                elif out_block.is_comparator:
+                    has_pulse_extender = True
+
+            if not has_pulse_extender:
+                has_unloader_glitch = True
+                conflict_nodes.append(comparator_block.pos)
+                warnings.append("卸货站比较器直连反相控制端，未接入双比较器脉冲延长器 (Pulse Extender)；漏斗抽取物品交接的 8-tick 间歇可能诱发信号瞬断提前发车！")
+
+        powered_count = sum(1 for r in all_rails if r.is_powered_rail)
+        has_underpowered = (powered_count == 1 and len(all_rails) > 1)
+        if has_underpowered:
+            warnings.append("起步加速段仅铺设 1 根充能铁轨，出站速度不足 2.4 m/s (仅为极速 30%)，长距离巡航极易中途停滞。")
+
+        is_healthy = not has_missing_backstop and not has_unloader_glitch and not has_underpowered
+        diag = "卸货站终端缺失实体挡板，静止矿车无法形成反弹动力起步卡死。" if has_missing_backstop else (
+            "卸货站比较器缺失脉冲延长器延时滤波，存在抽料瞬隙提前发车隐患。" if has_unloader_glitch else (
+                "起步段充能铁轨不足，矿车出站初速度较低。" if has_underpowered else "智能卸货站结构完备，实体挡板存在且动力控制稳定。"
+            )
+        )
+        adv = "在终端充能铁轨后方紧贴放置一个实体方块（如石头、深板岩）作为反弹挡板。" if has_missing_backstop else (
+            "在比较器与反相火把之间串入双比较器脉冲延长器（8~12 ticks 滤波缓冲），杜绝提前发车。" if has_unloader_glitch else (
+                "在出站起步前 3~4 格连续铺设充能铁轨，使矿车在最短距离内提速至 8.0 m/s 极速。" if has_underpowered else "保持当前配置，确保下方箱子容量充足。"
+            )
+        )
+
+        return RailReport(
+            is_healthy=is_healthy,
+            has_slope_stall_risk=False,
+            has_missing_backstop=has_missing_backstop,
+            has_activator_lockout=False,
+            has_unloader_glitch_risk=has_unloader_glitch,
+            has_underpowered_launch=has_underpowered,
+            target_pos=rail_pos,
+            target_block_type=unloader_rail.block_id,
+            rail_type="UNLOADER_STATION",
+            rail_count=len(all_rails),
+            powered_rail_count=powered_count,
+            conflict_nodes=conflict_nodes,
+            ghost_block_placements=ghost_blocks,
+            rail_components=rail_components,
+            issues=issues,
+            warnings=warnings,
+            primary_diagnosis=diag,
+            actionable_advice=adv
+        )
+
+    @staticmethod
+    def _analyze_sloped_ascent(cluster: LocalMachineCluster, target_pos: BlockPos, all_rails: List[LocalBlock]) -> RailReport:
+        conflict_nodes = []
+        rail_components = [r.pos for r in all_rails]
+        issues = []
+        warnings = []
+
+        sorted_rails = sorted(all_rails, key=lambda b: (b.pos.y, b.pos.x, b.pos.z))
+        powered_count = 0
+        max_consecutive = 0
+        cur_consecutive = 0
+        consecutive_pos = []
+        longest_chain = []
+
+        for r in sorted_rails:
+            if r.is_powered_rail:
+                powered_count += 1
+                if cur_consecutive > max_consecutive:
+                    max_consecutive = cur_consecutive
+                    longest_chain = list(consecutive_pos)
+                cur_consecutive = 0
+                consecutive_pos.clear()
+            else:
+                cur_consecutive += 1
+                consecutive_pos.append(r.pos)
+
+        if cur_consecutive > max_consecutive:
+            max_consecutive = cur_consecutive
+            longest_chain = list(consecutive_pos)
+
+        has_slope_stall = max_consecutive >= 2
+        if has_slope_stall:
+            conflict_nodes.extend(longest_chain)
+            issues.append(f"斜坡爬坡段连续出现 {max_consecutive} 格普通铁轨 (≥2)！矿车克服重力爬坡时动量急剧衰减，必定在半坡发生重力倒溜卡死 (Rollback Stall)！")
+
+        is_healthy = not has_slope_stall
+        diag = "斜坡铁轨充能间隔过大 (连续普通铁轨≥2)，上行矿车动量耗尽发生重力倒溜。" if has_slope_stall else "斜坡动力充沛，充能铁轨间隔符合安全爬坡规范 (≤1格普通铁轨)。"
+        adv = "斜坡上充能铁轨间距严禁超过 2 格，请至少按“1 充能 + 1 普通”交替铺设；重载建议 1:1 全铺充能铁轨。" if has_slope_stall else "保持当前坡道动力配置。"
+
+        return RailReport(
+            is_healthy=is_healthy,
+            has_slope_stall_risk=has_slope_stall,
+            has_missing_backstop=False,
+            has_activator_lockout=False,
+            has_unloader_glitch_risk=False,
+            has_underpowered_launch=False,
+            target_pos=target_pos,
+            target_block_type=sorted_rails[0].block_id,
+            rail_type="SLOPED_ASCENT",
+            rail_count=len(all_rails),
+            powered_rail_count=powered_count,
+            conflict_nodes=conflict_nodes,
+            ghost_block_placements=[],
+            rail_components=rail_components,
+            issues=issues,
+            warnings=warnings,
+            primary_diagnosis=diag,
+            actionable_advice=adv
+        )
+
+    @staticmethod
+    def _analyze_activator_rail(cluster: LocalMachineCluster, activator_rail: LocalBlock, all_rails: List[LocalBlock]) -> RailReport:
+        act_pos = activator_rail.pos
+        conflict_nodes = []
+        rail_components = [r.pos for r in all_rails]
+        issues = []
+        warnings = []
+
+        is_powered = activator_rail.is_powered() or activator_rail.is_redstone_power_source
+        if not is_powered:
+            for nb_pos in act_pos.neighbors:
+                nb = cluster.get_block(nb_pos)
+                if nb and nb.is_redstone_power_source:
+                    is_powered = True
+                    break
+
+        has_activator_lockout = is_powered
+        if has_activator_lockout:
+            conflict_nodes.append(act_pos)
+            issues.append("检测到通电激活铁轨 (Activator Rail) 接入轨道！漏斗矿车压过通电激活铁轨会被强行锁定停用 (disabled)，停止吸取所有掉落物！")
+
+        powered_count = sum(1 for r in all_rails if r.is_powered_rail)
+        is_healthy = not has_activator_lockout
+        diag = "通电激活铁轨导致漏斗矿车被强行锁定，货运收集功能瘫痪。" if has_activator_lockout else "激活铁轨处于未通电休眠状态。"
+        adv = "若为物资收集线，请将激活铁轨更换为充能铁轨 (Powered Rail)；激活铁轨仅用于弹射生物或引爆 TNT 矿车。" if has_activator_lockout else "若需弹射乘骑生物或引爆 TNT 矿车，请接入红石信号激活。"
+
+        return RailReport(
+            is_healthy=is_healthy,
+            has_slope_stall_risk=False,
+            has_missing_backstop=False,
+            has_activator_lockout=has_activator_lockout,
+            has_unloader_glitch_risk=False,
+            has_underpowered_launch=False,
+            target_pos=act_pos,
+            target_block_type=activator_rail.block_id,
+            rail_type="ACTIVATOR_SECTION",
+            rail_count=len(all_rails),
+            powered_rail_count=powered_count,
+            conflict_nodes=conflict_nodes,
+            ghost_block_placements=[],
+            rail_components=rail_components,
+            issues=issues,
+            warnings=warnings,
+            primary_diagnosis=diag,
+            actionable_advice=adv
+        )
+
+    @staticmethod
+    def _analyze_cruising_line(cluster: LocalMachineCluster, target_pos: BlockPos, all_rails: List[LocalBlock]) -> RailReport:
+        conflict_nodes = []
+        rail_components = [r.pos for r in all_rails]
+        issues = []
+        warnings = []
+
+        powered_count = sum(1 for r in all_rails if r.is_powered_rail)
+        normal_count = sum(1 for r in all_rails if r.is_normal_rail)
+        has_underpowered = normal_count > 38 and powered_count == 0
+        if has_underpowered:
+            warnings.append(f"平地巡航段连续普通铁轨达 {normal_count} 格 (>38 格)！矿车动量严重衰减，无法维持 8.0 m/s 极速巡航。")
+
+        is_healthy = not has_underpowered
+        diag = "平地巡航普通铁轨超过 38 格阈值，矿车速度明显跌落。" if has_underpowered else "平地巡航铁轨配置健康，动量巡航正常。"
+        adv = "平地建议每 34~38 格铺设 1 根充能铁轨以维持矿车最高限速 (8.0 m/s)。" if has_underpowered else "保持当前轨道配置。"
+
+        return RailReport(
+            is_healthy=is_healthy,
+            has_slope_stall_risk=False,
+            has_missing_backstop=False,
+            has_activator_lockout=False,
+            has_unloader_glitch_risk=False,
+            has_underpowered_launch=has_underpowered,
+            target_pos=target_pos,
+            target_block_type=all_rails[0].block_id,
+            rail_type="CRUISING_LINE",
+            rail_count=len(all_rails),
+            powered_rail_count=powered_count,
+            conflict_nodes=conflict_nodes,
+            ghost_block_placements=[],
+            rail_components=rail_components,
+            issues=issues,
+            warnings=warnings,
+            primary_diagnosis=diag,
+            actionable_advice=adv
+        )

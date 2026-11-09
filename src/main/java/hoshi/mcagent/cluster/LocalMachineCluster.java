@@ -92,11 +92,17 @@ public record LocalMachineCluster(
                 .collect(Collectors.toList());
     }
 
+    public List<LocalBlock> getConnectedRails() {
+        return blocks.values().stream()
+                .filter(LocalBlock::isRail)
+                .collect(Collectors.toList());
+    }
+
     public String toSummary() {
         if (isEmpty()) {
             return "EmptyCluster (0 blocks)";
         }
-        return String.format("Cluster centered at %s with %d blocks (Kinetics: %d, Hoppers: %d, AE2: %d, Pistons: %d, Comparators: %d, Containers: %d)",
+        return String.format("Cluster centered at %s with %d blocks (Kinetics: %d, Hoppers: %d, AE2: %d, Pistons: %d, Comparators: %d, Containers: %d, Rails: %d)",
                 origin,
                 blocks.size(),
                 getConnectedKinetics().size(),
@@ -104,7 +110,7 @@ public record LocalMachineCluster(
                 getConnectedAe2().size(),
                 getConnectedPistons().size(),
                 getConnectedComparators().size(),
-                getBlocksByType("chest").size() + getBlocksByType("barrel").size() + getBlocksByType("crafter").size());
+                getBlocksByType("chest").size() + getBlocksByType("barrel").size() + getBlocksByType("crafter").size(), getConnectedRails().size());
     }
 
     public static class Builder {

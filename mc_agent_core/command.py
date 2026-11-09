@@ -189,6 +189,13 @@ class CommandRouter:
             return self._handle_comparator(player_id, tokens, arg_start, snapshot)
         elif sub in ("transmission", "power", "wire"):
             return self._handle_transmission(player_id, tokens, arg_start, snapshot)
+        elif sub in ("rail", "track", "minecart"):
+            return self._handle_rail(player_id, tokens, arg_start, snapshot)
+        elif sub in ("rail", "minecart", "track"):
+            from mc_agent_core.cluster import RailNetworkAnalyzer, BlockPos
+            focus_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
+            r = RailNetworkAnalyzer.analyze(cluster, focus_pos)
+            packet = SpatialDirectiveGenerator.generate_rail_overlay(cluster, r)
         elif sub in ("logic", "latch", "gate", "bulb"):
             return self._handle_logic(player_id, tokens, arg_start, snapshot)
         elif sub in ("cluster", "topo"):
@@ -573,6 +580,13 @@ class CommandRouter:
             t_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
             t = RedstoneTransmissionAnalyzer.analyze(cluster, t_pos)
             packet = SpatialDirectiveGenerator.generate_transmission_overlay(cluster, t)
+        elif sub in ("rail", "track", "minecart"):
+            return self._handle_rail(player_id, tokens, arg_start, snapshot)
+        elif sub in ("rail", "minecart", "track"):
+            from mc_agent_core.cluster import RailNetworkAnalyzer, BlockPos
+            focus_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
+            r = RailNetworkAnalyzer.analyze(cluster, focus_pos)
+            packet = SpatialDirectiveGenerator.generate_rail_overlay(cluster, r)
         elif sub in ("logic", "latch", "gate", "bulb"):
             from mc_agent_core.cluster import RedstoneLogicAnalyzer, BlockPos
             focus_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
@@ -597,6 +611,25 @@ class CommandRouter:
 
         return CommandResult(status="SUCCESS", action="CLUSTER", message="\n".join(sb), spatial_directive=packet)
 
+
+
+    def _handle_rail(self, player_id: Optional[str], tokens: list, arg_start: int, snapshot: Optional[ContextSnapshot]) -> CommandResult:
+        cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
+        if not cluster or cluster.is_empty:
+            msg = ("§e【矿车铁轨网络与装卸站因果诊断】§r\n"
+                   "当前准星未捕捉到局部铁轨、矿车站台或轨道网络集群。\n"
+                   "请将准星对准充能铁轨、普通铁轨、坡道铁轨或漏斗矿车站台，然后输入 `/hoshi rail` 触发轨道因果诊断！")
+            return CommandResult(status="SUCCESS", action="RAIL", message=msg)
+        from mc_agent_core.cluster import RailNetworkAnalyzer, BlockPos
+        target_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
+        report = RailNetworkAnalyzer.analyze(cluster, target_pos)
+        text = report.format_report()
+        paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page")
+        self.session_manager.record_interaction(player_id, "/hoshi rail", text, "RAIL", paged)
+        comps = MinecraftTextFormatter.parse_components(paged.full_page_text, "/hoshi rail")
+        tellraw = TellrawJsonBuilder.to_json(comps)
+        pkt = SpatialDirectiveGenerator.generate_rail_overlay(cluster, report)
+        return CommandResult(status="SUCCESS", action="RAIL", message=paged.full_page_text, tellraw_json=tellraw, paged_result=paged, spatial_directive=pkt)
 
     def _handle_logic(self, player_id: Optional[str], tokens: list, arg_start: int, snapshot: Optional[ContextSnapshot]) -> CommandResult:
         cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
@@ -710,6 +743,16 @@ class CommandRouter:
             pkt = SpatialDirectiveGenerator.generate_transmission_overlay(cluster, t)
             return CommandResult(status="SUCCESS", action="HIGHLIGHT", message=f"§a[Hoshi 3D 高亮] {pkt.hud_title}", spatial_directive=pkt)
 
+        if sub in ("rail", "minecart", "track"):
+            cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
+            if not cluster or cluster.is_empty:
+                return CommandResult(status="ERROR", action="HIGHLIGHT", message="§c准星未捕捉到铁轨轨道组件，无法投射铁轨高亮。")
+            from mc_agent_core.cluster import RailNetworkAnalyzer, BlockPos
+            focus_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
+            r = RailNetworkAnalyzer.analyze(cluster, focus_pos)
+            pkt = SpatialDirectiveGenerator.generate_rail_overlay(cluster, r)
+            return CommandResult(status="SUCCESS", action="HIGHLIGHT", message=f"§a[Hoshi 3D 高亮] {pkt.hud_title}", spatial_directive=pkt)
+
         if sub in ("logic", "latch", "gate", "bulb"):
             cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
             if not cluster or cluster.is_empty:
@@ -782,6 +825,7 @@ class CommandRouter:
                "▸ §e/hoshi highlight kinetics§r - 在游戏世界高亮冲突齿轮与流向\n"
                "▸ §e/hoshi highlight hopper§r - 投射漏斗死锁环路与物流方向箭头\n"
                "▸ §e/hoshi highlight transmission§r - 投射红石火把烧毁高危、弱充能阻断点与偏转断路导线\n"
+            "▸ §e/hoshi highlight rail§r - 投射铁轨坡道倒溜赤字、卸货站缺失挡板与激活铁轨停用覆盖层\n" +
             "▸ §e/hoshi highlight logic§r - 投射锁存器冲突、活塞脉宽失配与 1.21 铜球触发器全息覆盖层\n" +
                "▸ §e/hoshi highlight comparator§r - 投射比较器信号、串扰高危线路与漏斗负载\n" +
                "▸ §e/hoshi highlight piston§r - 投射准连接 QC 隔电源、BUD 锁定与推块超载\n"
@@ -806,6 +850,7 @@ class CommandRouter:
             "▸ §e/hoshi create stress <动力源> [规模]§r - 诊断 Create 模组动力网应力与过载转速\n"
             "▸ §e/hoshi ae2§r - 诊断准星 AE2 数字化网络拓扑、控制器合法性与 8/32 频道溢出\n"
             "▸ §e/hoshi transmission§r - 诊断红石火把极速自激烧毁、强弱充能传递阻断与导线偏转断路\n"
+            "▸ §e/hoshi rail§r - 诊断充能铁轨间距、斜坡爬坡倒溜、漏斗矿车卸料站与激活铁轨锁死\n"
             "▸ §e/hoshi logic§r - 诊断 RS-NOR 保持锁存器竞争、活塞 1 刻吐方块脉宽与 1.21 铜球状态机\n" +
             "▸ §e/hoshi comparator§r - 诊断准星比较器信号强度、分类机满溢串扰与防溢出保护\n" +
             "▸ §e/hoshi piston§r - 诊断准星活塞准连接 (QC)、BUD 锁定与推块链超载\n"

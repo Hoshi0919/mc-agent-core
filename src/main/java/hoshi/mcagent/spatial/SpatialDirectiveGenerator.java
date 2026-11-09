@@ -5,6 +5,7 @@ import hoshi.mcagent.cluster.PistonRedstoneAnalyzer;
 import hoshi.mcagent.cluster.ComparatorRedstoneAnalyzer;
 import hoshi.mcagent.cluster.RedstoneLogicAnalyzer;
 import hoshi.mcagent.cluster.RedstoneTransmissionAnalyzer;
+import hoshi.mcagent.cluster.RailNetworkAnalyzer;
 import hoshi.mcagent.cluster.BlockPos;
 import hoshi.mcagent.cluster.HopperNetworkAnalyzer;
 import hoshi.mcagent.cluster.KineticNetworkAnalyzer;
@@ -619,6 +620,74 @@ public final class SpatialDirectiveGenerator {
         return SpatialDirectivePacket.of(
                 "redstone-logic-" + System.currentTimeMillis(),
                 "REDSTONE_LOGIC",
+                primitives,
+                report.primaryDiagnosis(),
+                report.actionableAdvice()
+        );
+    }
+
+    /**
+     * Generate 3D spatial holographic diagnostic overlay for Minecart & Rail Networks (v2.8.0).
+     */
+    public static SpatialDirectivePacket generateRailOverlay(LocalMachineCluster cluster, RailNetworkAnalyzer.RailReport report) {
+        if (report == null) {
+            return SpatialDirectivePacket.empty();
+        }
+
+        List<SpatialPrimitive> primitives = new ArrayList<>();
+        int duration = 300;
+        BlockPos tPos = report.targetPos();
+
+        // 1. Missing Backstop
+        if (report.hasMissingBackstop()) {
+            primitives.add(SpatialPrimitive.boxOutline(tPos, SpatialColor.RED, "MISSING BACKSTOP", duration));
+            primitives.add(SpatialPrimitive.billboard(tPos.offset("up"), "✖ 站台缺失挡板：静止矿车无法起动", SpatialColor.RED, duration));
+            for (BlockPos gPos : report.ghostBlockPlacements()) {
+                primitives.add(SpatialPrimitive.ghostBlock(gPos, "minecraft:stone", SpatialColor.CYAN, duration));
+                primitives.add(SpatialPrimitive.billboard(gPos.offset("up"), "➕ 补全坚固挡板", SpatialColor.CYAN, duration));
+            }
+        }
+
+        // 2. Slope Stall Risk
+        if (report.hasSlopeStallRisk()) {
+            for (BlockPos cPos : report.conflictNodes()) {
+                primitives.add(SpatialPrimitive.boxOutline(cPos, SpatialColor.YELLOW, "SLOPE STALL RISK", duration));
+                primitives.add(SpatialPrimitive.billboard(cPos.offset("up"), "⚠ 坡道动力不足：普通铁轨连续≥2格", SpatialColor.YELLOW, duration));
+            }
+        }
+
+        // 3. Activator Lockout
+        if (report.hasActivatorLockout()) {
+            for (BlockPos cPos : report.conflictNodes()) {
+                primitives.add(SpatialPrimitive.boxOutline(cPos, SpatialColor.PURPLE, "ACTIVATOR LOCKOUT", duration));
+                primitives.add(SpatialPrimitive.billboard(cPos.offset("up"), "⚠ 激活铁轨导致漏斗矿车停止吸物", SpatialColor.PURPLE, duration));
+            }
+        }
+
+        // 4. Unloader Glitch Risk
+        if (report.hasUnloaderGlitchRisk()) {
+            for (BlockPos cPos : report.conflictNodes()) {
+                primitives.add(SpatialPrimitive.boxOutline(cPos, SpatialColor.ORANGE, "UNLOADER GLITCH RISK", duration));
+                primitives.add(SpatialPrimitive.billboard(cPos.offset("up"), "↷ 卸货站无延时滤波", SpatialColor.ORANGE, duration));
+            }
+        }
+
+        // 5. Healthy rail components
+        if (report.isHealthy()) {
+            primitives.add(SpatialPrimitive.boxOutline(tPos, SpatialColor.GREEN, "RAIL HEALTHY", duration));
+            primitives.add(SpatialPrimitive.billboard(tPos.offset("up"), "✔ 铁轨动力/站台配置健康", SpatialColor.GREEN, duration));
+        }
+
+        // 6. Other rail components
+        for (BlockPos rPos : report.railComponents()) {
+            if (!rPos.equals(tPos) && !report.conflictNodes().contains(rPos)) {
+                primitives.add(SpatialPrimitive.boxOutline(rPos, SpatialColor.BLUE, "RAIL COMPONENT", duration));
+            }
+        }
+
+        return SpatialDirectivePacket.of(
+                "rail-network-" + System.currentTimeMillis(),
+                "RAIL_NETWORK",
                 primitives,
                 report.primaryDiagnosis(),
                 report.actionableAdvice()

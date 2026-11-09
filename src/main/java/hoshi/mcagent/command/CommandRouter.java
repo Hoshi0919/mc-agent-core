@@ -5,6 +5,7 @@ import hoshi.mcagent.cluster.PistonRedstoneAnalyzer;
 import hoshi.mcagent.cluster.ComparatorRedstoneAnalyzer;
 import hoshi.mcagent.cluster.RedstoneLogicAnalyzer;
 import hoshi.mcagent.cluster.RedstoneTransmissionAnalyzer;
+import hoshi.mcagent.cluster.RailNetworkAnalyzer;
 import hoshi.mcagent.cluster.BlockPos;
 import hoshi.mcagent.spatial.SpatialDirectiveGenerator;
 import hoshi.mcagent.spatial.SpatialDirectivePacket;
@@ -261,6 +262,11 @@ public class CommandRouter {
             case "power":
             case "wire": {
                 return handleTransmission(playerId, tokens, argStart, snapshot);
+            }
+            case "rail":
+            case "track":
+            case "minecart": {
+                return handleRail(playerId, tokens, argStart, snapshot);
             }
             case "logic":
             case "latch":
@@ -694,6 +700,25 @@ public class CommandRouter {
 
     
 
+        private CommandResult handleRail(String playerId, String[] tokens, int argStart, ContextSnapshot snapshot) {
+        LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
+        if (cluster == null || cluster.isEmpty()) {
+            String msg = "§e【矿车铁轨网络与装卸站因果诊断】§r\n" +
+                    "当前准星未捕捉到局部铁轨、矿车站台或轨道网络集群。\n" +
+                    "请将准星对准充能铁轨、普通铁轨、坡道铁轨或漏斗矿车站台，然后输入 `/hoshi rail` 触发轨道因果诊断！";
+            return CommandResult.success("RAIL", msg, null, null, null);
+        }
+        BlockPos focus = (snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
+        var report = RailNetworkAnalyzer.analyzeRail(cluster, focus);
+        String text = report.formatReport();
+        ChatPaginator.PagedResult paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page");
+        sessionManager.recordInteraction(playerId, "/hoshi rail", text, "RAIL", paged);
+        var comps = MinecraftTextFormatter.parseComponents(paged.fullPageText(), "/hoshi rail");
+        String tellraw = TellrawJsonBuilder.toJson(comps);
+        var packet = SpatialDirectiveGenerator.generateRailOverlay(cluster, report);
+        return CommandResult.success("RAIL", paged.fullPageText(), null, tellraw, paged, packet);
+    }
+
     private CommandResult handleLogic(String playerId, String[] tokens, int argStart, ContextSnapshot snapshot) {
         LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
         if (cluster == null || cluster.isEmpty()) {
@@ -871,6 +896,10 @@ public class CommandRouter {
             BlockPos focus = (snapshot != null && snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
             var t = RedstoneTransmissionAnalyzer.analyzeTransmission(cluster, focus);
             packet = SpatialDirectiveGenerator.generateTransmissionOverlay(cluster, t);
+        } else if ("rail".equals(sub) || "minecart".equals(sub) || "track".equals(sub)) {
+            BlockPos focus = (snapshot != null && snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
+            var r = RailNetworkAnalyzer.analyzeRail(cluster, focus);
+            packet = SpatialDirectiveGenerator.generateRailOverlay(cluster, r);
         } else if ("logic".equals(sub) || "latch".equals(sub) || "gate".equals(sub) || "bulb".equals(sub)) {
             BlockPos focus = (snapshot != null && snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
             var l = RedstoneLogicAnalyzer.analyzeLogic(cluster, focus);
@@ -932,6 +961,17 @@ public class CommandRouter {
             BlockPos focus = (snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
             var t = RedstoneTransmissionAnalyzer.analyzeTransmission(cluster, focus);
             var packet = SpatialDirectiveGenerator.generateTransmissionOverlay(cluster, t);
+            return CommandResult.success("HIGHLIGHT", "§a[Hoshi 3D 高亮] " + packet.hudTitle(), null, packet.toTellrawFallback(), null, packet);
+        }
+
+        if ("rail".equals(sub) || "minecart".equals(sub) || "track".equals(sub)) {
+            LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
+            if (cluster == null || cluster.isEmpty()) {
+                return CommandResult.error("HIGHLIGHT", "§c准星未捕捉到铁轨轨道组件，无法投射铁轨高亮。");
+            }
+            BlockPos focus = (snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
+            var r = RailNetworkAnalyzer.analyzeRail(cluster, focus);
+            var packet = SpatialDirectiveGenerator.generateRailOverlay(cluster, r);
             return CommandResult.success("HIGHLIGHT", "§a[Hoshi 3D 高亮] " + packet.hudTitle(), null, packet.toTellrawFallback(), null, packet);
         }
 
@@ -1008,6 +1048,7 @@ public class CommandRouter {
                 "▸ §e/hoshi highlight multiblock <名称>§r - 在准星位置投射多方块虚影蓝图\n" +
                 "▸ §e/hoshi highlight mobfarm§r - 以自身为中心投射 24/32/128m 刷怪动力学清除圈\n" +
                 "▸ §e/hoshi highlight transmission§r - 投射红石火把烧毁高危、弱充能阻断点与偏转断路导线\n" +
+                "▸ §e/hoshi highlight rail§r - 投射铁轨坡道倒溜赤字、卸货站缺失挡板与激活铁轨停用覆盖层\n" +
                 "▸ §e/hoshi highlight logic§r - 投射锁存器冲突、活塞脉宽失配与 1.21 铜球触发器全息覆盖层\n" +
                 "▸ §e/hoshi highlight comparator§r - 投射比较器信号、串扰高危线路与漏斗负载\n" +
                 "▸ §e/hoshi highlight piston§r - 投射准连接 QC 隔电源、BUD 锁定与推块超载\n" +
@@ -1032,6 +1073,7 @@ public class CommandRouter {
                                 "▸ §e/hoshi ae2§r - 诊断准星 AE2 数字化网络拓扑、控制器合法性与 8/32 频道溢出\n" +
                 "▸ §e/hoshi highlight ae2§r - 投射 AE2 频道过载红线与掉线设备 3D 空间全息覆盖层\n" +
                 "▸ §e/hoshi transmission§r - 诊断红石火把极速自激烧毁、强弱充能传递阻断与导线偏转断路\n" +
+                "▸ §e/hoshi rail§r - 诊断充能铁轨间距、斜坡爬坡倒溜、漏斗矿车卸料站与激活铁轨锁死\n" +
                 "▸ §e/hoshi logic§r - 诊断 RS-NOR 保持锁存器竞争、活塞 1 刻吐方块脉宽与 1.21 铜球状态机\n" +
                 "▸ §e/hoshi comparator§r - 诊断准星比较器信号强度、分类机满溢串扰与防溢出保护\n" +
                 "▸ §e/hoshi piston§r - 诊断准星活塞准连接 (QC)、BUD 锁定与推块链超载\n" +

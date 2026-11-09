@@ -348,6 +348,34 @@ public final class FastPathResolver {
         }
 
 
+
+        // 69. Powered Rail Spacing & Sloped Momentum Dynamics
+        if (q.contains("充能铁轨间距") || q.contains("爬坡铁轨") || q.contains("铁轨爬坡") || q.contains("矿车倒溜") || (q.contains("充能铁轨") && (q.contains("隔几格") || q.contains("间隔") || q.contains("平地") || q.contains("爬坡") || q.contains("斜坡")))) {
+            String resp = "§e【充能铁轨平地与爬坡间距动力学】§r\n" +
+                    "▸ §a平地巡航极限§r：矿车极速 8.0 m/s；平地最优充能铁轨间距：空车 ≤38 格，载人车 ≤34 格，漏斗车 ≤32 格；超过 38 格动量骤减，超过 50 格中途停摆！\n" +
+                    "▸ §c斜坡爬坡重力衰减§r：斜坡连续普通铁轨严禁 ≥2 格！至少按“1 充能 + 1 普通”交替铺设（间隔 ≤1 格）；连续 ≥2 格普通铁轨必定发生重力倒溜卡死 (Rollback Stall)！\n" +
+                    "▸ §b起步冲力加速区§r：静止起步段（前 4 格）仅铺 1 根充能铁轨出站速度不足 2.4 m/s，起步推荐连续铺设 3~4 根充能铁轨迅速达到 8 m/s 极速。";
+            return Optional.of(new Resolution(resp, "/hoshi rail", "RAIL_POWERED_SPACING_MOMENTUM"));
+        }
+
+        // 70. Hopper Minecart Smart Unloader & Solid Backstop
+        if (q.contains("卸货站挡板") || q.contains("卸货站提前发车") || q.contains("矿车卡在卸料站") || q.contains("卸货站为什么不发车") || (q.contains("卸货站") && (q.contains("挡板") || q.contains("反弹") || q.contains("卡死") || q.contains("提前发车")))) {
+            String resp = "§e【漏斗矿车智能单向往返卸货站与挡板防卡死】§r\n" +
+                    "▸ §a卸货站标准拓扑§r：充能铁轨置于漏斗上方；漏斗连接比较器反相熄灭充能铁轨刹车抽料；抽空后比较器归零，火把复燃激活充能铁轨弹射发车！\n" +
+                    "▸ §c致命挡板缺失§r：充能铁轨上的静止矿车无法凭空起动！终端后方必须紧贴坚固实体方块（Solid Backstop）；若终端后方悬空或为空气/半砖，通电后矿车原地卡死！\n" +
+                    "▸ §6提前发车瞬断滤波§r：漏斗抽料交接存在 8-tick 间歇；必须在比较器输出端串入双比较器脉冲延长器 (Pulse Extender，8~12 ticks)，杜绝信号瞬断提前弹走未卸完矿车。";
+            return Optional.of(new Resolution(resp, "/hoshi rail", "HOPPER_MINECART_SMART_UNLOADER_BACKSTOP"));
+        }
+
+        // 71. Activator Rail Interlock & Disabling
+        if (q.contains("激活铁轨") || q.contains("activator rail") || (q.contains("漏斗矿车") && (q.contains("不吸") || q.contains("停用") || q.contains("锁定")))) {
+            String resp = "§e【激活铁轨对漏斗矿车与生物的特殊功能与误用防范】§r\n" +
+                    "▸ §c漏斗矿车停用锁定§r：激活铁轨通电时，漏斗矿车压过会被强行打上禁用标记 (disabled)，停止吸取上方所有掉落物！严禁在收集线中误用激活铁轨代替充能铁轨！\n" +
+                    "▸ §e生物脱轨抛射与窒息防范§r：通电激活铁轨会将乘骑生物强制向侧边弹射下车；下车落点侧边必须有垂直 2 格净空空气，防止村民卡入实体方块窒息！\n" +
+                    "▸ §6TNT 矿车引爆§r：压过通电激活铁轨 80 ticks 延迟引爆；碰撞速度 ≥4.5 m/s 时碰撞直接瞬爆。";
+            return Optional.of(new Resolution(resp, "/hoshi rail", "ACTIVATOR_RAIL_INTERLOCK_AND_DISABLING"));
+        }
+
         // 60. Comparator Container Signal Formula
         if (q.contains("比较器信号公式") || q.contains("容器信号计算") || q.contains("比较器满箱信号") || q.contains("不可堆叠物品信号") || (q.contains("比较器") && (q.contains("公式") || q.contains("槽位") || q.contains("计算") || q.contains("强度")))) {
             String resp = "§e【红石比较器容器信号强度计算公式与槽位加权】§r\n" +

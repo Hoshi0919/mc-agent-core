@@ -4,6 +4,40 @@
 
 ---
 
+## 🌟 核心特性（v2.8.0 里程碑：矿车铁轨网络拓扑、充能爬坡动量衰减、智能卸货站与激活铁轨 3D 全息因果分析）
+
+针对 Minecraft 原版与大型生电物流中最关键的运载与集约化运输子系统——**充能铁轨间距与动量衰减 (Powered Rail Spacing & Momentum Physics)**、**斜坡爬坡重力衰减与倒溜卡死 (Sloped Rail Ascent & Rollback Stalling)**、**漏斗矿车智能单向/往返卸料站与挡板缺失 (Smart Hopper Minecart Unloader & Terminal Backstop)**、**卸货站比较器防瞬断脉冲延长滤波 (Pulse Extender Anti-Glitch Filtering)** 与 **激活铁轨误用导致的货运漏斗车锁定瘫痪 (Activator Rail Lockout Hazard)**，构建 0ms 纯确定性图论拓扑与 3D 空间全息投射：
+
+1. **充能铁轨平地与爬坡间距动力学 (Powered Rail Spacing & Momentum Dynamics)**：
+   - **平地巡航极限**：矿车最高限速 $8.0\text{ m/s}$ ($0.4\text{ blocks/tick}$)；平地维持最高速的最优充能铁轨间距：空矿车 $\le 38$ 格，载人矿车 $\le 34$ 格，漏斗/箱子矿车 $\le 32$ 格；若平地连续普通铁轨超过 38 格，矿车动量急剧衰减；超过 50 格则中途彻底停摆；
+   - **斜坡爬坡重力衰减硬法则**：斜坡上连续普通铁轨【严禁 $\ge 2$ 格】！斜坡必须至少“1 充能 + 1 普通”交替铺设（充能铁轨间隔 $\le 1$ 格）；长坡或重载建议 1:1 全铺充能铁轨；若斜坡出现连续 $\ge 2$ 格普通铁轨，上行矿车动量耗尽发生**重力倒溜卡死 (Rollback Stall)**；
+   - **起步加速区冲力校验**：静止起步段（前 4 格）若只有 1 根充能铁轨，出站速度不足 $2.4\text{ m/s}$（极速仅 30%），长距离巡航极易中途停滞；起步推荐连续铺设 3~4 根充能铁轨迅速达到 $8.0\text{ m/s}$ 极速。
+
+2. **漏斗矿车智能单向/往返卸料站与坚固挡板力学 (Smart Hopper Minecart Unloader & Backstop)**：
+   - **卸货站标准拓扑**：充能铁轨置于漏斗正上方作为刹车站台；下方漏斗连接红石比较器；漏斗有物品时比较器输出高电平，通过红石火把/非门反相熄灭充能铁轨（断电刹车），将矿车死死锁在站台抽料；抽空后比较器归零，火把复燃激活充能铁轨弹射发车；
+   - **致命坚固挡板缺失 (Missing Terminal Backstop)**：充能铁轨上的静止矿车无法凭空起动！终端后方必须紧贴坚固实体方块（Solid Backstop，如石头、深板岩）；若终端后方悬空或为半砖/空气，通电后矿车依然原地静止，造成站台卡死！
+   - **提前发车瞬断滤波 (Premature Launch Glitch Filter)**：漏斗每抽 1 件物品耗时 8 ticks ($0.4\text{s}$)；若无延时滤波，在物品交接瞬断时比较器信号归零 1 tick 会导致火把复燃提前把未卸完的矿车弹走；必须在比较器输出端接入双比较器微型脉冲延长器（Pulse Extender，8~12 ticks）防瞬断。
+
+3. **激活铁轨误用与货运漏斗车锁定瘫痪 (Activator Rail Lockout Hazard)**：
+   - **漏斗矿车停用锁定**：激活铁轨（Activator Rail）通电时，漏斗矿车压过会被强行打上禁用标记 (`disabled`)，停止吸取上方 1 格范围内的所有掉落物！严禁在农田或刷怪塔收集线中将激活铁轨误当作充能铁轨使用，否则会导致漏斗车全线空跑完全不收集；
+   - **生物脱轨抛射与窒息防范**：通电激活铁轨会把矿车内乘骑的村民或生物向侧边强制弹射下车；若下车落点侧边是实体方块且无垂直 2 格净空空气，村民会卡入方块受到窒息伤害；
+   - **TNT 矿车引爆**：TNT 矿车压过通电激活铁轨产生 80 ticks 延迟引爆；但碰撞速度 $\ge 4.5\text{ m/s}$ 时碰撞直接瞬爆。
+
+4. **3D 空间全息诊断覆盖层整合 (`generateRailOverlay`)**：
+   - **站台缺失挡板**：红色线框高亮终端铁轨 (`MISSING BACKSTOP`) + 建议位置投射青色全息虚影方块 (`GHOST_BLOCK`) + 悬浮标牌 `✖ 站台缺失挡板：静止矿车无法起步`；
+   - **坡道动量不足/倒溜高危**：黄色线框高亮 (`SLOPE STALL RISK`) + 悬浮标牌 `⚠ 坡道动力不足：普通铁轨连续≥2格`；
+   - **激活铁轨货车锁死**：紫色线框高亮 (`ACTIVATOR LOCKOUT`) + 悬浮标牌 `⚠ 激活铁轨导致漏斗矿车停止吸物`；
+   - **卸货站无延时滤波**：橙色线框高亮 (`UNLOADER GLITCH RISK`) + 悬浮标牌 `↷ 卸货站无延时滤波：存提前发车隐患`；
+   - **轨道健康**：绿色线框高亮 (`RAIL HEALTHY`) + 悬浮标牌 `✔ 铁轨动力/站台配置健康`。
+
+5. **游戏内交互指令与问答接入**：
+   - **`/hoshi rail`**：对准星铁轨/站台输出完整动力、坡道、装卸机与激活铁轨因果诊断；
+   - **`/hoshi cluster rail`**：局部铁轨网络子图专属分析；
+   - **`/hoshi highlight rail`**：向客户端投射 3D 全息铁轨覆盖层；
+   - 快速问答路径收录规则 69（充能铁轨平地与爬坡间距动力学）、规则 70（漏斗矿车智能卸货站与挡板防卡死）、规则 71（激活铁轨对漏斗矿车与生物的特殊功能）。
+
+---
+
 ## 🌟 核心特性（v2.7.0 里程碑：红石门电路、时序锁存器、单稳态脉冲整形与 1.21 铜球触发器 3D 全息因果分析）
 
 针对 Minecraft 原版与高阶生电中最核心的时序计算单元与 1.21 新特性——**RS-NOR 保持锁存器 (Bi-stable Latch)**、**1.21 原生铜球触发器 (Copper Bulb T-Flip-Flop)**、**粘性活塞 1 刻吐方块单稳态脉宽失配 (Piston 1-Tick Spit & Monostable Shaper)** 与 **复合门电路竞争毛刺 (Logic Gate Glitch Hazards)**，构建 0ms 纯确定性状态机与 3D 空间全息投射：
@@ -465,11 +499,11 @@ mc-agent-core/
 ```bash
 javac -encoding UTF-8 -d bin $(find src/main/java src/test/java -name '*.java')
 java -cp bin hoshi.mcagent.McAgentCoreTest
-# 🎉 All 819/819 Java tests passed successfully!
+# 🎉 All 988/988 Java tests passed successfully!
 ```
 
 ### Python 仿真套件
 ```bash
 PYTHONPATH=. uv run --with pytest pytest tests/ -v
-# 63 passed in 0.40s
+# 67 passed in 0.52s
 ```

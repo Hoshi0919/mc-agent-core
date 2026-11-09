@@ -605,3 +605,56 @@ class SpatialDirectiveGenerator:
             hud_title=report.primary_diagnosis,
             hud_description=report.actionable_advice
         )
+
+    @staticmethod
+    def generate_rail_overlay(cluster: Optional[Any], report: Any) -> SpatialDirectivePacket:
+        if not report:
+            return SpatialDirectivePacket.empty("rail-empty", "RAIL_NETWORK")
+
+        primitives: List[SpatialPrimitive] = []
+        duration = 300
+        t_pos = report.target_pos
+
+        # 1. Missing Backstop
+        if report.has_missing_backstop:
+            primitives.append(SpatialPrimitive.box_outline(t_pos, SpatialColor.RED, "MISSING BACKSTOP", duration))
+            primitives.append(SpatialPrimitive.billboard(t_pos.offset("up"), "✖ 站台缺失挡板：静止矿车无法起动", SpatialColor.RED, duration))
+            for g_pos in report.ghost_block_placements:
+                primitives.append(SpatialPrimitive.ghost_block(g_pos, "minecraft:stone", color=SpatialColor.CYAN, duration_ticks=duration))
+                primitives.append(SpatialPrimitive.billboard(g_pos.offset("up"), "➕ 补全坚固挡板", SpatialColor.CYAN, duration))
+
+        # 2. Slope Stall Risk
+        if report.has_slope_stall_risk:
+            for c_pos in report.conflict_nodes:
+                primitives.append(SpatialPrimitive.box_outline(c_pos, SpatialColor.YELLOW, "SLOPE STALL RISK", duration))
+                primitives.append(SpatialPrimitive.billboard(c_pos.offset("up"), "⚠ 坡道动力不足：普通铁轨连续≥2格", SpatialColor.YELLOW, duration))
+
+        # 3. Activator Lockout
+        if report.has_activator_lockout:
+            for c_pos in report.conflict_nodes:
+                primitives.append(SpatialPrimitive.box_outline(c_pos, SpatialColor.PURPLE, "ACTIVATOR LOCKOUT", duration))
+                primitives.append(SpatialPrimitive.billboard(c_pos.offset("up"), "⚠ 激活铁轨导致漏斗矿车停止吸物", SpatialColor.PURPLE, duration))
+
+        # 4. Unloader Glitch Risk
+        if report.has_unloader_glitch_risk:
+            for c_pos in report.conflict_nodes:
+                primitives.append(SpatialPrimitive.box_outline(c_pos, SpatialColor.ORANGE, "UNLOADER GLITCH RISK", duration))
+                primitives.append(SpatialPrimitive.billboard(c_pos.offset("up"), "↷ 卸货站无延时滤波", SpatialColor.ORANGE, duration))
+
+        # 5. Healthy rail components
+        if report.is_healthy:
+            primitives.append(SpatialPrimitive.box_outline(t_pos, SpatialColor.GREEN, "RAIL HEALTHY", duration))
+            primitives.append(SpatialPrimitive.billboard(t_pos.offset("up"), "✔ 铁轨动力/站台配置健康", SpatialColor.GREEN, duration))
+
+        # 6. Other rail components
+        for r_pos in report.rail_components:
+            if r_pos != t_pos and r_pos not in report.conflict_nodes:
+                primitives.append(SpatialPrimitive.box_outline(r_pos, SpatialColor.BLUE, "RAIL COMPONENT", duration))
+
+        return SpatialDirectivePacket(
+            id=f"rail-network-{int(time.time()*1000)}",
+            category="RAIL_NETWORK",
+            primitives=primitives,
+            hud_title=report.primary_diagnosis,
+            hud_description=report.actionable_advice
+        )
