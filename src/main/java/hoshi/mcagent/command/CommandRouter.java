@@ -1,4 +1,6 @@
 package hoshi.mcagent.command;
+import hoshi.mcagent.cluster.FlyingMachineAnalyzer;
+
 
 import hoshi.mcagent.cluster.Ae2NetworkAnalyzer;
 import hoshi.mcagent.cluster.PistonRedstoneAnalyzer;
@@ -263,6 +265,12 @@ public class CommandRouter {
             case "power":
             case "wire": {
                 return handleTransmission(playerId, tokens, argStart, snapshot);
+            }
+            case "flying":
+            case "fly":
+            case "machine":
+            case "slimestone": {
+                return handleFlying(playerId, tokens, argStart, snapshot);
             }
             case "water":
             case "fluid":
@@ -707,7 +715,26 @@ public class CommandRouter {
 
     
 
-        private CommandResult handleWater(String playerId, String[] tokens, int argStart, ContextSnapshot snapshot) {
+        private CommandResult handleFlying(String playerId, String[] tokens, int argStart, ContextSnapshot snapshot) {
+        LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
+        if (cluster == null || cluster.isEmpty()) {
+            String msg = "§6【双向活塞飞行器与机械蠕虫动力学因果诊断】§r\n" +
+                    "当前准星未捕捉到活塞飞行器、粘液/蜜脾机械蠕虫或停靠站集群。\n" +
+                    "请将准星对准活塞、侦测器、粘液块、蜂蜜块、带釉陶瓦或停靠站，然后输入 `/hoshi flying` 触发飞行机械动力学因果诊断！";
+            return CommandResult.success("FLYING", msg, null, null, null);
+        }
+        BlockPos focus = (snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
+        var report = FlyingMachineAnalyzer.analyzeFlyingMachine(cluster, focus);
+        String text = report.formatReport();
+        ChatPaginator.PagedResult paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page");
+        sessionManager.recordInteraction(playerId, "/hoshi flying", text, "FLYING", paged);
+        var comps = MinecraftTextFormatter.parseComponents(paged.fullPageText(), "/hoshi flying");
+        String tellraw = TellrawJsonBuilder.toJson(comps);
+        var packet = SpatialDirectiveGenerator.generateFlyingMachineOverlay(cluster, report);
+        return CommandResult.success("FLYING", paged.fullPageText(), null, tellraw, paged, packet);
+    }
+
+    private CommandResult handleWater(String playerId, String[] tokens, int argStart, ContextSnapshot snapshot) {
         LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
         if (cluster == null || cluster.isEmpty()) {
             String msg = "§b【水流传输网络、气泡柱动力学与物品对齐因果诊断】§r\n" +
@@ -922,6 +949,10 @@ public class CommandRouter {
             BlockPos focus = (snapshot != null && snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
             var t = RedstoneTransmissionAnalyzer.analyzeTransmission(cluster, focus);
             packet = SpatialDirectiveGenerator.generateTransmissionOverlay(cluster, t);
+        } else if ("flying".equals(sub) || "fly".equals(sub) || "machine".equals(sub) || "slimestone".equals(sub)) {
+            BlockPos focus = (snapshot != null && snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
+            var f = FlyingMachineAnalyzer.analyzeFlyingMachine(cluster, focus);
+            packet = SpatialDirectiveGenerator.generateFlyingMachineOverlay(cluster, f);
         } else if ("water".equals(sub) || "fluid".equals(sub) || "stream".equals(sub) || "bubble".equals(sub)) {
             BlockPos focus = (snapshot != null && snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
             var w = WaterLogisticsAnalyzer.analyzeWater(cluster, focus);
@@ -991,6 +1022,17 @@ public class CommandRouter {
             BlockPos focus = (snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
             var t = RedstoneTransmissionAnalyzer.analyzeTransmission(cluster, focus);
             var packet = SpatialDirectiveGenerator.generateTransmissionOverlay(cluster, t);
+            return CommandResult.success("HIGHLIGHT", "§a[Hoshi 3D 高亮] " + packet.hudTitle(), null, packet.toTellrawFallback(), null, packet);
+        }
+
+        if ("flying".equals(sub) || "fly".equals(sub) || "machine".equals(sub) || "slimestone".equals(sub)) {
+            LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
+            if (cluster == null || cluster.isEmpty()) {
+                return CommandResult.error("HIGHLIGHT", "§c准星未捕捉到活塞飞行器或机械组件，无法投射飞行高亮。");
+            }
+            BlockPos focus = (snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
+            var f = FlyingMachineAnalyzer.analyzeFlyingMachine(cluster, focus);
+            var packet = SpatialDirectiveGenerator.generateFlyingMachineOverlay(cluster, f);
             return CommandResult.success("HIGHLIGHT", "§a[Hoshi 3D 高亮] " + packet.hudTitle(), null, packet.toTellrawFallback(), null, packet);
         }
 
@@ -1115,6 +1157,7 @@ public class CommandRouter {
                                 "▸ §e/hoshi ae2§r - 诊断准星 AE2 数字化网络拓扑、控制器合法性与 8/32 频道溢出\n" +
                 "▸ §e/hoshi highlight ae2§r - 投射 AE2 频道过载红线与掉线设备 3D 空间全息覆盖层\n" +
                 "▸ §e/hoshi transmission§r - 诊断红石火把极速自激烧毁、强弱充能传递阻断与导线偏转断路\n" +
+                "▸ §e/hoshi flying§r - 诊断双向活塞飞行器推块超限、粘液蜂蜜短路粘连与端点停靠阻挡\n" +
                 "▸ §e/hoshi water§r - 诊断灵魂沙气泡柱中断、冰道水流8格极限与双漏斗蜂蜜块对齐\n" +
                 "▸ §e/hoshi rail§r - 诊断充能铁轨间距、斜坡爬坡倒溜、漏斗矿车卸料站与激活铁轨锁死\n" +
                 "▸ §e/hoshi logic§r - 诊断 RS-NOR 保持锁存器竞争、活塞 1 刻吐方块脉宽与 1.21 铜球状态机\n" +

@@ -4,6 +4,44 @@
 
 ---
 
+## 🌟 核心特性（v2.10.0 里程碑：双向活塞飞行器、粘液/蜜脾机械蠕虫动力学与 3D 全息因果分析）
+
+针对 Minecraft 原版与高阶生电机械工程中最核心也是最易故障的自主巡航子系统——**12 方块推动上限与连锁粘附质量遍历 (Piston 12-Block Push Limit & Adhesion Cluster Dynamics)**、**粘液块与蜂蜜块互不相粘隔断与短路防范 (Slime-Honey Segregation & Bridging Jam Prevention)**、**非粘性导轨与端点黑曜石刚性限位阻挡 (Glazed Terracotta Guides & Immovable Docking Stopper)**、**侦测器朝向极性失配与单拍断流死锁 (Observer Polarity & Dead-Stroke Stalling)** 与 **端点换向基站活板门/音符盒方块更新自激触发 (Two-Way Reversal Trigger & Docking Station)**，构建 0ms 纯确定性状态机与 3D 空间全息投射：
+
+1. **活塞 12 格推动物理硬上限与粘性连通子图 (Piston 12-Block Push Limit & Adhesion Search)**：
+   - **12 格物理硬上限**：普通活塞与粘性活塞单次推拉最多只能移动 12 个方块！若活塞推动方向上的方块及其粘性附着总数 $\ge 13$ 格，活塞发生超载卡死 (`PUSH_LIMIT_EXCEEDED`)，拒绝伸出；
+   - **粘性递归连锁传播**：粘液块与蜂蜜块会将推力传导给上下左右前后相连的所有非排斥方块；系统通过 BFS/DFS 严密精算移动子群的质量（方块总数），精准定位超载方块；
+   - **多级解耦推拉架构**：超过 12 格时，严禁单活塞硬推；指引将其拆解为推拉双级或多级活塞蠕虫架构，交替推进，将单活塞负担压至 $\le 12$ 格以内。
+
+2. **粘液块与蜂蜜块互不相粘隔断与粘连短路死锁 (Slime-Honey Segregation & Bridging Prevention)**：
+   - **互不相粘核心法则**：粘液块粘粘液与实心方块，蜂蜜块粘蜂蜜与实心方块；粘液块与蜂蜜块之间绝对不相粘！这是突破 12 格限制、构建双驱飞行器与超紧凑收割机（如竹子/甘蔗/海带机）的物理基石；
+   - **粘连短路死锁防范**：两翼或双向往返引擎若误将粘液块与粘液块（或蜂蜜与蜂蜜）直接并排贴合，会导致原本独立的推拉构件意外粘为一体，总块数超 12 格直接锁死；双段必须交替使用粘液与蜂蜜！
+   - **带釉陶瓦黄金导轨**：带釉陶瓦 (Glazed Terracotta) 可被活塞推拉，但绝对不被粘液/蜂蜜粘附；在挖掘隧道、铺设机库或固定导轨时，使用带釉陶瓦作为侧壁与天花板，防止飞行器抓取外界地形卡死。
+
+3. **端点黑曜石刚性限位阻挡与换向自激触发 (Immovable Docking Stopper & Reversal Trigger)**：
+   - **端点黑曜石刚性拦截**：飞行器到达终点时必须撞击不可移动方块 (如黑曜石、哭泣黑曜石、下界合金块、强化深板岩或伸出的活塞头)；若缺失阻挡，飞行器将直接推毁停靠站红石机构；
+   - **换向自激触发机制**：撞停后，由停靠站的活板门 (Trapdoor)、音符盒 (Note Block) 或外部活塞脉冲给反向侦测器施加 1 次更新，即可激活回程引擎反向自激巡航！
+
+4. **侦测器朝向极性失配与时序闭环 (Observer Polarity & Cycle Synchronization)**：
+   - **朝向极性检测**：侦测器感应端检测位移，后方红石红点必须精准正对动力活塞或驱动粘性方块；
+   - **极性颠倒诊断**：侦测器装反或输出端悬空将导致单拍后彻底失去自激脉冲卡死 (`OBSERVER_MISFACING_STALL`)。
+
+5. **3D 空间全息诊断覆盖层整合 (`generateFlyingMachineOverlay`)**：
+   - **推动超限高危**：红色线框高亮超载活塞与推动构件 (`PUSH LIMIT EXCEEDED`) + 悬浮标牌 `✖ 活塞推动超限: 负载超12格`；
+   - **粘连短路死锁**：红色线框高亮粘连接触点 (`BRIDGING JAM`) + 投射绿色蜂蜜块虚影 (`minecraft:honey_block`) + 悬浮标牌 `✖ 粘连短路: 需换为蜂蜜块隔断`；
+   - **外部地形吸附**：紫色线框高亮意外吸附点 (`ACCIDENTAL ADHESION`) + 投射紫色带釉陶瓦虚影 (`minecraft:magenta_glazed_terracotta`) + 悬浮标牌 `⚠ 外部方块意外粘连`；
+   - **缺失停靠阻挡**：黄色线框高亮触发器 (`MISSING DOCKING STOPPER`) + 投射青色黑曜石虚影 (`minecraft:obsidian`) + 悬浮标牌 `⚠ 补全黑曜石停靠限位`；
+   - **时序极性失配**：红色线框高亮反向侦测器 (`OBSERVER POLARITY DEFICIT`) + 悬浮标牌 `✖ 侦测器朝向极性失配`；
+   - **引擎动力健康**：绿色线框高亮动力核心 (`FLYING MACHINE HEALTHY`) + 悬浮标牌 `✔ 飞行器动力学与时序健康`。
+
+6. **游戏内交互指令与问答接入**：
+   - **`/hoshi flying`**：对准星活塞飞行器/蠕虫机械输出完整因果诊断；
+   - **`/hoshi cluster flying`**：局部飞行机械网络子图专属分析；
+   - **`/hoshi highlight flying`**：向客户端投射 3D 全息飞行机械覆盖层；
+   - 快速问答路径收录规则 75（活塞 12 格推动极限与粘性子群）、规则 76（粘液蜂蜜互不相粘与带釉陶瓦导轨）、规则 77（双向飞行器端点黑曜石限位与侦测器换向触发）。
+
+---
+
 ## 🌟 核心特性（v2.9.0 里程碑：水流传输网络、气泡柱动力学与蜂蜜块双漏斗边缘对齐 3D 全息因果分析）
 
 针对 Minecraft 原版与大型生电物流中应用极广却故障率极高的流体与物品传输子系统——**灵魂沙垂直气泡柱全源水中断 (Soul Sand Bubble Column Broken Continuity)**、**顶端高速喷涌外溢散落 (Top Ejection Spill Hazard)**、**蓝冰低摩擦水流 8 格极限与干冰惯性断点 (Ice Canal 8-Block Flow Horizon & Splicing)**、**生电极客蜂蜜块/箱子 0.125 格边缘内凹双漏斗吞吐翻倍 (Honey Block 0.125-Block Item Alignment & Dual-Hopper Overlap)** 与 **对冲水流零速度死角导致的 5 分钟物品清除 (Despawn Vortex Hazard)**，构建 0ms 纯确定性状态机与 3D 空间全息投射：

@@ -376,6 +376,33 @@ public final class FastPathResolver {
             return Optional.of(new Resolution(resp, "/hoshi water", "ITEM_ALIGNMENT_HONEY_BLOCK_DUAL_HOPPER"));
         }
 
+        // 75. Piston Push Limit & Adhesion Dynamics
+        if (q.contains("飞行器推动上限") || q.contains("飞行器超限") || q.contains("飞行器动力超载") || (q.contains("飞行器") && (q.contains("推不动") || q.contains("推动上限") || q.contains("超载")))) {
+            String resp = "§6【活塞 12 格推动极限与粘液/蜂蜜独立动力团块】§r\n" +
+                    "▸ §c12格硬上限§r：活塞单次推拉最多移动 12 个方块！粘性附着总数 ≥13 格将引发超载卡死，活塞拒绝伸展！\n" +
+                    "▸ §a粘性递归传导§r：粘液与蜂蜜块会递归吸附相邻非排斥方块；必须精准计算单次推进子群总数 ≤12 格！\n" +
+                    "▸ §e多级推拉解耦§r：超过 12 格大负载必须拆解为推拉双段架构，交替推进！";
+            return Optional.of(new Resolution(resp, "/hoshi flying", "PISTON_PUSH_LIMIT_AND_ADHESION_CLUSTER_RULES"));
+        }
+
+        // 76. Slime Honey Segregation & Glazed Terracotta
+        if (q.contains("飞行器两翼粘连") || q.contains("飞行器粘连") || q.contains("飞行器粘液短路") || q.contains("粘液短路") || q.contains("飞行器蜂蜜块隔断") || (q.contains("飞行器") && (q.contains("隔断") || q.contains("粘连") || q.contains("短路")))) {
+            String resp = "§6【粘液与蜂蜜互不相粘隔断与带釉陶瓦防粘导轨】§r\n" +
+                    "▸ §a互不相粘法则§r：粘液块与蜂蜜块绝对不相粘！双向引擎或多排收割机必须交错使用粘液与蜂蜜，防止两段意外粘为一体超载！\n" +
+                    "▸ §d带釉陶瓦黄金导轨§r：带釉陶瓦可被活塞推拉，但绝不被粘液/蜂蜜粘附；用于隧道内衬防吸附外界地形！\n" +
+                    "▸ §c粘连短路死锁§r：两翼异动段若出现同种粘性方块贴合，会导致双驱无法解耦直接瘫痪。";
+            return Optional.of(new Resolution(resp, "/hoshi flying", "SLIME_HONEY_SEGREGATION_AND_GLAZED_TERRACOTTA_RULES"));
+        }
+
+        // 77. Two-Way Flying Machine & Docking Station
+        if (q.contains("双向飞行器") || q.contains("飞行器换向") || q.contains("飞行器停靠站") || q.contains("飞行器黑曜石") || q.contains("飞行器侦测器朝向") || (q.contains("飞行器") && (q.contains("停靠") || q.contains("换向") || q.contains("掉头")))) {
+            String resp = "§6【双向飞行器端点黑曜石限位阻挡与侦测器换向触发】§r\n" +
+                    "▸ §e侦测器朝向时序§r：侦测器感应端检测位移，后方红石红点必须正对动力活塞；朝向装反单拍即死！\n" +
+                    "▸ §c端点黑曜石限位§r：飞行器终点必须撞击不可移动方块 (黑曜石/哭泣黑曜石) 刚性拦截，否则推毁基站！\n" +
+                    "▸ §a换向自激触发§r：撞停后，用停靠站活板门 (Trapdoor) 或音符盒 (Note Block) 产生 1 次方块更新即可点火回程！";
+            return Optional.of(new Resolution(resp, "/hoshi flying", "TWO_WAY_FLYING_MACHINE_OBSERVER_AND_DOCKING_RULES"));
+        }
+
         // 69. Powered Rail Spacing & Sloped Momentum Dynamics
         if (q.contains("充能铁轨间距") || q.contains("爬坡铁轨") || q.contains("铁轨爬坡") || q.contains("矿车倒溜") || (q.contains("充能铁轨") && (q.contains("隔几格") || q.contains("间隔") || q.contains("平地") || q.contains("爬坡") || q.contains("斜坡")))) {
             String resp = "§e【充能铁轨平地与爬坡间距动力学】§r\n" +

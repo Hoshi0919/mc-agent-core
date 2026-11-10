@@ -354,6 +354,25 @@ public record LocalBlock(
         return id.contains("sign");
     }
 
+    public boolean isNoteBlock() {
+        return blockId != null && blockId.toLowerCase().contains("note_block");
+    }
+
+    public boolean isTrapdoor() {
+        return blockId != null && blockId.toLowerCase().contains("trapdoor");
+    }
+
+    public boolean isObsidian() {
+        if (blockId == null) return false;
+        String id = blockId.toLowerCase();
+        return id.contains("obsidian") || id.contains("reinforced_deepslate");
+    }
+
+    public boolean isFlyingComponent() {
+        return isPiston() || isObserver() || isSlimeBlock() || isHoneyBlock() ||
+               isGlazedTerracotta() || isNoteBlock() || isTrapdoor() || isObsidian();
+    }
+
     public boolean isAir() {
         return blockId == null || blockId.equals("minecraft:air") || blockId.equals("minecraft:cave_air") || blockId.equals("minecraft:void_air");
     }

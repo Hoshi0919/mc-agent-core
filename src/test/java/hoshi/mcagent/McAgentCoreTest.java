@@ -44,6 +44,7 @@ import hoshi.mcagent.cluster.ComparatorRedstoneAnalyzer;
 import hoshi.mcagent.cluster.RedstoneTransmissionAnalyzer;
 import hoshi.mcagent.cluster.RedstoneLogicAnalyzer;
 import hoshi.mcagent.cluster.RailNetworkAnalyzer;
+import hoshi.mcagent.cluster.FlyingMachineAnalyzer;
 import hoshi.mcagent.cluster.WaterLogisticsAnalyzer;
 import hoshi.mcagent.cluster.BlockPos;
 import hoshi.mcagent.cluster.LocalBlock;
@@ -150,6 +151,7 @@ public class McAgentCoreTest {
         testRedstoneLogicAnalyzerAndLatchesDynamics();
         testRailNetworkAnalyzerAndStationDynamics();
         testWaterLogisticsAndBubbleColumnDynamics();
+        testFlyingMachineAndSlimestoneDynamics();
 
         System.out.println(String.format("\n🎉 All %d/%d Java tests passed successfully!", testsPassed, testsRun));
     }
@@ -2880,5 +2882,145 @@ private static void testWaterLogisticsAndBubbleColumnDynamics() throws Execution
 
         var resHelp = router.execute("Steve", "/hoshi help", null);
         assertTrue(resHelp.getMessage().contains("/hoshi water"), "Help mentions /hoshi water");
+    }
+
+    private static void testFlyingMachineAndSlimestoneDynamics() throws Exception {
+        // 1. Empty Report
+        var emptyCluster = new LocalMachineCluster.Builder(new BlockPos(0, 64, 0)).build();
+        var repEmpty = FlyingMachineAnalyzer.analyzeFlyingMachine(emptyCluster, new BlockPos(0, 64, 0));
+        assertTrue(repEmpty.isHealthy(), "Empty flying cluster is healthy");
+        assertTrue(repEmpty.engineType() == FlyingMachineAnalyzer.EngineType.NONE, "EngineType is NONE in empty");
+
+        // 2. Healthy Two-Way Engine (opposing sticky pistons with alternating slime/honey & observers)
+        var healthyEngine = new LocalMachineCluster.Builder(new BlockPos(10, 64, 10))
+                .add(10, 64, 10, "minecraft:sticky_piston", Map.of("facing", "east"))
+                .add(11, 64, 10, "minecraft:slime_block")
+                .add(10, 65, 10, "minecraft:observer", Map.of("facing", "up"))
+                .add(12, 64, 10, "minecraft:sticky_piston", Map.of("facing", "west"))
+                .add(13, 64, 10, "minecraft:honey_block")
+                .add(12, 65, 10, "minecraft:observer", Map.of("facing", "up"));
+        var repHealthy = FlyingMachineAnalyzer.analyzeFlyingMachine(healthyEngine.build(), new BlockPos(10, 64, 10));
+        assertTrue(repHealthy.isHealthy(), "Healthy two-way flying machine is healthy");
+        assertTrue(repHealthy.engineType() == FlyingMachineAnalyzer.EngineType.TWO_WAY_REVERSIBLE_ENGINE, "EngineType is TWO_WAY_REVERSIBLE_ENGINE");
+        assertTrue(!repHealthy.hasPushLimitExceeded(), "No push limit exceeded in healthy engine");
+        assertTrue(!repHealthy.hasBridgingJam(), "No bridging jam in alternating slime/honey");
+        assertTrue(!repHealthy.hasAccidentalAdhesion(), "No accidental terrain adhesion");
+        assertTrue(!repHealthy.hasMissingStopper(), "No missing stopper on flying engine");
+        assertTrue(!repHealthy.hasObserverPolarityDeficit(), "No observer polarity deficit");
+        assertTrue(repHealthy.slimeCount() == 1, "Slime block count is 1");
+        assertTrue(repHealthy.honeyCount() == 1, "Honey block count is 1");
+
+        // 3. Push Limit Exceeded (> 12 blocks attached)
+        var overloadEngine = new LocalMachineCluster.Builder(new BlockPos(0, 64, 0))
+                .add(0, 64, 0, "minecraft:piston", Map.of("facing", "east"))
+                .add(1, 64, 0, "minecraft:slime_block");
+        for (int i = 0; i < 13; i++) {
+            overloadEngine.add(1, 65 + i, 0, "minecraft:slime_block");
+        }
+        var repOverload = FlyingMachineAnalyzer.analyzeFlyingMachine(overloadEngine.build(), new BlockPos(0, 64, 0));
+        assertTrue(!repOverload.isHealthy(), "Overloaded flying machine is unhealthy");
+        assertTrue(repOverload.hasPushLimitExceeded(), "Detected push limit exceeded (> 12 blocks)");
+        assertTrue(repOverload.totalMovingBlocks() > 12, "Total moving blocks > 12");
+        assertTrue(repOverload.issues().get(0).contains("超过 12 格物理推动上限"), "Issue explains 12 block push limit overload");
+
+        // 4. Slime-Slime Bridging Jam across opposing wings
+        var jamEngine = new LocalMachineCluster.Builder(new BlockPos(10, 64, 10))
+                .add(10, 64, 10, "minecraft:sticky_piston", Map.of("facing", "east"))
+                .add(11, 64, 10, "minecraft:slime_block")
+                .add(12, 64, 10, "minecraft:slime_block")
+                .add(13, 64, 10, "minecraft:sticky_piston", Map.of("facing", "west"));
+        var repJam = FlyingMachineAnalyzer.analyzeFlyingMachine(jamEngine.build(), new BlockPos(10, 64, 10));
+        assertTrue(!repJam.isHealthy(), "Bridged engine is unhealthy");
+        assertTrue(repJam.hasBridgingJam(), "Detected bridging jam across opposing wings");
+        assertTrue(repJam.conflictNodes().contains(new BlockPos(11, 64, 10)), "Conflict nodes contains slime pos 1");
+        assertTrue(repJam.conflictNodes().contains(new BlockPos(12, 64, 10)), "Conflict nodes contains slime pos 2");
+        assertTrue(repJam.ghostBlockPlacements().size() > 0, "Ghost block suggests honey block replacement");
+        assertTrue(repJam.issues().get(0).contains("粘连短路死锁"), "Issue explains bridging jam");
+
+        // 5. Accidental Terrain Adhesion
+        var adhesionEngine = new LocalMachineCluster.Builder(new BlockPos(20, 64, 20))
+                .add(20, 64, 20, "minecraft:piston", Map.of("facing", "east"))
+                .add(21, 64, 20, "minecraft:slime_block")
+                .add(21, 63, 20, "minecraft:stone");
+        var repAdhesion = FlyingMachineAnalyzer.analyzeFlyingMachine(adhesionEngine.build(), new BlockPos(20, 64, 20));
+        assertTrue(!repAdhesion.isHealthy(), "Terrain-adhered machine is unhealthy");
+        assertTrue(repAdhesion.hasAccidentalAdhesion(), "Detected accidental terrain adhesion");
+        assertTrue(repAdhesion.conflictNodes().contains(new BlockPos(21, 63, 20)), "Conflict nodes contains external stone");
+        assertTrue(repAdhesion.warnings().get(0).contains("外界地形意外吸附"), "Warning explains terrain adhesion");
+
+        // 6. Missing Docking Stopper
+        var dockingStation = new LocalMachineCluster.Builder(new BlockPos(30, 64, 30))
+                .add(30, 64, 30, "minecraft:note_block")
+                .add(31, 64, 30, "minecraft:piston", Map.of("facing", "west"));
+        var repDocking = FlyingMachineAnalyzer.analyzeFlyingMachine(dockingStation.build(), new BlockPos(30, 64, 30));
+        assertTrue(!repDocking.isHealthy(), "Unstopped docking station is unhealthy");
+        assertTrue(repDocking.hasMissingStopper(), "Detected missing obsidian stopper");
+        assertTrue(repDocking.engineType() == FlyingMachineAnalyzer.EngineType.DOCKING_STATION, "EngineType is DOCKING_STATION");
+        assertTrue(repDocking.warnings().get(0).contains("停靠站缺失黑曜石限位阻挡"), "Warning explains missing stopper");
+
+        // 7. Observer Polarity Deficit
+        var obsCluster = new LocalMachineCluster.Builder(new BlockPos(40, 64, 40))
+                .add(40, 64, 40, "minecraft:piston", Map.of("facing", "east"))
+                .add(40, 65, 40, "minecraft:observer", Map.of("facing", "up"))
+                .add(45, 65, 45, "minecraft:observer", Map.of("facing", "south"));
+        var repObs = FlyingMachineAnalyzer.analyzeFlyingMachine(obsCluster.build(), new BlockPos(45, 65, 45));
+        assertTrue(!repObs.isHealthy(), "Misaligned observer cluster is unhealthy");
+        assertTrue(repObs.hasObserverPolarityDeficit(), "Detected observer polarity deficit");
+        assertTrue(repObs.issues().get(0).contains("侦测器朝向极性失配"), "Issue explains observer polarity failure");
+
+        // 8. Spatial Directives Overlay
+        var overlayHealthy = SpatialDirectiveGenerator.generateFlyingMachineOverlay(healthyEngine.build(), repHealthy);
+        assertTrue(overlayHealthy.toJson().contains("FLYING MACHINE HEALTHY"), "Overlay JSON contains FLYING MACHINE HEALTHY");
+
+        var overlayJam = SpatialDirectiveGenerator.generateFlyingMachineOverlay(jamEngine.build(), repJam);
+        assertTrue(overlayJam.toJson().contains("BRIDGING JAM"), "Overlay JSON contains BRIDGING JAM");
+        assertTrue(overlayJam.toJson().contains("minecraft:honey_block"), "Overlay JSON contains honey block ghost");
+
+        var overlayAdhesion = SpatialDirectiveGenerator.generateFlyingMachineOverlay(adhesionEngine.build(), repAdhesion);
+        assertTrue(overlayAdhesion.toJson().contains("ACCIDENTAL ADHESION"), "Overlay JSON contains ACCIDENTAL ADHESION");
+        assertTrue(overlayAdhesion.toJson().contains("minecraft:magenta_glazed_terracotta"), "Overlay JSON contains glazed terracotta ghost");
+
+        // 9. Fast Path Rules 75, 76, 77
+        McAgentCore core = new McAgentCore();
+        var qPush = core.query("Steve", "飞行器推动上限是多少？飞行器动力超载怎么解决？", null).get();
+        assertTrue(qPush.category().equals("PISTON_PUSH_LIMIT_AND_ADHESION_CLUSTER_RULES"), "Category is PISTON_PUSH_LIMIT_AND_ADHESION_CLUSTER_RULES");
+        assertTrue(qPush.rawAnswer().contains("12格硬上限") || qPush.rawAnswer().contains("12 格"), "Response mentions 12 block limit");
+        assertTrue(qPush.rawAnswer().contains("递归"), "Response mentions recursive adhesion");
+
+        var qSeg = core.query("Alex", "飞行器两翼粘连怎么解决？飞行器粘液短路如何隔断？", null).get();
+        assertTrue(qSeg.category().equals("SLIME_HONEY_SEGREGATION_AND_GLAZED_TERRACOTTA_RULES"), "Category is SLIME_HONEY_SEGREGATION_AND_GLAZED_TERRACOTTA_RULES");
+        assertTrue(qSeg.rawAnswer().contains("互不相粘法则"), "Response mentions non-adhesion rule");
+        assertTrue(qSeg.rawAnswer().contains("带釉陶瓦"), "Response mentions glazed terracotta");
+
+        var qTwoWay = core.query("Engineer", "双向飞行器怎么换向？飞行器停靠站怎么做？", null).get();
+        assertTrue(qTwoWay.category().equals("TWO_WAY_FLYING_MACHINE_OBSERVER_AND_DOCKING_RULES"), "Category is TWO_WAY_FLYING_MACHINE_OBSERVER_AND_DOCKING_RULES");
+        assertTrue(qTwoWay.rawAnswer().contains("侦测器朝向时序"), "Response mentions observer polarity");
+        assertTrue(qTwoWay.rawAnswer().contains("端点黑曜石限位"), "Response mentions obsidian stopper");
+        assertTrue(qTwoWay.rawAnswer().contains("换向自激触发"), "Response mentions trigger mechanism");
+
+        // 10. Command Router Integration
+        PlayerSessionManager sm = new PlayerSessionManager();
+        CommandRouter router = new CommandRouter(core, sm);
+
+        var resEmpty = router.execute("Steve", "/hoshi flying", null);
+        assertTrue(resEmpty.isSuccess(), "Empty flying command succeeds");
+        assertTrue(resEmpty.getMessage().contains("当前准星未捕捉到活塞飞行器"), "Reports no flying machine targeted");
+
+        ContextSnapshot ctx = ContextSnapshot.builder().cluster(healthyEngine.build()).build();
+        var resCmd = router.execute("Steve", "/hoshi flying", ctx);
+        assertTrue(resCmd.isSuccess(), "Flying command succeeds on cluster");
+        assertTrue(resCmd.getMessage().contains("双向活塞飞行器与机械蠕虫动力学因果诊断报告"), "Message contains header");
+        assertTrue(resCmd.hasSpatialDirective(), "Result has spatial directive");
+
+        var resHl = router.execute("Steve", "/hoshi highlight flying", ctx);
+        assertTrue(resHl.isSuccess(), "Highlight flying succeeds");
+        assertTrue(resHl.hasSpatialDirective(), "Highlight flying has spatial directive");
+        assertTrue(resHl.getSpatialDirective().category().equals("FLYING_MACHINE"), "Directive is FLYING_MACHINE");
+
+        var resCluster = router.execute("Steve", "/hoshi cluster flying", ctx);
+        assertTrue(resCluster.isSuccess(), "Cluster flying succeeds");
+
+        var resHelp = router.execute("Steve", "/hoshi help", null);
+        assertTrue(resHelp.getMessage().contains("/hoshi flying"), "Help mentions /hoshi flying");
     }
 }

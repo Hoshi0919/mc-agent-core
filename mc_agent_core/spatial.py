@@ -722,3 +722,61 @@ class SpatialDirectiveGenerator:
             hud_title=report.primary_diagnosis,
             hud_description=report.actionable_advice
         )
+
+
+    @classmethod
+    def generate_flying_machine_overlay(cls, cluster: Any, report: Any) -> SpatialDirectivePacket:
+        if not report or not cluster:
+            return SpatialDirectivePacket.empty()
+
+        primitives: List[SpatialPrimitive] = []
+        duration = 300
+        t_pos = report.target_pos
+
+        if report.has_push_limit_exceeded:
+            for c_pos in report.conflict_nodes:
+                primitives.append(SpatialPrimitive.box_outline(c_pos, SpatialColor.RED, "PUSH LIMIT EXCEEDED", duration))
+                primitives.append(SpatialPrimitive.billboard(c_pos.offset("up"), "✖ 活塞推动超限: 负载超12格", SpatialColor.RED, duration))
+
+        if report.has_bridging_jam:
+            for c_pos in report.conflict_nodes:
+                primitives.append(SpatialPrimitive.box_outline(c_pos, SpatialColor.RED, "BRIDGING JAM", duration))
+                primitives.append(SpatialPrimitive.billboard(c_pos.offset("up"), "✖ 粘连短路: 需换为蜂蜜块隔断", SpatialColor.RED, duration))
+            for g_pos in report.ghost_block_placements:
+                primitives.append(SpatialPrimitive.ghost_block(g_pos, "minecraft:honey_block", color=SpatialColor.GREEN, duration_ticks=duration))
+                primitives.append(SpatialPrimitive.billboard(g_pos.offset("up"), "➕ 替换为蜂蜜块以解耦", SpatialColor.GREEN, duration))
+
+        if report.has_accidental_adhesion:
+            for c_pos in report.conflict_nodes:
+                primitives.append(SpatialPrimitive.box_outline(c_pos, SpatialColor.PURPLE, "ACCIDENTAL ADHESION", duration))
+                primitives.append(SpatialPrimitive.billboard(c_pos.offset("up"), "⚠ 外部方块意外粘连", SpatialColor.PURPLE, duration))
+            for g_pos in report.ghost_block_placements:
+                primitives.append(SpatialPrimitive.ghost_block(g_pos, "minecraft:magenta_glazed_terracotta", color=SpatialColor.PURPLE, duration_ticks=duration))
+                primitives.append(SpatialPrimitive.billboard(g_pos.offset("up"), "➕ 铺设带釉陶瓦导轨", SpatialColor.PURPLE, duration))
+
+        if report.has_missing_stopper:
+            for g_pos in report.ghost_block_placements:
+                primitives.append(SpatialPrimitive.box_outline(g_pos, SpatialColor.YELLOW, "MISSING DOCKING STOPPER", duration))
+                primitives.append(SpatialPrimitive.ghost_block(g_pos, "minecraft:obsidian", color=SpatialColor.CYAN, duration_ticks=duration))
+                primitives.append(SpatialPrimitive.billboard(g_pos.offset("up"), "⚠ 补全黑曜石停靠限位", SpatialColor.YELLOW, duration))
+
+        if report.has_observer_polarity_deficit:
+            for c_pos in report.conflict_nodes:
+                primitives.append(SpatialPrimitive.box_outline(c_pos, SpatialColor.RED, "OBSERVER POLARITY DEFICIT", duration))
+                primitives.append(SpatialPrimitive.billboard(c_pos.offset("up"), "✖ 侦测器朝向极性失配", SpatialColor.RED, duration))
+
+        if report.is_healthy:
+            primitives.append(SpatialPrimitive.box_outline(t_pos, SpatialColor.GREEN, "FLYING MACHINE HEALTHY", duration))
+            primitives.append(SpatialPrimitive.billboard(t_pos.offset("up"), "✔ 飞行器动力学与时序健康", SpatialColor.GREEN, duration))
+
+        for e_pos in report.engine_components:
+            if e_pos != t_pos and e_pos not in report.conflict_nodes:
+                primitives.append(SpatialPrimitive.box_outline(e_pos, SpatialColor.CYAN, "ENGINE COMPONENT", duration))
+
+        return SpatialDirectivePacket(
+            id=f"flying-machine-{int(time.time()*1000)}",
+            category="FLYING_MACHINE",
+            primitives=primitives,
+            hud_title=report.primary_diagnosis,
+            hud_description=report.actionable_advice
+        )

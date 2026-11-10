@@ -98,6 +98,12 @@ public record LocalMachineCluster(
                 .collect(Collectors.toList());
     }
 
+    public List<LocalBlock> getConnectedFlyingComponents() {
+        return blocks.values().stream()
+                .filter(LocalBlock::isFlyingComponent)
+                .collect(Collectors.toList());
+    }
+
     public List<LocalBlock> getConnectedWaterBlocks() {
         return blocks.values().stream()
                 .filter(LocalBlock::isWater)
@@ -108,7 +114,7 @@ public record LocalMachineCluster(
         if (isEmpty()) {
             return "EmptyCluster (0 blocks)";
         }
-        return String.format("Cluster centered at %s with %d blocks (Kinetics: %d, Hoppers: %d, AE2: %d, Pistons: %d, Comparators: %d, Containers: %d, Rails: %d, Water: %d)",
+        return String.format("Cluster centered at %s with %d blocks (Kinetics: %d, Hoppers: %d, AE2: %d, Pistons: %d, Comparators: %d, Containers: %d, Rails: %d, Water: %d, Flying: %d)",
                 origin,
                 blocks.size(),
                 getConnectedKinetics().size(),
@@ -116,7 +122,7 @@ public record LocalMachineCluster(
                 getConnectedAe2().size(),
                 getConnectedPistons().size(),
                 getConnectedComparators().size(),
-                getBlocksByType("chest").size() + getBlocksByType("barrel").size() + getBlocksByType("crafter").size(), getConnectedRails().size(), getConnectedWaterBlocks().size());
+                getBlocksByType("chest").size() + getBlocksByType("barrel").size() + getBlocksByType("crafter").size(), getConnectedRails().size(), getConnectedWaterBlocks().size(), getConnectedFlyingComponents().size());
     }
 
     public static class Builder {

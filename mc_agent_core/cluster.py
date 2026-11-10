@@ -1,3 +1,4 @@
+import collections
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Set
 
@@ -177,6 +178,27 @@ class LocalBlock:
     @property
     def is_sign(self) -> bool:
         return bool(self.block_id and "sign" in self.block_id.lower())
+
+    @property
+    def is_note_block(self) -> bool:
+        return bool(self.block_id and "note_block" in self.block_id.lower())
+
+    @property
+    def is_trapdoor(self) -> bool:
+        return bool(self.block_id and "trapdoor" in self.block_id.lower())
+
+    @property
+    def is_obsidian(self) -> bool:
+        if not self.block_id:
+            return False
+        bid = self.block_id.lower()
+        return "obsidian" in bid or "reinforced_deepslate" in bid
+
+    @property
+    def is_flying_component(self) -> bool:
+        return (self.is_piston or self.is_observer or self.is_slime_block or
+                self.is_honey_block or self.is_glazed_terracotta or self.is_note_block or
+                self.is_trapdoor or self.is_obsidian)
 
     @property
     def is_air(self) -> bool:
@@ -2856,6 +2878,323 @@ class WaterLogisticsAnalyzer:
             conflict_nodes=conflict_nodes,
             ghost_block_placements=ghost_block_placements,
             water_components=water_components,
+            issues=issues,
+            warnings=warnings,
+            primary_diagnosis=diag,
+            actionable_advice=adv
+        )
+
+
+@dataclass
+class FlyingReport:
+    is_healthy: bool
+    has_push_limit_exceeded: bool
+    has_bridging_jam: bool
+    has_accidental_adhesion: bool
+    has_missing_stopper: bool
+    has_observer_polarity_deficit: bool
+    target_pos: BlockPos
+    target_block_type: str
+    engine_type: str
+    total_moving_blocks: int
+    slime_count: int
+    honey_count: int
+    conflict_nodes: List[BlockPos]
+    ghost_block_placements: List[BlockPos]
+    engine_components: List[BlockPos]
+    issues: List[str]
+    warnings: List[str]
+    primary_diagnosis: str
+    actionable_advice: str
+
+    @classmethod
+    def empty(cls) -> "FlyingReport":
+        return cls(
+            is_healthy=True,
+            has_push_limit_exceeded=False,
+            has_bridging_jam=False,
+            has_accidental_adhesion=False,
+            has_missing_stopper=False,
+            has_observer_polarity_deficit=False,
+            target_pos=BlockPos(0, 0, 0),
+            target_block_type="none",
+            engine_type="NONE",
+            total_moving_blocks=0,
+            slime_count=0,
+            honey_count=0,
+            conflict_nodes=[],
+            ghost_block_placements=[],
+            engine_components=[],
+            issues=[],
+            warnings=[],
+            primary_diagnosis="未检测到活塞飞行器、机械蠕虫或停靠站组件",
+            actionable_advice=""
+        )
+
+    def format_report(self) -> str:
+        sb = []
+        sb.append("§6【双向活塞飞行器与机械蠕虫动力学因果诊断报告】§r")
+        sb.append(f"▸ 目标组件坐标：{self.target_pos} ({self.target_block_type.upper()})")
+        type_str = {
+            "TWO_WAY_REVERSIBLE_ENGINE": "§b双向可逆活塞飞行引擎 (Two-Way Engine)§r",
+            "ONE_WAY_ENGINE": "§a单向自主巡航飞行引擎 (One-Way Engine)§r",
+            "MULTI_SEGMENT_HARVESTER": "§d多段复合收割/盾构机械 (Multi-Stage Harvester/Bore)§r",
+            "DOCKING_STATION": "§e端点停靠与换向基站 (Docking Station)§r",
+            "NONE": "§7未识别§r"
+        }.get(self.engine_type, "§7未识别§r")
+        sb.append(f"▸ 机械引擎构型：{type_str} | 移动负载: {self.total_moving_blocks} 格 (粘液: §a{self.slime_count}§r, 蜂蜜: §6{self.honey_count}§r)")
+
+        if self.has_push_limit_exceeded:
+            sb.append("  ⚡ §c[活塞推动超限卡死] 动力构件负载超过 12 格物理推动上限！§r")
+            for c_pos in self.conflict_nodes:
+                sb.append(f"     ✖ 超载构件/阻挡点: {c_pos}")
+
+        if self.has_bridging_jam:
+            sb.append("  ⚡ §c[粘液/蜂蜜短路粘连] 异动引擎构件发生同类粘性方块相互吸附！§r")
+            for c_pos in self.conflict_nodes:
+                sb.append(f"     ✖ 粘连接触点: {c_pos} (两段无法解耦推进)")
+            for g_pos in self.ghost_block_placements:
+                sb.append(f"     ➕ 建议在此替换为对立粘性方块或带釉陶瓦: {g_pos}")
+
+        if self.has_accidental_adhesion:
+            sb.append("  ⚡ §d[外部地形意外吸附] 粘性方块抓取了周围未隔离的常规地形方块！§r")
+            for c_pos in self.conflict_nodes:
+                sb.append(f"     ✖ 意外吸附位置: {c_pos}")
+            for g_pos in self.ghost_block_placements:
+                sb.append(f"     ➕ 建议在此铺设带釉陶瓦导轨: {g_pos}")
+
+        if self.has_missing_stopper:
+            sb.append("  ⚡ §e[停靠站缺失黑曜石限位] 飞行器到达端点将冲毁换向基站机构！§r")
+            for g_pos in self.ghost_block_placements:
+                sb.append(f"     ➕ 建议在停靠撞击端补全黑曜石阻挡块: {g_pos}")
+
+        if self.has_observer_polarity_deficit:
+            sb.append("  ⚡ §c[侦测器朝向极性失配] 侦测器输出未正对动力活塞或时序反向！§r")
+            for c_pos in self.conflict_nodes:
+                sb.append(f"     ✖ 朝向失配侦测器: {c_pos} (单拍运行后失去自激脉冲)")
+
+        if self.is_healthy:
+            sb.append("  ✔ §a[飞行引擎动力健康] 12 格负载预算合规，时序闭环与粘液/蜂蜜隔断正常。§r")
+
+        sb.append(f"▸ §6核心诊断§r：{self.primary_diagnosis}")
+        if self.actionable_advice:
+            sb.append(f"▸ §a修复建议§r：{self.actionable_advice}")
+        return "\n".join(sb)
+
+
+class FlyingMachineAnalyzer:
+    @staticmethod
+    def opposite_facing(facing: str) -> str:
+        return {
+            "north": "south",
+            "south": "north",
+            "east": "west",
+            "west": "east",
+            "up": "down",
+            "down": "up"
+        }.get(facing.lower(), "down")
+
+    @classmethod
+    def calculate_push_cluster(cls, cluster: LocalMachineCluster, piston: LocalBlock, start_pos: BlockPos) -> Set[BlockPos]:
+        visited: Set[BlockPos] = set()
+        queue: collections.deque = collections.deque()
+
+        start_block = cluster.get_block(start_pos)
+        if not start_block or start_block.is_air:
+            return visited
+
+        queue.append(start_pos)
+        visited.add(start_pos)
+
+        while queue and len(visited) <= 20:
+            cur = queue.popleft()
+            cur_block = cluster.get_block(cur)
+            if not cur_block or cur_block.is_air:
+                continue
+
+            if cur_block.is_slime_block:
+                for nb_pos in cur.get_direct_neighbors():
+                    if nb_pos in visited or nb_pos == piston.pos:
+                        continue
+                    nb = cluster.get_block(nb_pos)
+                    if nb and not nb.is_air and not nb.is_immovable and not nb.is_honey_block and not nb.is_glazed_terracotta:
+                        visited.add(nb_pos)
+                        queue.append(nb_pos)
+            elif cur_block.is_honey_block:
+                for nb_pos in cur.get_direct_neighbors():
+                    if nb_pos in visited or nb_pos == piston.pos:
+                        continue
+                    nb = cluster.get_block(nb_pos)
+                    if nb and not nb.is_air and not nb.is_immovable and not nb.is_slime_block and not nb.is_glazed_terracotta:
+                        visited.add(nb_pos)
+                        queue.append(nb_pos)
+        return visited
+
+    @classmethod
+    def analyze(cls, cluster: LocalMachineCluster, focus: Optional[BlockPos] = None) -> FlyingReport:
+        if not cluster or cluster.is_empty:
+            return FlyingReport.empty()
+
+        target = cluster.get_block(focus) if focus else None
+        if not target:
+            target = cluster.origin_block
+
+        if not target or not target.is_flying_component:
+            for b in cluster.blocks.values():
+                if b.is_flying_component:
+                    target = b
+                    break
+
+        if not target:
+            return FlyingReport.empty()
+
+        target_pos = target.pos
+        target_block_type = target.block_id
+
+        conflict_nodes: List[BlockPos] = []
+        ghost_block_placements: List[BlockPos] = []
+        engine_components: List[BlockPos] = []
+        issues: List[str] = []
+        warnings: List[str] = []
+
+        pistons = [b for b in cluster.blocks.values() if b.is_piston]
+        observers = [b for b in cluster.blocks.values() if b.is_observer]
+        slime_blocks = [b for b in cluster.blocks.values() if b.is_slime_block]
+        honey_blocks = [b for b in cluster.blocks.values() if b.is_honey_block]
+
+        for b in cluster.blocks.values():
+            if b.is_flying_component:
+                engine_components.append(b.pos)
+
+        slime_count = len(slime_blocks)
+        honey_count = len(honey_blocks)
+
+        engine_type = "ONE_WAY_ENGINE"
+        if len(pistons) >= 2:
+            facings = {p.facing() for p in pistons}
+            has_opposing = (("east" in facings and "west" in facings) or
+                            ("north" in facings and "south" in facings) or
+                            ("up" in facings and "down" in facings))
+            if has_opposing:
+                engine_type = "TWO_WAY_REVERSIBLE_ENGINE"
+            elif len(pistons) >= 3:
+                engine_type = "MULTI_SEGMENT_HARVESTER"
+        elif slime_count == 0 and honey_count == 0 and any(b.is_trapdoor or b.is_note_block or b.is_obsidian for b in cluster.blocks.values()):
+            engine_type = "DOCKING_STATION"
+
+        has_push_limit_exceeded = False
+        has_bridging_jam = False
+        has_accidental_adhesion = False
+        has_missing_stopper = False
+        has_observer_polarity_deficit = False
+
+        max_push_load = 0
+        for piston in pistons:
+            face_pos = piston.pos.offset(piston.facing())
+            push_cluster = cls.calculate_push_cluster(cluster, piston, face_pos)
+            if len(push_cluster) > max_push_load:
+                max_push_load = len(push_cluster)
+            if len(push_cluster) > 12:
+                has_push_limit_exceeded = True
+                conflict_nodes.append(piston.pos)
+                for p in push_cluster:
+                    if p not in conflict_nodes:
+                        conflict_nodes.append(p)
+                issues.append(f"活塞推动超限卡死：活塞 {piston.pos} (朝向 {piston.facing()}) 推动负载达 {len(push_cluster)} 格，超过 12 格物理推动上限！")
+
+        if len(pistons) >= 2:
+            p1, p2 = pistons[0], pistons[1]
+            if p1.facing() != p2.facing():
+                for s1 in slime_blocks:
+                    for s2 in slime_blocks:
+                        if s1.pos != s2.pos and s1.pos.manhattan_distance(s2.pos) == 1:
+                            s1_near_p1 = s1.pos.manhattan_distance(p1.pos) <= s1.pos.manhattan_distance(p2.pos)
+                            s2_near_p2 = s2.pos.manhattan_distance(p2.pos) < s2.pos.manhattan_distance(p1.pos)
+                            if s1_near_p1 and s2_near_p2:
+                                has_bridging_jam = True
+                                conflict_nodes.extend([s1.pos, s2.pos])
+                                ghost_block_placements.append(s2.pos)
+                                issues.append(f"粘连短路死锁：两翼动力构件在 {s1.pos} 与 {s2.pos} 处发生同类粘液块短路粘连！双驱无法解耦，建议将其中一段替换为蜂蜜块。")
+                for h1 in honey_blocks:
+                    for h2 in honey_blocks:
+                        if h1.pos != h2.pos and h1.pos.manhattan_distance(h2.pos) == 1:
+                            h1_near_p1 = h1.pos.manhattan_distance(p1.pos) <= h1.pos.manhattan_distance(p2.pos)
+                            h2_near_p2 = h2.pos.manhattan_distance(p2.pos) < h2.pos.manhattan_distance(p1.pos)
+                            if h1_near_p1 and h2_near_p2:
+                                has_bridging_jam = True
+                                conflict_nodes.extend([h1.pos, h2.pos])
+                                ghost_block_placements.append(h2.pos)
+                                issues.append(f"粘连短路死锁：两翼动力构件在 {h1.pos} 与 {h2.pos} 处发生同类蜂蜜块短路粘连！双驱无法解耦，建议将其中一段替换为粘液块。")
+
+        for sticky in cluster.blocks.values():
+            if sticky.is_slime_block or sticky.is_honey_block:
+                for nb_pos in sticky.pos.get_direct_neighbors():
+                    nb = cluster.get_block(nb_pos)
+                    if nb and not nb.is_air and not nb.is_flying_component and not nb.is_glazed_terracotta and not nb.is_immovable:
+                        has_accidental_adhesion = True
+                        conflict_nodes.append(nb_pos)
+                        ghost_block_placements.append(nb_pos)
+                        warnings.append(f"外界地形意外吸附：粘性方块 {sticky.pos} 意外吸附了外界非绝缘方块 {nb_pos} ({nb.block_id})！建议改用带釉陶瓦隔离。")
+
+        has_docking_trigger = any(b.is_trapdoor or b.is_note_block for b in cluster.blocks.values())
+        has_obsidian_stopper = any(b.is_obsidian for b in cluster.blocks.values())
+        if has_docking_trigger and not has_obsidian_stopper:
+            has_missing_stopper = True
+            trigger = next((b for b in cluster.blocks.values() if b.is_trapdoor or b.is_note_block), None)
+            if trigger:
+                stopper_pos = trigger.pos.offset("up")
+                ghost_block_placements.append(stopper_pos)
+                conflict_nodes.append(trigger.pos)
+            warnings.append("停靠站缺失黑曜石限位阻挡：检测到换向触发机构 (音符盒/活板门)，但未检测到黑曜石阻挡块！飞行器冲入将推毁换向基站。")
+
+        for obs in observers:
+            obs_facing = obs.facing()
+            output_dir = cls.opposite_facing(obs_facing)
+            out_pos = obs.pos.offset(output_dir)
+            out_block = cluster.get_block(out_pos)
+            output_valid = out_block and (out_block.is_piston or out_block.is_slime_block or out_block.is_honey_block or out_block.is_solid_conductive_block)
+            if not output_valid:
+                has_observer_polarity_deficit = True
+                conflict_nodes.append(obs.pos)
+                issues.append(f"侦测器朝向极性失配：侦测器 {obs.pos} 朝向 {obs_facing} (脉冲输出端指向 {output_dir} / {out_pos})，未有效对准动力活塞或传导构件！")
+
+        is_healthy = not has_push_limit_exceeded and not has_bridging_jam and not has_accidental_adhesion and not has_missing_stopper and not has_observer_polarity_deficit
+
+        if has_push_limit_exceeded:
+            diag = "飞行器动力构件超载：推动方块总数超过 12 格上限，活塞卡死无法伸展"
+            adv = "拆减附带方块或分割推拉动力构件，确保每个活塞推动的粘附子集群 ≤ 12 个方块。"
+        elif has_bridging_jam:
+            diag = "两翼动力构件发生粘连短路：同种粘性方块相互吸附导致两段无法解耦推进"
+            adv = "在相邻动力段交错使用粘液块与蜂蜜块（互不相粘特性），或用带釉陶瓦阻断粘连。"
+        elif has_observer_polarity_deficit:
+            diag = "侦测器朝向极性颠倒或时序断流：脉冲输出端未正确驱动动力活塞"
+            adv = "调整侦测器朝向，确保感应面朝向移动侦测位，红石输出红点精准对准动力活塞或驱动粘性方块。"
+        elif has_accidental_adhesion:
+            diag = "粘性方块吸附外界未绝缘地形方块，引发整机阻力超载停摆"
+            adv = "在飞行轨道两侧隧道或基座铺设带釉陶瓦 (Glazed Terracotta)，利用其不粘特性隔离外界地形。"
+        elif has_missing_stopper:
+            diag = "端点换向停靠站缺乏黑曜石等不可移动方块进行刚性阻挡拦截"
+            adv = "在停靠撞击端加装黑曜石/哭泣黑曜石阻挡块，确保飞行器到位刹车并触发换向更新。"
+        else:
+            diag = "双向活塞飞行器与机械蠕虫动力学完整健康"
+            adv = "动力活塞推拉时钟同步，12格推动预算与粘液/蜂蜜隔断合规，可稳定自激巡航。"
+
+        return FlyingReport(
+            is_healthy=is_healthy,
+            has_push_limit_exceeded=has_push_limit_exceeded,
+            has_bridging_jam=has_bridging_jam,
+            has_accidental_adhesion=has_accidental_adhesion,
+            has_missing_stopper=has_missing_stopper,
+            has_observer_polarity_deficit=has_observer_polarity_deficit,
+            target_pos=target_pos,
+            target_block_type=target_block_type,
+            engine_type=engine_type,
+            total_moving_blocks=max_push_load,
+            slime_count=slime_count,
+            honey_count=honey_count,
+            conflict_nodes=conflict_nodes,
+            ghost_block_placements=ghost_block_placements,
+            engine_components=engine_components,
             issues=issues,
             warnings=warnings,
             primary_diagnosis=diag,

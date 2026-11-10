@@ -2555,3 +2555,166 @@ def test_v29_water_logistics_and_bubble_elevator_dynamics():
     r_help = router.execute("Steve", "/hoshi help", None)
     assert "/hoshi water" in r_help.message
 
+
+
+def test_flying_machine_and_slimestone_dynamics():
+    from mc_agent_core.cluster import (
+        BlockPos, LocalBlock, LocalMachineCluster,
+        FlyingReport, FlyingMachineAnalyzer
+    )
+    from mc_agent_core.spatial import SpatialDirectiveGenerator
+    from mc_agent_core.fast_path import FastPathResolver
+    from mc_agent_core.command import CommandRouter
+    from mc_agent_core.dispatcher import AsyncQueryDispatcher
+    from mc_agent_core.context import ContextSnapshot
+
+    # 1. Empty Report
+    empty_cluster = LocalMachineCluster(BlockPos(0, 64, 0), {})
+    rep_empty = FlyingMachineAnalyzer.analyze(empty_cluster)
+    assert rep_empty.is_healthy
+    assert rep_empty.engine_type == "NONE"
+
+    # 2. Healthy Two-Way Engine
+    healthy_cluster = (
+        LocalMachineCluster(BlockPos(10, 64, 10))
+        .add(10, 64, 10, "minecraft:sticky_piston", {"facing": "east"})
+        .add(11, 64, 10, "minecraft:slime_block")
+        .add(10, 65, 10, "minecraft:observer", {"facing": "up"})
+        .add(12, 64, 10, "minecraft:sticky_piston", {"facing": "west"})
+        .add(13, 64, 10, "minecraft:honey_block")
+        .add(12, 65, 10, "minecraft:observer", {"facing": "up"})
+    )
+
+    rep_healthy = FlyingMachineAnalyzer.analyze(healthy_cluster, BlockPos(10, 64, 10))
+    assert rep_healthy.is_healthy
+    assert rep_healthy.engine_type == "TWO_WAY_REVERSIBLE_ENGINE"
+    assert not rep_healthy.has_push_limit_exceeded
+    assert not rep_healthy.has_bridging_jam
+    assert not rep_healthy.has_accidental_adhesion
+    assert not rep_healthy.has_missing_stopper
+    assert not rep_healthy.has_observer_polarity_deficit
+    assert rep_healthy.slime_count == 1
+    assert rep_healthy.honey_count == 1
+
+    # 3. Push Limit Exceeded (> 12 blocks attached)
+    overload_cluster = LocalMachineCluster(BlockPos(0, 64, 0)) \
+        .add(0, 64, 0, "minecraft:piston", {"facing": "east"}) \
+        .add(1, 64, 0, "minecraft:slime_block")
+    for i in range(13):
+        overload_cluster = overload_cluster.add(1, 65 + i, 0, "minecraft:slime_block")
+
+    rep_overload = FlyingMachineAnalyzer.analyze(overload_cluster, BlockPos(0, 64, 0))
+    assert not rep_overload.is_healthy
+    assert rep_overload.has_push_limit_exceeded
+    assert rep_overload.total_moving_blocks > 12
+    assert any("超过 12 格物理推动上限" in iss for iss in rep_overload.issues)
+
+    # 4. Slime-Slime Bridging Jam across opposing wings
+    jam_cluster = (
+        LocalMachineCluster(BlockPos(10, 64, 10))
+        .add(10, 64, 10, "minecraft:sticky_piston", {"facing": "east"})
+        .add(11, 64, 10, "minecraft:slime_block")
+        .add(12, 64, 10, "minecraft:slime_block")
+        .add(13, 64, 10, "minecraft:sticky_piston", {"facing": "west"})
+    )
+
+    rep_jam = FlyingMachineAnalyzer.analyze(jam_cluster, BlockPos(10, 64, 10))
+    assert not rep_jam.is_healthy
+    assert rep_jam.has_bridging_jam
+    assert any("粘连短路死锁" in iss for iss in rep_jam.issues)
+    assert len(rep_jam.ghost_block_placements) > 0
+
+    # 5. Accidental Terrain Adhesion
+    adhesion_cluster = (
+        LocalMachineCluster(BlockPos(20, 64, 20))
+        .add(20, 64, 20, "minecraft:piston", {"facing": "east"})
+        .add(21, 64, 20, "minecraft:slime_block")
+        .add(21, 63, 20, "minecraft:stone")
+    )
+
+    rep_adhesion = FlyingMachineAnalyzer.analyze(adhesion_cluster, BlockPos(20, 64, 20))
+    assert not rep_adhesion.is_healthy
+    assert rep_adhesion.has_accidental_adhesion
+    assert any("外界地形意外吸附" in w for w in rep_adhesion.warnings)
+    assert BlockPos(21, 63, 20) in rep_adhesion.conflict_nodes
+
+    # 6. Missing Docking Stopper
+    docking_cluster = (
+        LocalMachineCluster(BlockPos(30, 64, 30))
+        .add(30, 64, 30, "minecraft:note_block")
+        .add(31, 64, 30, "minecraft:piston", {"facing": "west"})
+    )
+
+    rep_docking = FlyingMachineAnalyzer.analyze(docking_cluster, BlockPos(30, 64, 30))
+    assert not rep_docking.is_healthy
+    assert rep_docking.has_missing_stopper
+    assert rep_docking.engine_type == "DOCKING_STATION"
+    assert any("停靠站缺失黑曜石限位阻挡" in w for w in rep_docking.warnings)
+
+    # 7. Observer Polarity Deficit
+    obs_cluster = (
+        LocalMachineCluster(BlockPos(40, 64, 40))
+        .add(40, 64, 40, "minecraft:piston", {"facing": "east"})
+        .add(40, 65, 40, "minecraft:observer", {"facing": "up"})
+        .add(45, 65, 45, "minecraft:observer", {"facing": "south"})
+    )
+
+    rep_obs = FlyingMachineAnalyzer.analyze(obs_cluster, BlockPos(45, 65, 45))
+    assert not rep_obs.is_healthy
+    assert rep_obs.has_observer_polarity_deficit
+    assert any("侦测器朝向极性失配" in iss for iss in rep_obs.issues)
+
+    # 8. Spatial Directives Overlay
+    overlay_healthy = SpatialDirectiveGenerator.generate_flying_machine_overlay(healthy_cluster, rep_healthy)
+    assert "FLYING MACHINE HEALTHY" in overlay_healthy.to_json()
+
+    overlay_jam = SpatialDirectiveGenerator.generate_flying_machine_overlay(jam_cluster, rep_jam)
+    assert "BRIDGING JAM" in overlay_jam.to_json()
+    assert "minecraft:honey_block" in overlay_jam.to_json()
+
+    overlay_adhesion = SpatialDirectiveGenerator.generate_flying_machine_overlay(adhesion_cluster, rep_adhesion)
+    assert "ACCIDENTAL ADHESION" in overlay_adhesion.to_json()
+    assert "minecraft:magenta_glazed_terracotta" in overlay_adhesion.to_json()
+
+    # 9. Fast Path Rules 75, 76, 77
+    r_push = FastPathResolver.try_resolve("飞行器推动上限是多少？飞行器动力超载怎么解决？")
+    assert r_push is not None
+    assert r_push.category == "PISTON_PUSH_LIMIT_AND_ADHESION_CLUSTER_RULES"
+    assert "12格硬上限" in r_push.text_response or "12 格" in r_push.text_response
+    assert "递归" in r_push.text_response
+
+    r_seg = FastPathResolver.try_resolve("飞行器两翼粘连怎么解决？飞行器粘液短路如何隔断？")
+    assert r_seg is not None
+    assert r_seg.category == "SLIME_HONEY_SEGREGATION_AND_GLAZED_TERRACOTTA_RULES"
+    assert "互不相粘法则" in r_seg.text_response
+    assert "带釉陶瓦" in r_seg.text_response
+
+    r_two_way = FastPathResolver.try_resolve("双向飞行器怎么换向？飞行器停靠站怎么做？")
+    assert r_two_way is not None
+    assert r_two_way.category == "TWO_WAY_FLYING_MACHINE_OBSERVER_AND_DOCKING_RULES"
+    assert "侦测器朝向时序" in r_two_way.text_response
+    assert "端点黑曜石限位" in r_two_way.text_response
+    assert "换向自激触发" in r_two_way.text_response
+
+    # 10. Command Router Integration
+    router = CommandRouter(AsyncQueryDispatcher())
+    r_empty = router.execute("Steve", "/hoshi flying", None)
+    assert r_empty.is_success
+    assert "当前准星未捕捉到活塞飞行器" in r_empty.message
+
+    ctx = ContextSnapshot("Steve", "overworld", 10.0, 64.0, 10.0, machine_cluster=healthy_cluster)
+    r_cmd = router.execute("Steve", "/hoshi flying", ctx)
+    assert r_cmd.is_success
+    assert "双向活塞飞行器与机械蠕虫动力学因果诊断报告" in r_cmd.message
+    assert r_cmd.has_spatial_directive
+
+    r_hl = router.execute("Steve", "/hoshi highlight flying", ctx)
+    assert r_hl.is_success
+    assert r_hl.has_spatial_directive
+    assert r_hl.spatial_directive.category == "FLYING_MACHINE"
+
+    r_cluster = router.execute("Steve", "/hoshi cluster flying", ctx)
+    assert r_cluster.is_success
+
+    r_help = router.execute("Steve", "/hoshi help", None)
+    assert "/hoshi flying" in r_help.message

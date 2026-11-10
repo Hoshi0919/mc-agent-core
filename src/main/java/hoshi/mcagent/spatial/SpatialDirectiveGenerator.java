@@ -1,4 +1,6 @@
 package hoshi.mcagent.spatial;
+import hoshi.mcagent.cluster.FlyingMachineAnalyzer;
+
 
 import hoshi.mcagent.cluster.Ae2NetworkAnalyzer;
 import hoshi.mcagent.cluster.PistonRedstoneAnalyzer;
@@ -769,6 +771,86 @@ public final class SpatialDirectiveGenerator {
         return SpatialDirectivePacket.of(
                 "water-logistics-" + System.currentTimeMillis(),
                 "WATER_LOGISTICS",
+                primitives,
+                report.primaryDiagnosis(),
+                report.actionableAdvice()
+        );
+    }
+
+    public static SpatialDirectivePacket generateFlyingMachineOverlay(LocalMachineCluster cluster, FlyingMachineAnalyzer.FlyingReport report) {
+        if (report == null || cluster == null) {
+            return SpatialDirectivePacket.empty();
+        }
+
+        List<SpatialPrimitive> primitives = new ArrayList<>();
+        int duration = 300;
+        BlockPos tPos = report.targetPos();
+
+        // 1. Push Limit Exceeded
+        if (report.hasPushLimitExceeded()) {
+            for (BlockPos cPos : report.conflictNodes()) {
+                primitives.add(SpatialPrimitive.boxOutline(cPos, SpatialColor.RED, "PUSH LIMIT EXCEEDED", duration));
+                primitives.add(SpatialPrimitive.billboard(cPos.offset("up"), "✖ 活塞推动超限: 负载超12格", SpatialColor.RED, duration));
+            }
+        }
+
+        // 2. Bridging Jam
+        if (report.hasBridgingJam()) {
+            for (BlockPos cPos : report.conflictNodes()) {
+                primitives.add(SpatialPrimitive.boxOutline(cPos, SpatialColor.RED, "BRIDGING JAM", duration));
+                primitives.add(SpatialPrimitive.billboard(cPos.offset("up"), "✖ 粘连短路: 需换为蜂蜜块隔断", SpatialColor.RED, duration));
+            }
+            for (BlockPos gPos : report.ghostBlockPlacements()) {
+                primitives.add(SpatialPrimitive.ghostBlock(gPos, "minecraft:honey_block", SpatialColor.GREEN, duration));
+                primitives.add(SpatialPrimitive.billboard(gPos.offset("up"), "➕ 替换为蜂蜜块以解耦", SpatialColor.GREEN, duration));
+            }
+        }
+
+        // 3. Accidental Adhesion
+        if (report.hasAccidentalAdhesion()) {
+            for (BlockPos cPos : report.conflictNodes()) {
+                primitives.add(SpatialPrimitive.boxOutline(cPos, SpatialColor.PURPLE, "ACCIDENTAL ADHESION", duration));
+                primitives.add(SpatialPrimitive.billboard(cPos.offset("up"), "⚠ 外部方块意外粘连", SpatialColor.PURPLE, duration));
+            }
+            for (BlockPos gPos : report.ghostBlockPlacements()) {
+                primitives.add(SpatialPrimitive.ghostBlock(gPos, "minecraft:magenta_glazed_terracotta", SpatialColor.PURPLE, duration));
+                primitives.add(SpatialPrimitive.billboard(gPos.offset("up"), "➕ 铺设带釉陶瓦导轨", SpatialColor.PURPLE, duration));
+            }
+        }
+
+        // 4. Missing Stopper
+        if (report.hasMissingStopper()) {
+            for (BlockPos gPos : report.ghostBlockPlacements()) {
+                primitives.add(SpatialPrimitive.boxOutline(gPos, SpatialColor.YELLOW, "MISSING DOCKING STOPPER", duration));
+                primitives.add(SpatialPrimitive.ghostBlock(gPos, "minecraft:obsidian", SpatialColor.CYAN, duration));
+                primitives.add(SpatialPrimitive.billboard(gPos.offset("up"), "⚠ 补全黑曜石停靠限位", SpatialColor.YELLOW, duration));
+            }
+        }
+
+        // 5. Observer Polarity Deficit
+        if (report.hasObserverPolarityDeficit()) {
+            for (BlockPos cPos : report.conflictNodes()) {
+                primitives.add(SpatialPrimitive.boxOutline(cPos, SpatialColor.RED, "OBSERVER POLARITY DEFICIT", duration));
+                primitives.add(SpatialPrimitive.billboard(cPos.offset("up"), "✖ 侦测器朝向极性失配", SpatialColor.RED, duration));
+            }
+        }
+
+        // 6. Healthy Flying Machine
+        if (report.isHealthy()) {
+            primitives.add(SpatialPrimitive.boxOutline(tPos, SpatialColor.GREEN, "FLYING MACHINE HEALTHY", duration));
+            primitives.add(SpatialPrimitive.billboard(tPos.offset("up"), "✔ 飞行器动力学与时序健康", SpatialColor.GREEN, duration));
+        }
+
+        // 7. Engine components outline
+        for (BlockPos ePos : report.engineComponents()) {
+            if (!ePos.equals(tPos) && !report.conflictNodes().contains(ePos)) {
+                primitives.add(SpatialPrimitive.boxOutline(ePos, SpatialColor.CYAN, "ENGINE COMPONENT", duration));
+            }
+        }
+
+        return SpatialDirectivePacket.of(
+                "flying-machine-" + System.currentTimeMillis(),
+                "FLYING_MACHINE",
                 primitives,
                 report.primaryDiagnosis(),
                 report.actionableAdvice()
