@@ -1,5 +1,6 @@
 package hoshi.mcagent.spatial;
 import hoshi.mcagent.cluster.FlyingMachineAnalyzer;
+import hoshi.mcagent.cluster.ShulkerLogisticsAnalyzer;
 
 
 import hoshi.mcagent.cluster.Ae2NetworkAnalyzer;
@@ -851,6 +852,89 @@ public final class SpatialDirectiveGenerator {
         return SpatialDirectivePacket.of(
                 "flying-machine-" + System.currentTimeMillis(),
                 "FLYING_MACHINE",
+                primitives,
+                report.primaryDiagnosis(),
+                report.actionableAdvice()
+        );
+    }
+
+    public static SpatialDirectivePacket generateShulkerOverlay(LocalMachineCluster cluster, ShulkerLogisticsAnalyzer.ShulkerReport report) {
+        if (report == null || report.systemType() == ShulkerLogisticsAnalyzer.ShulkerSystemType.NONE) {
+            return SpatialDirectivePacket.empty();
+        }
+
+        List<SpatialPrimitive> primitives = new ArrayList<>();
+        int duration = 600;
+        BlockPos tPos = report.targetPos();
+
+        // 1. Dropper Instead of Dispenser
+        if (report.hasDropperInsteadOfDispenser()) {
+            for (BlockPos cPos : report.conflictNodes()) {
+                primitives.add(SpatialPrimitive.boxOutline(cPos, SpatialColor.RED, "DROPPER MISUSE", duration));
+                primitives.add(SpatialPrimitive.billboard(cPos.offset("up"), "✖ 误用投掷器: 需换为发射器", SpatialColor.RED, duration));
+            }
+            for (BlockPos gPos : report.ghostBlockPlacements()) {
+                primitives.add(SpatialPrimitive.ghostBlock(gPos, "minecraft:dispenser", SpatialColor.GREEN, duration));
+                primitives.add(SpatialPrimitive.billboard(gPos.offset("up"), "➕ 替换为发射器放置潜影盒", SpatialColor.GREEN, duration));
+            }
+        }
+
+        // 2. Unlocked Hopper Siphon
+        if (report.hasUnlockedHopperSiphon()) {
+            for (BlockPos cPos : report.conflictNodes()) {
+                primitives.add(SpatialPrimitive.boxOutline(cPos, SpatialColor.RED, "UNLOCKED HOPPER SIPHON", duration));
+                primitives.add(SpatialPrimitive.billboard(cPos.offset("up"), "✖ 漏斗未锁存: 空盒将被偷吸", SpatialColor.RED, duration));
+            }
+            for (BlockPos gPos : report.ghostBlockPlacements()) {
+                primitives.add(SpatialPrimitive.ghostBlock(gPos, "minecraft:redstone_torch", SpatialColor.RED, duration));
+                primitives.add(SpatialPrimitive.billboard(gPos.offset("up"), "➕ 引入红石锁存信号", SpatialColor.RED, duration));
+            }
+        }
+
+        // 3. Box Open Clearance Blocked
+        if (report.hasBoxOpenClearanceBlocked()) {
+            for (BlockPos cPos : report.conflictNodes()) {
+                primitives.add(SpatialPrimitive.boxOutline(cPos, SpatialColor.YELLOW, "OPEN CLEARANCE BLOCKED", duration));
+                primitives.add(SpatialPrimitive.billboard(cPos.offset("up"), "⚠ 开盖受阻: 需净空1格", SpatialColor.YELLOW, duration));
+            }
+        }
+
+        // 4. Uncollected Drop Hazard
+        if (report.hasUncollectedDropHazard()) {
+            for (BlockPos cPos : report.conflictNodes()) {
+                primitives.add(SpatialPrimitive.boxOutline(cPos, SpatialColor.PURPLE, "UNCOLLECTED DROP HAZARD", duration));
+                primitives.add(SpatialPrimitive.billboard(cPos.offset("up"), "⚠ 缺乏收集: 5分钟清除风险", SpatialColor.PURPLE, duration));
+            }
+            for (BlockPos gPos : report.ghostBlockPlacements()) {
+                primitives.add(SpatialPrimitive.ghostBlock(gPos, "minecraft:hopper", SpatialColor.CYAN, duration));
+                primitives.add(SpatialPrimitive.billboard(gPos.offset("down"), "➕ 布置收集漏斗/水流", SpatialColor.CYAN, duration));
+            }
+        }
+
+        // 5. Persistent Piston Lock
+        if (report.hasPersistentPistonLock()) {
+            for (BlockPos cPos : report.conflictNodes()) {
+                primitives.add(SpatialPrimitive.boxOutline(cPos, SpatialColor.RED, "PERSISTENT PISTON DEADLOCK", duration));
+                primitives.add(SpatialPrimitive.billboard(cPos.offset("up"), "✖ 活塞死锁: 需单稳态短脉冲", SpatialColor.RED, duration));
+            }
+        }
+
+        // 6. Healthy System
+        if (report.isHealthy()) {
+            primitives.add(SpatialPrimitive.boxOutline(tPos, SpatialColor.GREEN, "SHULKER LOGISTICS HEALTHY", duration));
+            primitives.add(SpatialPrimitive.billboard(tPos.offset("up"), "✔ 潜影盒流水线拓扑健康", SpatialColor.GREEN, duration));
+        }
+
+        // 7. System components
+        for (BlockPos sPos : report.systemComponents()) {
+            if (!sPos.equals(tPos) && !report.conflictNodes().contains(sPos)) {
+                primitives.add(SpatialPrimitive.boxOutline(sPos, SpatialColor.CYAN, "SHULKER COMPONENT", duration));
+            }
+        }
+
+        return SpatialDirectivePacket.of(
+                "shulker-logistics-" + System.currentTimeMillis(),
+                "SHULKER_LOGISTICS",
                 primitives,
                 report.primaryDiagnosis(),
                 report.actionableAdvice()

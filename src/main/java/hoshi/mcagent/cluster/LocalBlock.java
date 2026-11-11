@@ -373,6 +373,23 @@ public record LocalBlock(
                isGlazedTerracotta() || isNoteBlock() || isTrapdoor() || isObsidian();
     }
 
+    public boolean isShulkerBox() {
+        if (blockId == null) return false;
+        String id = blockId.toLowerCase();
+        return id.contains("shulker_box");
+    }
+
+    public boolean isDispenser() {
+        if (blockId == null) return false;
+        String id = blockId.toLowerCase();
+        return id.contains("dispenser");
+    }
+
+    public boolean isShulkerComponent() {
+        return isShulkerBox() || isDispenser() || isDropper() || isHopper() ||
+               isComparator() || isPiston();
+    }
+
     public boolean isAir() {
         return blockId == null || blockId.equals("minecraft:air") || blockId.equals("minecraft:cave_air") || blockId.equals("minecraft:void_air");
     }

@@ -1,4 +1,4 @@
-from .cluster import BlockPos, LocalBlock, LocalMachineCluster, KineticNetworkAnalyzer, HopperNetworkAnalyzer, CrafterPipelineAnalyzer, Ae2Report, Ae2NetworkAnalyzer
+from .cluster import BlockPos, LocalBlock, LocalMachineCluster, KineticNetworkAnalyzer, HopperNetworkAnalyzer, CrafterPipelineAnalyzer, Ae2Report, Ae2NetworkAnalyzer, ShulkerLogisticsAnalyzer, ShulkerReport, ShulkerSystemType
 from .spatial import (
     SpatialColor,
     SpatialPrimitive,
@@ -47,6 +47,9 @@ from .rules import (
     ENCHANTMENT_COMPATIBILITY_AND_GEAR_RULES,
     CREATE_STRESS_CAPACITY_AND_KINETICS_RULES,
     PORTAL_PERMALOADER_AND_CHUNK_TICKING_RULES,
+    SHULKER_LOADER_FULLNESS_COMPARATOR_AND_HOPPER_LOCK_RULES,
+    SHULKER_DISPENSER_PLACEMENT_AND_OPEN_CLEARANCE_RULES,
+    SHULKER_UNLOADER_ZERO_SIGNAL_MONOSTABLE_AND_PISTON_BREAK_RULES,
 )
 from .anvil import EnchantmentEntry, AnvilItem, AnvilMergeStep, AnvilPlan, optimize_anvil_tree, calculate_penalty, get_enchantment
 from .create_kinetics import MachineEntry, KineticReport, analyze_create_network, resolve_impact_factor
@@ -162,6 +165,12 @@ __all__ = [
     "PISTON_QUASI_CONNECTIVITY_AND_BUD_RULES",
     "PISTON_PUSH_LIMIT_AND_SLIME_HONEY_RULES",
     "STICKY_PISTON_ONE_TICK_DROP_BLOCK_RULES",
+    "ShulkerLogisticsAnalyzer",
+    "ShulkerReport",
+    "ShulkerSystemType",
+    "SHULKER_LOADER_FULLNESS_COMPARATOR_AND_HOPPER_LOCK_RULES",
+    "SHULKER_DISPENSER_PLACEMENT_AND_OPEN_CLEARANCE_RULES",
+    "SHULKER_UNLOADER_ZERO_SIGNAL_MONOSTABLE_AND_PISTON_BREAK_RULES",
 ]
 
-__version__ = "2.4.0"
+__version__ = "2.11.0"

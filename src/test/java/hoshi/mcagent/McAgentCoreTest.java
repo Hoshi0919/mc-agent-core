@@ -45,6 +45,7 @@ import hoshi.mcagent.cluster.RedstoneTransmissionAnalyzer;
 import hoshi.mcagent.cluster.RedstoneLogicAnalyzer;
 import hoshi.mcagent.cluster.RailNetworkAnalyzer;
 import hoshi.mcagent.cluster.FlyingMachineAnalyzer;
+import hoshi.mcagent.cluster.ShulkerLogisticsAnalyzer;
 import hoshi.mcagent.cluster.WaterLogisticsAnalyzer;
 import hoshi.mcagent.cluster.BlockPos;
 import hoshi.mcagent.cluster.LocalBlock;
@@ -152,6 +153,7 @@ public class McAgentCoreTest {
         testRailNetworkAnalyzerAndStationDynamics();
         testWaterLogisticsAndBubbleColumnDynamics();
         testFlyingMachineAndSlimestoneDynamics();
+        testShulkerLogisticsAndAutomationDynamics();
 
         System.out.println(String.format("\n🎉 All %d/%d Java tests passed successfully!", testsPassed, testsRun));
     }
@@ -3022,5 +3024,169 @@ private static void testWaterLogisticsAndBubbleColumnDynamics() throws Execution
 
         var resHelp = router.execute("Steve", "/hoshi help", null);
         assertTrue(resHelp.getMessage().contains("/hoshi flying"), "Help mentions /hoshi flying");
+    }
+
+    private static void testShulkerLogisticsAndAutomationDynamics() throws Exception {
+        // 1. Empty Report
+        var emptyCluster = new LocalMachineCluster.Builder(new BlockPos(0, 64, 0)).build();
+        var repEmpty = ShulkerLogisticsAnalyzer.analyzeShulker(emptyCluster, new BlockPos(0, 64, 0));
+        assertTrue(repEmpty.isHealthy(), "Empty shulker cluster is healthy");
+        assertTrue(repEmpty.systemType() == ShulkerLogisticsAnalyzer.ShulkerSystemType.NONE, "ShulkerSystemType is NONE in empty");
+
+        // 2. Healthy Shulker Loader
+        // Dispenser at [0, 64, -1] facing south (towards [0, 64, 0])
+        // Shulker box at [0, 64, 0] facing up
+        // Feeding hopper above shulker at [0, 65, 0] facing down
+        // Locked collection hopper below shulker at [0, 63, 0] facing down (powered=true)
+        // Piston at [1, 64, 0] facing west (towards [0, 64, 0])
+        // Comparator at [0, 64, 1] facing north (measuring shulker, power=15)
+        var healthyLoader = new LocalMachineCluster.Builder(new BlockPos(0, 64, 0))
+                .add(0, 64, -1, "minecraft:dispenser", Map.of("facing", "south"))
+                .add(0, 64, 0, "minecraft:shulker_box", Map.of("facing", "up"))
+                .add(0, 65, 0, "minecraft:hopper", Map.of("facing", "down"))
+                .add(0, 63, 0, "minecraft:hopper", Map.of("facing", "down", "powered", "true"))
+                .add(1, 64, 0, "minecraft:piston", Map.of("facing", "west"))
+                .add(0, 64, 1, "minecraft:comparator", Map.of("facing", "north", "power", "15"))
+                .build();
+        var repHealthy = ShulkerLogisticsAnalyzer.analyzeShulker(healthyLoader, new BlockPos(0, 64, 0));
+        assertTrue(repHealthy.isHealthy(), "Healthy shulker loader is healthy");
+        assertTrue(repHealthy.systemType() == ShulkerLogisticsAnalyzer.ShulkerSystemType.SHULKER_LOADER, "ShulkerSystemType is SHULKER_LOADER");
+        assertTrue(!repHealthy.hasDropperInsteadOfDispenser(), "No dropper misuse in healthy loader");
+        assertTrue(!repHealthy.hasUnlockedHopperSiphon(), "No unlocked siphon in locked collection hopper");
+        assertTrue(!repHealthy.hasBoxOpenClearanceBlocked(), "No open clearance blockage with hopper above");
+        assertTrue(!repHealthy.hasUncollectedDropHazard(), "No drop hazard with hopper below");
+        assertTrue(!repHealthy.hasPersistentPistonLock(), "No persistent piston lock in loader");
+        assertTrue(repHealthy.signalStrength() == 15, "Signal strength is 15 in full loader");
+
+        // 3. Dropper Instead of Dispenser Misuse
+        var dropperMisuse = new LocalMachineCluster.Builder(new BlockPos(0, 64, 0))
+                .add(0, 64, -1, "minecraft:dropper", Map.of("facing", "south"))
+                .add(0, 64, 0, "minecraft:shulker_box", Map.of("facing", "up"))
+                .add(0, 65, 0, "minecraft:hopper", Map.of("facing", "down"))
+                .add(0, 63, 0, "minecraft:hopper", Map.of("facing", "down", "powered", "true"))
+                .add(1, 64, 0, "minecraft:piston", Map.of("facing", "west"))
+                .build();
+        var repDropper = ShulkerLogisticsAnalyzer.analyzeShulker(dropperMisuse, new BlockPos(0, 64, 0));
+        assertTrue(!repDropper.isHealthy(), "Dropper misuse cluster is unhealthy");
+        assertTrue(repDropper.hasDropperInsteadOfDispenser(), "Detected dropper misuse instead of dispenser");
+        assertTrue(repDropper.conflictNodes().contains(new BlockPos(0, 64, -1)), "Conflict nodes contains dropper pos");
+        assertTrue(repDropper.ghostBlockPlacements().contains(new BlockPos(0, 64, -1)), "Ghost block suggests dispenser replacement");
+        assertTrue(repDropper.issues().get(0).contains("误用了投掷器"), "Issue explains dropper spit failure");
+
+        // 4. Unlocked Hopper Siphon Risk
+        var siphonLoader = new LocalMachineCluster.Builder(new BlockPos(0, 64, 0))
+                .add(0, 64, -1, "minecraft:dispenser", Map.of("facing", "south"))
+                .add(0, 64, 0, "minecraft:shulker_box", Map.of("facing", "up"))
+                .add(0, 65, 0, "minecraft:hopper", Map.of("facing", "down"))
+                .add(0, 63, 0, "minecraft:hopper", Map.of("facing", "down", "powered", "false"))
+                .add(1, 64, 0, "minecraft:piston", Map.of("facing", "west"))
+                .build();
+        var repSiphon = ShulkerLogisticsAnalyzer.analyzeShulker(siphonLoader, new BlockPos(0, 64, 0));
+        assertTrue(!repSiphon.isHealthy(), "Unlocked siphon loader is unhealthy");
+        assertTrue(repSiphon.hasUnlockedHopperSiphon(), "Detected unlocked hopper siphon");
+        assertTrue(repSiphon.conflictNodes().contains(new BlockPos(0, 63, 0)), "Conflict nodes contains unlocked hopper pos");
+        assertTrue(repSiphon.issues().get(0).contains("未受红石锁定"), "Issue explains empty box siphon failure");
+
+        // 5. Shulker Box Open Clearance Blocked
+        // Solid stone block directly above shulker box at [0, 65, 0]
+        var blockedBox = new LocalMachineCluster.Builder(new BlockPos(0, 64, 0))
+                .add(0, 64, 0, "minecraft:shulker_box", Map.of("facing", "up"))
+                .add(0, 65, 0, "minecraft:stone")
+                .add(0, 63, 0, "minecraft:hopper", Map.of("facing", "down"))
+                .build();
+        var repBlocked = ShulkerLogisticsAnalyzer.analyzeShulker(blockedBox, new BlockPos(0, 64, 0));
+        assertTrue(!repBlocked.isHealthy(), "Blocked shulker box is unhealthy");
+        assertTrue(repBlocked.hasBoxOpenClearanceBlocked(), "Detected box open clearance blockage");
+        assertTrue(repBlocked.conflictNodes().contains(new BlockPos(0, 65, 0)), "Conflict nodes contains solid stone pos");
+        assertTrue(repBlocked.warnings().get(0).contains("无法开启"), "Warning explains solid block obstacle");
+
+        // 6. Uncollected Drop Hazard (Piston without Hopper)
+        var hazardLoader = new LocalMachineCluster.Builder(new BlockPos(0, 64, 0))
+                .add(0, 64, -1, "minecraft:dispenser", Map.of("facing", "south"))
+                .add(0, 64, 0, "minecraft:shulker_box", Map.of("facing", "up"))
+                .add(1, 64, 0, "minecraft:piston", Map.of("facing", "west"))
+                .build();
+        var repHazard = ShulkerLogisticsAnalyzer.analyzeShulker(hazardLoader, new BlockPos(0, 64, 0));
+        assertTrue(!repHazard.isHealthy(), "Hazard loader without hopper is unhealthy");
+        assertTrue(repHazard.hasUncollectedDropHazard(), "Detected uncollected drop hazard");
+        assertTrue(repHazard.conflictNodes().contains(new BlockPos(0, 64, 0)), "Conflict nodes contains shulker target pos");
+        assertTrue(repHazard.ghostBlockPlacements().contains(new BlockPos(0, 63, 0)), "Ghost block suggests hopper below");
+        assertTrue(repHazard.warnings().get(0).contains("5 分钟后清除"), "Warning explains 5-minute despawn hazard");
+
+        // 7. Persistent Piston Lock in Shulker Unloader
+        // Shulker unloader: Hopper below at [0, 63, 0], piston at [1, 64, 0] with extended=true
+        var lockedUnloader = new LocalMachineCluster.Builder(new BlockPos(0, 64, 0))
+                .add(0, 64, 0, "minecraft:shulker_box", Map.of("facing", "up"))
+                .add(0, 63, 0, "minecraft:hopper", Map.of("facing", "down"))
+                .add(1, 64, 0, "minecraft:piston", Map.of("facing", "west", "extended", "true"))
+                .add(0, 64, -1, "minecraft:dispenser", Map.of("facing", "south"))
+                .build();
+        var repPistonLock = ShulkerLogisticsAnalyzer.analyzeShulker(lockedUnloader, new BlockPos(0, 64, 0));
+        assertTrue(!repPistonLock.isHealthy(), "Persistent piston unloader is unhealthy");
+        assertTrue(repPistonLock.systemType() == ShulkerLogisticsAnalyzer.ShulkerSystemType.SHULKER_UNLOADER, "SystemType is SHULKER_UNLOADER");
+        assertTrue(repPistonLock.hasPersistentPistonLock(), "Detected persistent piston lock");
+        assertTrue(repPistonLock.conflictNodes().contains(new BlockPos(1, 64, 0)), "Conflict nodes contains extended piston pos");
+        assertTrue(repPistonLock.issues().get(0).contains("阻挡发射器放置"), "Issue explains unloader piston deadlock");
+
+        // 8. Spatial Directives Overlay
+        var overlayHealthy = SpatialDirectiveGenerator.generateShulkerOverlay(healthyLoader, repHealthy);
+        assertTrue(overlayHealthy.toJson().contains("SHULKER LOGISTICS HEALTHY"), "Overlay JSON contains SHULKER LOGISTICS HEALTHY");
+
+        var overlayDropper = SpatialDirectiveGenerator.generateShulkerOverlay(dropperMisuse, repDropper);
+        assertTrue(overlayDropper.toJson().contains("DROPPER MISUSE"), "Overlay JSON contains DROPPER MISUSE");
+        assertTrue(overlayDropper.toJson().contains("minecraft:dispenser"), "Overlay JSON contains dispenser ghost");
+
+        var overlaySiphon = SpatialDirectiveGenerator.generateShulkerOverlay(siphonLoader, repSiphon);
+        assertTrue(overlaySiphon.toJson().contains("UNLOCKED HOPPER SIPHON"), "Overlay JSON contains UNLOCKED HOPPER SIPHON");
+        assertTrue(overlaySiphon.toJson().contains("minecraft:redstone_torch"), "Overlay JSON contains redstone torch ghost");
+
+        var overlayHazard = SpatialDirectiveGenerator.generateShulkerOverlay(hazardLoader, repHazard);
+        assertTrue(overlayHazard.toJson().contains("UNCOLLECTED DROP HAZARD"), "Overlay JSON contains UNCOLLECTED DROP HAZARD");
+        assertTrue(overlayHazard.toJson().contains("minecraft:hopper"), "Overlay JSON contains hopper ghost");
+
+        // 9. Fast Path Rules 78, 79, 80
+        McAgentCore core = new McAgentCore();
+        var qLoader = core.query("Steve", "装盒机漏斗偷吸空盒怎么解决？潜影盒满盒信号是多少？", null).get();
+        assertTrue(qLoader.category().equals("SHULKER_LOADER_FULLNESS_COMPARATOR_AND_HOPPER_LOCK_RULES"), "Category is SHULKER_LOADER_FULLNESS_COMPARATOR_AND_HOPPER_LOCK_RULES");
+        assertTrue(qLoader.rawAnswer().contains("15级满盒信号"), "Response mentions 15 level signal");
+        assertTrue(qLoader.rawAnswer().contains("下方漏斗偷吸陷阱"), "Response mentions hopper siphon trap");
+        assertTrue(qLoader.rawAnswer().contains("红石锁存时序"), "Response mentions redstone lock timing");
+
+        var qDisp = core.query("Alex", "潜影盒打不开怎么办？装盒机为什么吐物品？潜影盒发射器还是投掷器？", null).get();
+        assertTrue(qDisp.category().equals("SHULKER_DISPENSER_PLACEMENT_AND_OPEN_CLEARANCE_RULES"), "Category is SHULKER_DISPENSER_PLACEMENT_AND_OPEN_CLEARANCE_RULES");
+        assertTrue(qDisp.rawAnswer().contains("必须使用发射器"), "Response mentions dispenser requirement");
+        assertTrue(qDisp.rawAnswer().contains("开盖1格空间净空"), "Response mentions 1 block clearance");
+        assertTrue(qDisp.rawAnswer().contains("发射器圆孔朝向"), "Response mentions dispenser facing");
+
+        var qUnloader = core.query("Engineer", "潜影盒拆盒机怎么做？拆盒机活塞卡死怎么解决？", null).get();
+        assertTrue(qUnloader.category().equals("SHULKER_UNLOADER_ZERO_SIGNAL_MONOSTABLE_AND_PISTON_BREAK_RULES"), "Category is SHULKER_UNLOADER_ZERO_SIGNAL_MONOSTABLE_AND_PISTON_BREAK_RULES");
+        assertTrue(qUnloader.rawAnswer().contains("信号归零清空检测"), "Response mentions zero signal detection");
+        assertTrue(qUnloader.rawAnswer().contains("单稳态短脉冲防死锁"), "Response mentions monostable pulse");
+        assertTrue(qUnloader.rawAnswer().contains("掉落物直接收集"), "Response mentions drop collection channel");
+
+        // 10. Command Router Integration
+        PlayerSessionManager sm = new PlayerSessionManager();
+        CommandRouter router = new CommandRouter(core, sm);
+
+        var resEmpty = router.execute("Steve", "/hoshi shulker", null);
+        assertTrue(resEmpty.isSuccess(), "Empty shulker command succeeds");
+        assertTrue(resEmpty.getMessage().contains("当前准星未捕捉到潜影盒装盒机"), "Reports no shulker targeted");
+
+        ContextSnapshot ctx = ContextSnapshot.builder().cluster(healthyLoader).build();
+        var resCmd = router.execute("Steve", "/hoshi shulker", ctx);
+        assertTrue(resCmd.isSuccess(), "Shulker command succeeds on cluster");
+        assertTrue(resCmd.getMessage().contains("潜影盒装卸物流与自动化因果诊断报告"), "Message contains header");
+        assertTrue(resCmd.hasSpatialDirective(), "Result has spatial directive");
+
+        var resHl = router.execute("Steve", "/hoshi highlight shulker", ctx);
+        assertTrue(resHl.isSuccess(), "Highlight shulker succeeds");
+        assertTrue(resHl.hasSpatialDirective(), "Highlight shulker has spatial directive");
+        assertTrue(resHl.getSpatialDirective().category().equals("SHULKER_LOGISTICS"), "Directive is SHULKER_LOGISTICS");
+
+        var resCluster = router.execute("Steve", "/hoshi cluster shulker", ctx);
+        assertTrue(resCluster.isSuccess(), "Cluster shulker succeeds");
+
+        var resHelp = router.execute("Steve", "/hoshi help", null);
+        assertTrue(resHelp.getMessage().contains("/hoshi shulker"), "Help mentions /hoshi shulker");
     }
 }

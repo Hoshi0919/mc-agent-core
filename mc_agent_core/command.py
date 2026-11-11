@@ -191,25 +191,12 @@ class CommandRouter:
             return self._handle_transmission(player_id, tokens, arg_start, snapshot)
         elif sub in ("flying", "fly", "machine", "slimestone"):
             return self._handle_flying(player_id, tokens, arg_start, snapshot)
+        elif sub in ("shulker", "box", "loader", "unloader"):
+            return self._handle_shulker(player_id, tokens, arg_start, snapshot)
         elif sub in ("water", "fluid", "stream", "bubble"):
             return self._handle_water(player_id, tokens, arg_start, snapshot)
-        elif sub in ("flying", "fly", "machine", "slimestone"):
-            from mc_agent_core.cluster import FlyingMachineAnalyzer, BlockPos
-            focus_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
-            f = FlyingMachineAnalyzer.analyze(cluster, focus_pos)
-            packet = SpatialDirectiveGenerator.generate_flying_machine_overlay(cluster, f)
         elif sub in ("rail", "track", "minecart"):
             return self._handle_rail(player_id, tokens, arg_start, snapshot)
-        elif sub in ("water", "fluid", "stream", "bubble"):
-            from mc_agent_core.cluster import WaterLogisticsAnalyzer, BlockPos
-            focus_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
-            w = WaterLogisticsAnalyzer.analyze(cluster, focus_pos)
-            packet = SpatialDirectiveGenerator.generate_water_overlay(cluster, w)
-        elif sub in ("rail", "minecart", "track"):
-            from mc_agent_core.cluster import RailNetworkAnalyzer, BlockPos
-            focus_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
-            r = RailNetworkAnalyzer.analyze(cluster, focus_pos)
-            packet = SpatialDirectiveGenerator.generate_rail_overlay(cluster, r)
         elif sub in ("logic", "latch", "gate", "bulb"):
             return self._handle_logic(player_id, tokens, arg_start, snapshot)
         elif sub in ("cluster", "topo"):
@@ -594,8 +581,21 @@ class CommandRouter:
             t_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
             t = RedstoneTransmissionAnalyzer.analyze(cluster, t_pos)
             packet = SpatialDirectiveGenerator.generate_transmission_overlay(cluster, t)
-        elif sub in ("rail", "track", "minecart"):
-            return self._handle_rail(player_id, tokens, arg_start, snapshot)
+        elif sub in ("shulker", "box", "loader", "unloader"):
+            from mc_agent_core.cluster import ShulkerLogisticsAnalyzer, BlockPos
+            focus_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
+            s = ShulkerLogisticsAnalyzer.analyze_shulker(cluster, focus_pos)
+            packet = SpatialDirectiveGenerator.generate_shulker_overlay(cluster, s)
+        elif sub in ("flying", "fly", "machine", "slimestone"):
+            from mc_agent_core.cluster import FlyingMachineAnalyzer, BlockPos
+            focus_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
+            f = FlyingMachineAnalyzer.analyze(cluster, focus_pos)
+            packet = SpatialDirectiveGenerator.generate_flying_machine_overlay(cluster, f)
+        elif sub in ("water", "fluid", "stream", "bubble"):
+            from mc_agent_core.cluster import WaterLogisticsAnalyzer, BlockPos
+            focus_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
+            w = WaterLogisticsAnalyzer.analyze(cluster, focus_pos)
+            packet = SpatialDirectiveGenerator.generate_water_overlay(cluster, w)
         elif sub in ("rail", "minecart", "track"):
             from mc_agent_core.cluster import RailNetworkAnalyzer, BlockPos
             focus_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
@@ -626,6 +626,24 @@ class CommandRouter:
         return CommandResult(status="SUCCESS", action="CLUSTER", message="\n".join(sb), spatial_directive=packet)
 
 
+
+    def _handle_shulker(self, player_id: Optional[str], tokens: list, arg_start: int, snapshot: Optional[ContextSnapshot]) -> CommandResult:
+        cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
+        if not cluster or cluster.is_empty:
+            msg = ("§6【潜影盒装卸物流与自动化因果诊断】§r\n"
+                   "当前准星未捕捉到潜影盒装盒机、拆盒机或物流流水线集群。\n"
+                   "请将准星对准潜影盒、发射器、收集漏斗或推破活塞，然后输入 `/hoshi shulker` 触发潜影盒物流因果诊断！")
+            return CommandResult(status="SUCCESS", action="SHULKER", message=msg)
+        from mc_agent_core.cluster import ShulkerLogisticsAnalyzer, BlockPos
+        target_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
+        report = ShulkerLogisticsAnalyzer.analyze_shulker(cluster, target_pos)
+        text = report.format_report()
+        paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page")
+        self.session_manager.record_interaction(player_id, "/hoshi shulker", text, "SHULKER", paged)
+        comps = MinecraftTextFormatter.parse_components(paged.full_page_text, "/hoshi shulker")
+        tellraw = TellrawJsonBuilder.to_json(comps)
+        pkt = SpatialDirectiveGenerator.generate_shulker_overlay(cluster, report)
+        return CommandResult(status="SUCCESS", action="SHULKER", message=paged.full_page_text, tellraw_json=tellraw, paged_result=paged, spatial_directive=pkt)
 
     def _handle_flying(self, player_id: Optional[str], tokens: list, arg_start: int, snapshot: Optional[ContextSnapshot]) -> CommandResult:
         cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
@@ -793,6 +811,16 @@ class CommandRouter:
             pkt = SpatialDirectiveGenerator.generate_transmission_overlay(cluster, t)
             return CommandResult(status="SUCCESS", action="HIGHLIGHT", message=f"§a[Hoshi 3D 高亮] {pkt.hud_title}", spatial_directive=pkt)
 
+        if sub in ("shulker", "box", "loader", "unloader"):
+            cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
+            if not cluster or cluster.is_empty:
+                return CommandResult(status="ERROR", action="HIGHLIGHT", message="§c准星未捕捉到潜影盒物流组件，无法投射潜影盒高亮。")
+            from mc_agent_core.cluster import ShulkerLogisticsAnalyzer, BlockPos
+            focus_pos = BlockPos(snapshot.target_block.x, snapshot.target_block.y, snapshot.target_block.z) if (snapshot and snapshot.target_block) else cluster.origin
+            s = ShulkerLogisticsAnalyzer.analyze_shulker(cluster, focus_pos)
+            pkt = SpatialDirectiveGenerator.generate_shulker_overlay(cluster, s)
+            return CommandResult(status="SUCCESS", action="HIGHLIGHT", message=f"§a[Hoshi 3D 高亮] {pkt.hud_title}", spatial_directive=pkt)
+
         if sub in ("flying", "fly", "machine", "slimestone"):
             cluster = getattr(snapshot, "machine_cluster", None) if snapshot else None
             if not cluster or cluster.is_empty:
@@ -895,6 +923,7 @@ class CommandRouter:
                "▸ §e/hoshi highlight kinetics§r - 在游戏世界高亮冲突齿轮与流向\n"
                "▸ §e/hoshi highlight hopper§r - 投射漏斗死锁环路与物流方向箭头\n"
                "▸ §e/hoshi highlight transmission§r - 投射红石火把烧毁高危、弱充能阻断点与偏转断路导线\n"
+            "▸ §e/hoshi highlight shulker§r - 投射装盒机漏斗偷吸、发射器投掷器误用与开盖净空全息覆盖层\n" +
             "▸ §e/hoshi highlight flying§r - 投射飞行器推块超限、粘液蜂蜜短路与黑曜石限位全息覆盖层\n" +
             "▸ §e/hoshi highlight water§r - 投射气泡柱中断流水、水流8格停摆与蜂蜜块对齐虚影\n" +
             "▸ §e/hoshi highlight rail§r - 投射铁轨坡道倒溜赤字、卸货站缺失挡板与激活铁轨停用覆盖层\n" +
@@ -922,6 +951,7 @@ class CommandRouter:
             "▸ §e/hoshi create stress <动力源> [规模]§r - 诊断 Create 模组动力网应力与过载转速\n"
             "▸ §e/hoshi ae2§r - 诊断准星 AE2 数字化网络拓扑、控制器合法性与 8/32 频道溢出\n"
             "▸ §e/hoshi transmission§r - 诊断红石火把极速自激烧毁、强弱充能传递阻断与导线偏转断路\n"
+            "▸ §e/hoshi shulker§r - 诊断潜影盒装盒机漏斗偷吸、发射器投掷器误用与开盖净空\n" +
             "▸ §e/hoshi flying§r - 诊断双向活塞飞行器推块超限、粘液蜂蜜短路粘连与端点停靠阻挡\n" +
             "▸ §e/hoshi water§r - 诊断灵魂沙气泡柱中断、冰道水流8格极限与双漏斗蜂蜜块对齐\n" +
             "▸ §e/hoshi rail§r - 诊断充能铁轨间距、斜坡爬坡倒溜、漏斗矿车卸料站与激活铁轨锁死\n"

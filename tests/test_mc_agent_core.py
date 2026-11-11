@@ -2718,3 +2718,176 @@ def test_flying_machine_and_slimestone_dynamics():
 
     r_help = router.execute("Steve", "/hoshi help", None)
     assert "/hoshi flying" in r_help.message
+
+
+
+def test_shulker_logistics_and_automation_dynamics():
+    from mc_agent_core.cluster import (
+        BlockPos, LocalBlock, LocalMachineCluster,
+        ShulkerReport, ShulkerSystemType, ShulkerLogisticsAnalyzer
+    )
+    from mc_agent_core.spatial import SpatialDirectiveGenerator
+    from mc_agent_core.fast_path import FastPathResolver
+    from mc_agent_core.command import CommandRouter
+    from mc_agent_core.dispatcher import AsyncQueryDispatcher
+    from mc_agent_core.context import ContextSnapshot
+
+    # 1. Empty Report
+    empty_cluster = LocalMachineCluster(BlockPos(0, 64, 0), {})
+    rep_empty = ShulkerLogisticsAnalyzer.analyze(empty_cluster, BlockPos(0, 64, 0))
+    assert rep_empty.is_healthy
+    assert rep_empty.system_type == ShulkerSystemType.NONE
+
+    # 2. Healthy Shulker Loader
+    healthy_loader = (
+        LocalMachineCluster(BlockPos(0, 64, 0))
+        .add(0, 64, -1, "minecraft:dispenser", {"facing": "south"})
+        .add(0, 64, 0, "minecraft:shulker_box", {"facing": "up"})
+        .add(0, 65, 0, "minecraft:hopper", {"facing": "down"})
+        .add(0, 63, 0, "minecraft:hopper", {"facing": "down", "powered": "true"})
+        .add(1, 64, 0, "minecraft:piston", {"facing": "west"})
+        .add(0, 64, 1, "minecraft:comparator", {"facing": "north", "power": "15"})
+    )
+    rep_healthy = ShulkerLogisticsAnalyzer.analyze(healthy_loader, BlockPos(0, 64, 0))
+    assert rep_healthy.is_healthy
+    assert rep_healthy.system_type == ShulkerSystemType.SHULKER_LOADER
+    assert not rep_healthy.has_dropper_instead_of_dispenser
+    assert not rep_healthy.has_unlocked_hopper_siphon
+    assert not rep_healthy.has_box_open_clearance_blocked
+    assert not rep_healthy.has_uncollected_drop_hazard
+    assert not rep_healthy.has_persistent_piston_lock
+    assert rep_healthy.signal_strength == 15
+
+    # 3. Dropper Misuse
+    dropper_misuse = (
+        LocalMachineCluster(BlockPos(0, 64, 0))
+        .add(0, 64, -1, "minecraft:dropper", {"facing": "south"})
+        .add(0, 64, 0, "minecraft:shulker_box", {"facing": "up"})
+        .add(0, 65, 0, "minecraft:hopper", {"facing": "down"})
+        .add(0, 63, 0, "minecraft:hopper", {"facing": "down", "powered": "true"})
+        .add(1, 64, 0, "minecraft:piston", {"facing": "west"})
+    )
+    rep_dropper = ShulkerLogisticsAnalyzer.analyze(dropper_misuse, BlockPos(0, 64, 0))
+    assert not rep_dropper.is_healthy
+    assert rep_dropper.has_dropper_instead_of_dispenser
+    assert BlockPos(0, 64, -1) in rep_dropper.conflict_nodes
+    assert BlockPos(0, 64, -1) in rep_dropper.ghost_block_placements
+    assert any("误用了投掷器" in iss for iss in rep_dropper.issues)
+
+    # 4. Unlocked Hopper Siphon Risk
+    siphon_loader = (
+        LocalMachineCluster(BlockPos(0, 64, 0))
+        .add(0, 64, -1, "minecraft:dispenser", {"facing": "south"})
+        .add(0, 64, 0, "minecraft:shulker_box", {"facing": "up"})
+        .add(0, 65, 0, "minecraft:hopper", {"facing": "down"})
+        .add(0, 63, 0, "minecraft:hopper", {"facing": "down", "powered": "false"})
+        .add(1, 64, 0, "minecraft:piston", {"facing": "west"})
+    )
+    rep_siphon = ShulkerLogisticsAnalyzer.analyze(siphon_loader, BlockPos(0, 64, 0))
+    assert not rep_siphon.is_healthy
+    assert rep_siphon.has_unlocked_hopper_siphon
+    assert BlockPos(0, 63, 0) in rep_siphon.conflict_nodes
+    assert any("未受红石锁定" in iss for iss in rep_siphon.issues)
+
+    # 5. Shulker Box Open Clearance Blocked
+    blocked_box = (
+        LocalMachineCluster(BlockPos(0, 64, 0))
+        .add(0, 64, 0, "minecraft:shulker_box", {"facing": "up"})
+        .add(0, 65, 0, "minecraft:stone")
+        .add(0, 63, 0, "minecraft:hopper", {"facing": "down"})
+    )
+    rep_blocked = ShulkerLogisticsAnalyzer.analyze(blocked_box, BlockPos(0, 64, 0))
+    assert not rep_blocked.is_healthy
+    assert rep_blocked.has_box_open_clearance_blocked
+    assert BlockPos(0, 65, 0) in rep_blocked.conflict_nodes
+    assert any("无法开启" in w for w in rep_blocked.warnings)
+
+    # 6. Uncollected Drop Hazard
+    hazard_loader = (
+        LocalMachineCluster(BlockPos(0, 64, 0))
+        .add(0, 64, -1, "minecraft:dispenser", {"facing": "south"})
+        .add(0, 64, 0, "minecraft:shulker_box", {"facing": "up"})
+        .add(1, 64, 0, "minecraft:piston", {"facing": "west"})
+    )
+    rep_hazard = ShulkerLogisticsAnalyzer.analyze(hazard_loader, BlockPos(0, 64, 0))
+    assert not rep_hazard.is_healthy
+    assert rep_hazard.has_uncollected_drop_hazard
+    assert BlockPos(0, 64, 0) in rep_hazard.conflict_nodes
+    assert BlockPos(0, 63, 0) in rep_hazard.ghost_block_placements
+    assert any("清除" in w for w in rep_hazard.warnings)
+
+    # 7. Persistent Piston Lock in Shulker Unloader
+    locked_unloader = (
+        LocalMachineCluster(BlockPos(0, 64, 0))
+        .add(0, 64, 0, "minecraft:shulker_box", {"facing": "up"})
+        .add(0, 63, 0, "minecraft:hopper", {"facing": "down"})
+        .add(1, 64, 0, "minecraft:piston", {"facing": "west", "extended": "true"})
+        .add(0, 64, -1, "minecraft:dispenser", {"facing": "south"})
+    )
+    rep_piston_lock = ShulkerLogisticsAnalyzer.analyze(locked_unloader, BlockPos(0, 64, 0))
+    assert not rep_piston_lock.is_healthy
+    assert rep_piston_lock.system_type == ShulkerSystemType.SHULKER_UNLOADER
+    assert rep_piston_lock.has_persistent_piston_lock
+    assert BlockPos(1, 64, 0) in rep_piston_lock.conflict_nodes
+    assert any("阻挡发射器放置" in iss for iss in rep_piston_lock.issues)
+
+    # 8. Spatial Directives Overlay
+    overlay_healthy = SpatialDirectiveGenerator.generate_shulker_overlay(healthy_loader, rep_healthy)
+    assert "SHULKER LOGISTICS HEALTHY" in overlay_healthy.to_json()
+
+    overlay_dropper = SpatialDirectiveGenerator.generate_shulker_overlay(dropper_misuse, rep_dropper)
+    assert "DROPPER MISUSE" in overlay_dropper.to_json()
+    assert "minecraft:dispenser" in overlay_dropper.to_json()
+
+    overlay_siphon = SpatialDirectiveGenerator.generate_shulker_overlay(siphon_loader, rep_siphon)
+    assert "UNLOCKED HOPPER SIPHON" in overlay_siphon.to_json()
+    assert "minecraft:redstone_torch" in overlay_siphon.to_json()
+
+    overlay_hazard = SpatialDirectiveGenerator.generate_shulker_overlay(hazard_loader, rep_hazard)
+    assert "UNCOLLECTED DROP HAZARD" in overlay_hazard.to_json()
+    assert "minecraft:hopper" in overlay_hazard.to_json()
+
+    # 9. Fast Path Rules 78, 79, 80
+    r_loader = FastPathResolver.try_resolve("装盒机漏斗偷吸空盒怎么解决？潜影盒满盒信号是多少？")
+    assert r_loader is not None
+    assert r_loader.category == "SHULKER_LOADER_FULLNESS_COMPARATOR_AND_HOPPER_LOCK_RULES"
+    assert "15级满盒信号" in r_loader.text_response
+    assert "下方漏斗偷吸陷阱" in r_loader.text_response
+    assert "红石锁存时序" in r_loader.text_response
+
+    r_disp = FastPathResolver.try_resolve("潜影盒打不开怎么办？装盒机为什么吐物品？潜影盒发射器还是投掷器？")
+    assert r_disp is not None
+    assert r_disp.category == "SHULKER_DISPENSER_PLACEMENT_AND_OPEN_CLEARANCE_RULES"
+    assert "必须使用发射器" in r_disp.text_response
+    assert "开盖1格空间净空" in r_disp.text_response
+    assert "发射器圆孔朝向" in r_disp.text_response
+
+    r_unloader = FastPathResolver.try_resolve("潜影盒拆盒机怎么做？拆盒机活塞卡死怎么解决？")
+    assert r_unloader is not None
+    assert r_unloader.category == "SHULKER_UNLOADER_ZERO_SIGNAL_MONOSTABLE_AND_PISTON_BREAK_RULES"
+    assert "信号归零清空检测" in r_unloader.text_response
+    assert "单稳态短脉冲防死锁" in r_unloader.text_response
+    assert "掉落物直接收集" in r_unloader.text_response
+
+    # 10. Command Router Integration
+    router = CommandRouter(AsyncQueryDispatcher())
+    r_empty = router.execute("Steve", "/hoshi shulker", None)
+    assert r_empty.is_success
+    assert "当前准星未捕捉到潜影盒装盒机" in r_empty.message
+
+    ctx = ContextSnapshot("Steve", "overworld", 10.0, 64.0, 10.0, machine_cluster=healthy_loader)
+    r_cmd = router.execute("Steve", "/hoshi shulker", ctx)
+    assert r_cmd.is_success
+    assert "潜影盒装卸物流与自动化因果诊断报告" in r_cmd.message
+    assert r_cmd.has_spatial_directive
+
+    r_hl = router.execute("Steve", "/hoshi highlight shulker", ctx)
+    assert r_hl.is_success
+    assert r_hl.has_spatial_directive
+    assert r_hl.spatial_directive.category == "SHULKER_LOGISTICS"
+
+    r_cluster = router.execute("Steve", "/hoshi cluster shulker", ctx)
+    assert r_cluster.is_success
+
+    r_help = router.execute("Steve", "/hoshi help", None)
+    assert "/hoshi shulker" in r_help.message

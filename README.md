@@ -4,6 +4,47 @@
 
 ---
 
+## 🌟 核心特性（v2.11.0 里程碑：潜影盒装卸物流、发射器/投掷器判定、比较器满盒锁存与 3D 全息因果分析）
+
+针对 Minecraft 原版与大型生电物流仓储中最关键、也是最容易因方块混淆或时序竞争导致瘫痪的集约化存储子系统——**发射器方块放置 vs 投掷器掉落物喷射判定 (Dispenser vs Dropper Placement)**、**比较器 15 级满盒信号与下方漏斗空盒偷吸红石锁存 (Fullness Comparator & Anti-Siphon Lock)**、**潜影盒开盖 1 格空间净空法则 (1-Block Opening Clearance & Solid Obstacle)**、**活塞推破掉落物承接与 5 分钟 Despawn 险情预警 (Piston Break & Drop Collection Hazard)** 与 **拆盒机信号归零单稳态短脉冲防活塞死锁 (Zero-Signal Monostable & Piston Jam Prevention)**，构建 0ms 纯确定性状态机与 3D 空间全息投射：
+
+1. **发射器方块放置 vs 投掷器掉落物喷射硬法则 (Dispenser vs Dropper)**：
+   - **方块放置 vs 掉落物**：潜影盒作为方块实体被放置，在 Minecraft 中**必须且只能由发射器 (Dispenser)** 触发；
+   - **投掷器误用致命陷阱**：若玩家误将投掷器 (Dropper) 当作发射器使用，潜影盒只会被作为普通的掉落物物品喷出悬浮在地面上，无法形成容器方块，装盒流水线当场瘫痪；系统自动检测误用并投射发射器虚影 (`minecraft:dispenser`)。
+
+2. **比较器 15 级满盒检测与下方漏斗空盒偷吸竞争 (Fullness Comparator & Anti-Siphon Lock)**：
+   - **27 格满载 15 级信号**：潜影盒拥有 27 个物品槽；当所有槽位堆满物品 (1728 件普通物品) 时，红石比较器输出满格 15 级红石信号；
+   - **漏斗偷吸空盒竞争死锁**：新盒发射瞬间若下方收集漏斗未施加红石锁定，新空盒在着陆瞬间会被下方漏斗当场吸走，导致发射器无限连喷空盒、备用盒瞬间耗尽；
+   - **红石锁存时序闭环**：推破活塞激活与发射器发射新盒期间，下方漏斗必须由红石火把/中继器强充能保持锁定状态 (`locked=true`)；直到新盒稳定放置为方块后，方可解锁漏斗。
+
+3. **潜影盒开盖 1 格空间净空法则 (1-Block Opening Clearance Constraint)**：
+   - **开盖动力学**：潜影盒打开时盒盖会沿其朝向面伸展半格；
+   - **正前方实心阻挡诊断**：开盖朝向正前方 1 格必须为空气或非完整透明方块 (如玻璃、半砖、楼梯、活板门)；若被石头、深板岩等实心方块直接贴紧封堵，潜影盒物理上无法被打开。
+
+4. **活塞推破掉落物承接与 5 分钟 Despawn 险情预警 (Piston Break Collection Channel)**：
+   - **活塞推破破坏机制**：活塞伸出可瞬间破坏潜影盒并将其转化为掉落物，同时完整保留盒内全部物品 NBT；
+   - **收集通道缺失警告**：推碎落点正下方必须紧贴漏斗、漏斗矿车或导流水渠；若下方悬空或为实心方块，满载贵重物资的潜影盒将散落在地并在 6000 ticks (5 分钟) 后被游戏系统彻底清除。
+
+5. **拆盒机信号归零单稳态脉冲与活塞持续伸出死锁防范 (Monostable Pulse & Piston Jam Prevention)**：
+   - **信号归零清空检测**：拆盒机中下方漏斗持续抽取盒内物品；比较器信号从 >0 降为 0 判定盒内完全抽空；
+   - **单稳态短脉冲防死锁**：信号归零必须接入 1~2 刻单稳态电路 (Monostable Circuit) 产生瞬间脉冲触发推破；严禁让活塞持续保持通电伸出，否则伸出的活塞头会死死卡住放置空间，导致发射器无法放置下一个潜影盒。
+
+6. **3D 空间全息诊断覆盖层整合 (`generateShulkerOverlay`)**：
+   - **投掷器误用高危**：红色线框高亮投掷器 (`DROPPER MISUSE`) + 建议位置投射发射器虚影 (`minecraft:dispenser`) + 悬浮标牌 `✖ 误用投掷器: 需换为发射器`；
+   - **漏斗偷吸空盒**：红色线框高亮下方漏斗 (`UNLOCKED HOPPER SIPHON`) + 投射红石火把虚影 (`minecraft:redstone_torch`) + 悬浮标牌 `✖ 漏斗未锁存: 空盒将被偷吸`；
+   - **开盖空间受阻**：黄色线框高亮阻挡方块 (`OPEN CLEARANCE BLOCKED`) + 悬浮标牌 `⚠ 开盖受阻: 需净空1格`；
+   - **缺乏收集通道**：紫色线框高亮落点 (`UNCOLLECTED DROP HAZARD`) + 投射漏斗虚影 (`minecraft:hopper`) + 悬浮标牌 `⚠ 缺乏收集: 5分钟清除风险`；
+   - **活塞持续伸出**：红色线框高亮活塞 (`PERSISTENT PISTON DEADLOCK`) + 悬浮标牌 `✖ 活塞死锁: 需单稳态短脉冲`；
+   - **流水线健康**：绿色线框高亮核心方块 (`SHULKER LOGISTICS HEALTHY`) + 悬浮标牌 `✔ 潜影盒流水线拓扑健康`。
+
+7. **游戏内交互指令与问答接入**：
+   - **`/hoshi shulker`**：对准星潜影盒装盒/拆盒物流网络输出完整因果诊断；
+   - **`/hoshi cluster shulker`**：局部潜影盒自动化集群子图专属分析；
+   - **`/hoshi highlight shulker`**：向客户端投射 3D 全息潜影盒覆盖层；
+   - 快速问答路径收录规则 78（满盒信号与漏斗锁存）、规则 79（发射器 vs 投掷器与开盖净空）、规则 80（拆盒机单稳态与推碎收集）。
+
+---
+
 ## 🌟 核心特性（v2.10.0 里程碑：双向活塞飞行器、粘液/蜜脾机械蠕虫动力学与 3D 全息因果分析）
 
 针对 Minecraft 原版与高阶生电机械工程中最核心也是最易故障的自主巡航子系统——**12 方块推动上限与连锁粘附质量遍历 (Piston 12-Block Push Limit & Adhesion Cluster Dynamics)**、**粘液块与蜂蜜块互不相粘隔断与短路防范 (Slime-Honey Segregation & Bridging Jam Prevention)**、**非粘性导轨与端点黑曜石刚性限位阻挡 (Glazed Terracotta Guides & Immovable Docking Stopper)**、**侦测器朝向极性失配与单拍断流死锁 (Observer Polarity & Dead-Stroke Stalling)** 与 **端点换向基站活板门/音符盒方块更新自激触发 (Two-Way Reversal Trigger & Docking Station)**，构建 0ms 纯确定性状态机与 3D 空间全息投射：

@@ -198,6 +198,30 @@ class FastPathResolver:
                     "▸ §a换向自激触发§r：撞停后，用停靠站活板门 (Trapdoor) 或音符盒 (Note Block) 产生 1 次方块更新即可点火回程！")
             return Resolution(text_response=resp, suggested_command="/hoshi flying", category="TWO_WAY_FLYING_MACHINE_OBSERVER_AND_DOCKING_RULES")
 
+        # 78. Shulker Loader Fullness & Hopper Lock
+        if any(k in q for k in ["装盒机漏斗偷吸", "装盒机无限吐盒", "潜影盒满盒信号", "装盒机比较器"]) or ("装盒机" in q and any(k in q for k in ["偷吸", "漏斗", "比较器", "满盒"])):
+            resp = ("§6【潜影盒装盒机比较器 15 满盒信号与下方漏斗红石锁存】§r\n"
+                    "▸ §e15级满盒信号§r：潜影盒 27 格全满输出 15 级强红石信号，直接作为推破活塞点火信号！\n"
+                    "▸ §c下方漏斗偷吸陷阱§r：新盒发射瞬间若下方漏斗未锁定，空盒落位即被吸走，导致发射器无限吐空盒！\n"
+                    "▸ §a红石锁存时序§r：活塞推破与发射新盒期间，下方漏斗必须由红石强充能锁存，稳定落位后再解锁！")
+            return Resolution(text_response=resp, suggested_command="/hoshi shulker", category="SHULKER_LOADER_FULLNESS_COMPARATOR_AND_HOPPER_LOCK_RULES")
+
+        # 79. Shulker Dispenser vs Dropper & Clearance
+        if any(k in q for k in ["潜影盒打不开", "装盒机为什么吐物品", "潜影盒发射器还是投掷器", "潜影盒开盖空间"]) or ("潜影盒" in q and any(k in q for k in ["打不开", "发射器", "投掷器", "开盖"])):
+            resp = ("§6【发射器方块放置 vs 投掷器掉落物喷射与开盖 1 格净空法则】§r\n"
+                    "▸ §c必须使用发射器§r：装盒机必须使用发射器 (Dispenser) 才能放置潜影盒；误用投掷器只会把盒子当掉落物丢在地上！\n"
+                    "▸ §e开盖1格空间净空§r：潜影盒开盖朝向正前方必须为空气或透明方块 (玻璃/半砖/活板门)；实心方块封堵将无法打开！\n"
+                    "▸ §a发射器圆孔朝向§r：发射器正面圆孔必须朝向装盒目标位，防止空盒喷射到背后！")
+            return Resolution(text_response=resp, suggested_command="/hoshi shulker", category="SHULKER_DISPENSER_PLACEMENT_AND_OPEN_CLEARANCE_RULES")
+
+        # 80. Shulker Unloader Monostable & Piston Break
+        if any(k in q for k in ["拆盒机", "潜影盒拆盒", "拆盒机活塞卡死", "拆盒机单稳态"]) or ("潜影盒" in q and any(k in q for k in ["拆盒", "清空推破", "抽空"])):
+            resp = ("§6【潜影盒拆盒机信号归零单稳态脉冲与活塞推碎收集】§r\n"
+                    "▸ §b信号归零清空检测§r：下方漏斗抽空物品后，比较器信号从 >0 降为 0 判定盒内完全清空！\n"
+                    "▸ §c单稳态短脉冲防死锁§r：信号归零必须接入 1~2 刻单稳态电路触发瞬间推破；活塞持续伸出会阻挡下一个新盒放置导致死锁！\n"
+                    "▸ §a掉落物直接收集§r：推碎落点正下方必须紧贴漏斗或水流承接，防止满载/空潜影盒滞留 5 分钟清除！")
+            return Resolution(text_response=resp, suggested_command="/hoshi shulker", category="SHULKER_UNLOADER_ZERO_SIGNAL_MONOSTABLE_AND_PISTON_BREAK_RULES")
+
         # 69. Powered Rail Spacing & Sloped Momentum Dynamics
         if any(k in q for k in ["充能铁轨间距", "爬坡铁轨", "铁轨爬坡", "矿车倒溜"]) or ("充能铁轨" in q and any(k in q for k in ["隔几格", "间隔", "平地", "爬坡", "斜坡"])):
             resp = ("§e【充能铁轨平地与爬坡间距动力学】§r\n"

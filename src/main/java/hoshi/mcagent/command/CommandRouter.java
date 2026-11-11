@@ -1,5 +1,6 @@
 package hoshi.mcagent.command;
 import hoshi.mcagent.cluster.FlyingMachineAnalyzer;
+import hoshi.mcagent.cluster.ShulkerLogisticsAnalyzer;
 
 
 import hoshi.mcagent.cluster.Ae2NetworkAnalyzer;
@@ -271,6 +272,12 @@ public class CommandRouter {
             case "machine":
             case "slimestone": {
                 return handleFlying(playerId, tokens, argStart, snapshot);
+            }
+            case "shulker":
+            case "box":
+            case "loader":
+            case "unloader": {
+                return handleShulker(playerId, tokens, argStart, snapshot);
             }
             case "water":
             case "fluid":
@@ -715,6 +722,25 @@ public class CommandRouter {
 
     
 
+    private CommandResult handleShulker(String playerId, String[] tokens, int argStart, ContextSnapshot snapshot) {
+        LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
+        if (cluster == null || cluster.isEmpty()) {
+            String msg = "§6【潜影盒装卸物流与自动化因果诊断】§r\n" +
+                    "当前准星未捕捉到潜影盒装盒机、拆盒机或物流流水线集群。\n" +
+                    "请将准星对准潜影盒、发射器、收集漏斗或推破活塞，然后输入 `/hoshi shulker` 触发潜影盒物流因果诊断！";
+            return CommandResult.success("SHULKER", msg, null, null, null);
+        }
+        BlockPos focus = (snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
+        var report = ShulkerLogisticsAnalyzer.analyzeShulker(cluster, focus);
+        String text = report.formatReport();
+        ChatPaginator.PagedResult paged = ChatPaginator.paginate(text, 1, 6, "/hoshi page");
+        sessionManager.recordInteraction(playerId, "/hoshi shulker", text, "SHULKER", paged);
+        var comps = MinecraftTextFormatter.parseComponents(paged.fullPageText(), "/hoshi shulker");
+        String tellraw = TellrawJsonBuilder.toJson(comps);
+        var packet = SpatialDirectiveGenerator.generateShulkerOverlay(cluster, report);
+        return CommandResult.success("SHULKER", paged.fullPageText(), null, tellraw, paged, packet);
+    }
+
         private CommandResult handleFlying(String playerId, String[] tokens, int argStart, ContextSnapshot snapshot) {
         LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
         if (cluster == null || cluster.isEmpty()) {
@@ -949,6 +975,10 @@ public class CommandRouter {
             BlockPos focus = (snapshot != null && snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
             var t = RedstoneTransmissionAnalyzer.analyzeTransmission(cluster, focus);
             packet = SpatialDirectiveGenerator.generateTransmissionOverlay(cluster, t);
+        } else if ("shulker".equals(sub) || "box".equals(sub) || "loader".equals(sub) || "unloader".equals(sub)) {
+            BlockPos focus = (snapshot != null && snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
+            var s = ShulkerLogisticsAnalyzer.analyzeShulker(cluster, focus);
+            packet = SpatialDirectiveGenerator.generateShulkerOverlay(cluster, s);
         } else if ("flying".equals(sub) || "fly".equals(sub) || "machine".equals(sub) || "slimestone".equals(sub)) {
             BlockPos focus = (snapshot != null && snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
             var f = FlyingMachineAnalyzer.analyzeFlyingMachine(cluster, focus);
@@ -1022,6 +1052,17 @@ public class CommandRouter {
             BlockPos focus = (snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
             var t = RedstoneTransmissionAnalyzer.analyzeTransmission(cluster, focus);
             var packet = SpatialDirectiveGenerator.generateTransmissionOverlay(cluster, t);
+            return CommandResult.success("HIGHLIGHT", "§a[Hoshi 3D 高亮] " + packet.hudTitle(), null, packet.toTellrawFallback(), null, packet);
+        }
+
+        if ("shulker".equals(sub) || "box".equals(sub) || "loader".equals(sub) || "unloader".equals(sub)) {
+            LocalMachineCluster cluster = snapshot != null ? snapshot.machineCluster() : null;
+            if (cluster == null || cluster.isEmpty()) {
+                return CommandResult.error("HIGHLIGHT", "§c准星未捕捉到潜影盒物流组件，无法投射潜影盒高亮。");
+            }
+            BlockPos focus = (snapshot.targetBlock() != null) ? snapshot.targetBlock().blockPos() : cluster.origin();
+            var s = ShulkerLogisticsAnalyzer.analyzeShulker(cluster, focus);
+            var packet = SpatialDirectiveGenerator.generateShulkerOverlay(cluster, s);
             return CommandResult.success("HIGHLIGHT", "§a[Hoshi 3D 高亮] " + packet.hudTitle(), null, packet.toTellrawFallback(), null, packet);
         }
 
@@ -1157,6 +1198,7 @@ public class CommandRouter {
                                 "▸ §e/hoshi ae2§r - 诊断准星 AE2 数字化网络拓扑、控制器合法性与 8/32 频道溢出\n" +
                 "▸ §e/hoshi highlight ae2§r - 投射 AE2 频道过载红线与掉线设备 3D 空间全息覆盖层\n" +
                 "▸ §e/hoshi transmission§r - 诊断红石火把极速自激烧毁、强弱充能传递阻断与导线偏转断路\n" +
+                "▸ §e/hoshi shulker§r - 诊断潜影盒装盒机漏斗偷吸、发射器投掷器误用与开盖净空\n" +
                 "▸ §e/hoshi flying§r - 诊断双向活塞飞行器推块超限、粘液蜂蜜短路粘连与端点停靠阻挡\n" +
                 "▸ §e/hoshi water§r - 诊断灵魂沙气泡柱中断、冰道水流8格极限与双漏斗蜂蜜块对齐\n" +
                 "▸ §e/hoshi rail§r - 诊断充能铁轨间距、斜坡爬坡倒溜、漏斗矿车卸料站与激活铁轨锁死\n" +

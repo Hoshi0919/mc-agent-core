@@ -1,3 +1,8 @@
+class _CallableBool(int):
+    def __call__(self):
+        return bool(self)
+
+from enum import Enum
 import collections
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Set
@@ -279,8 +284,10 @@ class LocalBlock:
     def is_redstone_torch(self) -> bool:
         return bool(self.block_id and "redstone_torch" in self.block_id.lower())
 
-    def is_powered(self) -> bool:
-        return self.get_property("powered", "false").lower() == "true" 
+    @property
+    def is_powered(self) -> _CallableBool:
+        val = self.get_property("powered", "false").lower() == "true"
+        return _CallableBool(1 if val else 0) 
 
     @property
     def is_redstone_wire(self) -> bool:
@@ -310,8 +317,9 @@ class LocalBlock:
         return "sticky_piston" in self.block_id.lower()
 
     @property
-    def is_extended(self) -> bool:
-        return self.get_property("extended", "false").lower() == "true"
+    def is_extended(self) -> _CallableBool:
+        val = self.get_property("extended", "false").lower() == "true"
+        return _CallableBool(1 if val else 0)
 
     @property
     def is_slime_block(self) -> bool:
@@ -346,6 +354,19 @@ class LocalBlock:
         ]):
             return True
         return False
+
+    @property
+    def is_shulker_box(self) -> bool:
+        return bool(self.block_id and "shulker_box" in self.block_id.lower())
+
+    @property
+    def is_dispenser(self) -> bool:
+        return bool(self.block_id and "dispenser" in self.block_id.lower())
+
+    @property
+    def is_shulker_component(self) -> bool:
+        return (self.is_shulker_box or self.is_dispenser or self.is_dropper or
+                self.is_hopper or self.is_comparator or self.is_piston)
 
     @property
     def is_redstone_power_source(self) -> bool:
@@ -3195,6 +3216,269 @@ class FlyingMachineAnalyzer:
             conflict_nodes=conflict_nodes,
             ghost_block_placements=ghost_block_placements,
             engine_components=engine_components,
+            issues=issues,
+            warnings=warnings,
+            primary_diagnosis=diag,
+            actionable_advice=adv
+        )
+
+
+
+class ShulkerSystemType(Enum):
+    SHULKER_LOADER = "SHULKER_LOADER"
+    SHULKER_UNLOADER = "SHULKER_UNLOADER"
+    MANUAL_UNLOADER = "MANUAL_UNLOADER"
+    NONE = "NONE"
+
+
+@dataclass
+class ShulkerReport:
+    is_healthy: bool
+    has_dropper_instead_of_dispenser: bool
+    has_unlocked_hopper_siphon: bool
+    has_box_open_clearance_blocked: bool
+    has_uncollected_drop_hazard: bool
+    has_persistent_piston_lock: bool
+    target_pos: BlockPos
+    target_block_type: str
+    system_type: ShulkerSystemType
+    signal_strength: int
+    conflict_nodes: List[BlockPos]
+    ghost_block_placements: List[BlockPos]
+    system_components: List[BlockPos]
+    issues: List[str]
+    warnings: List[str]
+    primary_diagnosis: str
+    actionable_advice: str
+
+    @classmethod
+    def empty(cls) -> "ShulkerReport":
+        return cls(
+            is_healthy=True,
+            has_dropper_instead_of_dispenser=False,
+            has_unlocked_hopper_siphon=False,
+            has_box_open_clearance_blocked=False,
+            has_uncollected_drop_hazard=False,
+            has_persistent_piston_lock=False,
+            target_pos=BlockPos(0, 0, 0),
+            target_block_type="none",
+            system_type=ShulkerSystemType.NONE,
+            signal_strength=0,
+            conflict_nodes=[],
+            ghost_block_placements=[],
+            system_components=[],
+            issues=[],
+            warnings=[],
+            primary_diagnosis="未检测到潜影盒装盒机、拆盒机或物流自动化组件",
+            actionable_advice=""
+        )
+
+    def format_report(self) -> str:
+        lines = [
+            "§6【潜影盒装卸物流与自动化因果诊断报告】§r",
+            f"▸ 目标组件坐标：{self.target_pos} ({self.target_block_type.upper()})",
+            f"▸ 物流系统构型：{self.system_type.value} | 比较器信号: §e{self.signal_strength}/15§r"
+        ]
+        if self.has_dropper_instead_of_dispenser:
+            lines.append("  ⚡ §c[投掷器误用致命卡死] 放置潜影盒必须使用发射器 (Dispenser)，误用投掷器只会将盒子作为掉落物吐出！§r")
+            for c in self.conflict_nodes:
+                lines.append(f"     ✖ 误用投掷器: {c}")
+            for g in self.ghost_block_placements:
+                lines.append(f"     ➕ 建议在此替换为发射器: {g}")
+        if self.has_unlocked_hopper_siphon:
+            lines.append("  ⚡ §c[下方漏斗偷吸空盒] 装盒机下方收集漏斗未施加红石锁定，新放置的空盒被立刻吸走导致无限吐盒！§r")
+            for c in self.conflict_nodes:
+                lines.append(f"     ✖ 未锁定漏斗: {c}")
+        if self.has_box_open_clearance_blocked:
+            lines.append("  ⚡ §e[开盖空间物理受阻] 潜影盒开盖朝向正前方 1 格被实心方块封堵，无法正常开启！§r")
+            for c in self.conflict_nodes:
+                lines.append(f"     ⚠ 阻挡方块: {c}")
+        if self.has_uncollected_drop_hazard:
+            lines.append("  ⚡ §e[掉落物无收集通道] 活塞推破潜影盒的落点周围无漏斗或水流承接，满载潜影盒将在 5 分钟后清除！§r")
+            for c in self.conflict_nodes:
+                lines.append(f"     ⚠ 缺乏收集落点: {c}")
+        if self.has_persistent_piston_lock:
+            lines.append("  ⚡ §c[活塞持续伸出死锁] 拆盒机推盒活塞处于持续伸出状态，阻挡发射器放置下一个潜影盒！§r")
+            for c in self.conflict_nodes:
+                lines.append(f"     ✖ 持续通电活塞: {c}")
+        if self.is_healthy:
+            lines.append("  ✔ §a潜影盒自动化流水线物理拓扑、发射时序与收集通道健康无死锁。§r")
+        lines.append(f"▸ 因果诊断：{self.primary_diagnosis}")
+        if self.actionable_advice:
+            lines.append(f"▸ 优化建议：{self.actionable_advice}")
+        return "\n".join(lines)
+
+
+class ShulkerLogisticsAnalyzer:
+    @classmethod
+    def analyze(cls, cluster: LocalMachineCluster, focus: Optional[BlockPos] = None) -> ShulkerReport:
+        if focus is None:
+            focus = cluster.origin if cluster else BlockPos(0, 0, 0)
+        return cls.analyze_shulker(cluster, focus)
+
+    @classmethod
+    def analyze_shulker(cls, cluster: LocalMachineCluster, focus: BlockPos) -> ShulkerReport:
+        if not cluster or not cluster.blocks:
+            return ShulkerReport.empty()
+
+        target = cluster.get_block(focus)
+        if not target:
+            any_shulker = next((b for b in cluster.blocks.values() if b.is_shulker_component), None)
+            if any_shulker:
+                target = any_shulker
+                focus = target.pos
+            else:
+                return ShulkerReport.empty()
+
+        shulkers = [b for b in cluster.blocks.values() if b.is_shulker_box]
+        dispensers = [b for b in cluster.blocks.values() if b.is_dispenser]
+        droppers = [b for b in cluster.blocks.values() if b.is_dropper]
+        pistons = [b for b in cluster.blocks.values() if b.is_piston]
+        hoppers = [b for b in cluster.blocks.values() if b.is_hopper]
+        comparators = [b for b in cluster.blocks.values() if b.is_comparator]
+
+        if not shulkers and not dispensers and not droppers:
+            return ShulkerReport.empty()
+
+        system_components = [b.pos for b in shulkers + dispensers + droppers + pistons + hoppers + comparators]
+
+        has_top_feeding = False
+        has_bottom_extracting = False
+        for s in shulkers:
+            ab = cluster.get_block(s.pos.offset("up"))
+            bl = cluster.get_block(s.pos.offset("down"))
+            if ab and ab.is_hopper:
+                has_top_feeding = True
+            if bl and bl.is_hopper:
+                has_bottom_extracting = True
+
+        if has_top_feeding or (dispensers and pistons and not has_bottom_extracting):
+            system_type = ShulkerSystemType.SHULKER_LOADER
+        elif has_bottom_extracting and (pistons or dispensers):
+            system_type = ShulkerSystemType.SHULKER_UNLOADER
+        elif shulkers:
+            system_type = ShulkerSystemType.MANUAL_UNLOADER
+        elif dispensers or droppers:
+            system_type = ShulkerSystemType.SHULKER_LOADER
+        else:
+            system_type = ShulkerSystemType.NONE
+
+        conflict_nodes = []
+        ghost_block_placements = []
+        issues = []
+        warnings = []
+
+        has_dropper_instead_of_dispenser = False
+        has_unlocked_hopper_siphon = False
+        has_box_open_clearance_blocked = False
+        has_uncollected_drop_hazard = False
+        has_persistent_piston_lock = False
+
+        # 1. Dropper vs Dispenser
+        for d in droppers:
+            target_placement = d.pos.offset(d.facing())
+            if target_placement in cluster.blocks or system_type == ShulkerSystemType.SHULKER_LOADER:
+                has_dropper_instead_of_dispenser = True
+                conflict_nodes.append(d.pos)
+                ghost_block_placements.append(d.pos)
+                issues.append(f"在 {d.pos} 处误用了投掷器代替发射器，导致潜影盒作为掉落物喷出")
+
+        # 2. Unlocked Hopper Siphon in Loader
+        if system_type == ShulkerSystemType.SHULKER_LOADER:
+            for s in shulkers:
+                bl = cluster.get_block(s.pos.offset("down"))
+                if bl and bl.is_hopper:
+                    is_locked = bl.is_powered or bl.get_property("enabled", "true").lower() == "false"
+                    if not is_locked:
+                        has_unlocked_hopper_siphon = True
+                        conflict_nodes.append(bl.pos)
+                        ghost_block_placements.append(bl.pos.offset("east"))
+                        issues.append(f"装盒机下方收集漏斗 {bl.pos} 未受红石锁定，新盒发射将被直接偷吸")
+
+        # 3. Open Clearance Blocked
+        for s in shulkers:
+            s_facing = s.facing() or "up"
+            open_pos = s.pos.offset(s_facing)
+            open_b = cluster.get_block(open_pos)
+            if open_b and open_b.is_solid_conductive_block:
+                has_box_open_clearance_blocked = True
+                conflict_nodes.append(open_pos)
+                warnings.append(f"潜影盒 {s.pos} 正前方开盖空间 {open_pos} 被实心方块封堵，无法开启")
+
+        # 4. Uncollected Drop Hazard
+        for p in pistons:
+            p_facing = p.facing()
+            break_target = p.pos.offset(p_facing)
+            tb = cluster.get_block(break_target)
+            if tb and (tb.is_shulker_box or tb.is_air):
+                has_collector = False
+                for nb in break_target.get_direct_neighbors():
+                    nb_b = cluster.get_block(nb)
+                    if nb_b and (nb_b.is_hopper or nb_b.is_water):
+                        has_collector = True
+                        break
+                bl_tb = cluster.get_block(break_target.offset("down"))
+                if bl_tb and (bl_tb.is_hopper or bl_tb.is_water):
+                    has_collector = True
+                if not has_collector:
+                    has_uncollected_drop_hazard = True
+                    conflict_nodes.append(break_target)
+                    ghost_block_placements.append(break_target.offset("down"))
+                    warnings.append(f"活塞推破目标位 {break_target} 下方缺乏漏斗或水流收集通道，潜影盒面临清除风险")
+
+        # 5. Persistent Piston Lock in Unloader
+        if system_type == ShulkerSystemType.SHULKER_UNLOADER:
+            for p in pistons:
+                if p.is_extended or p.is_powered:
+                    has_persistent_piston_lock = True
+                    conflict_nodes.append(p.pos)
+                    issues.append(f"拆盒机推盒活塞 {p.pos} 处于持续伸出状态，阻挡发射器放置下一个潜影盒")
+
+        signal_strength = 0
+        for comp in comparators:
+            try:
+                sig = int(comp.get_property("power", "0"))
+                if sig > signal_strength:
+                    signal_strength = sig
+            except ValueError:
+                pass
+
+        is_healthy = not has_dropper_instead_of_dispenser and not has_unlocked_hopper_siphon and \
+                     not has_box_open_clearance_blocked and not has_uncollected_drop_hazard and not has_persistent_piston_lock
+
+        if has_dropper_instead_of_dispenser:
+            diag = "装盒机误用了投掷器代替发射器，潜影盒被当作掉落物吐出无法放置。"
+            adv = "将投掷器 (Dropper) 替换为发射器 (Dispenser)，圆孔朝向潜影盒放置位。"
+        elif has_unlocked_hopper_siphon:
+            diag = "装盒机下方收集漏斗未施加红石锁存，导致空盒落位即被偷吸。"
+            adv = "在活塞推破与发射新盒期间，通过红石火把或比较器脉冲锁死下方漏斗，落位后再解锁。"
+        elif has_persistent_piston_lock:
+            diag = "拆盒机活塞持续伸出阻挡新盒放置，缺少单稳态短脉冲截断。"
+            adv = "在比较器信号归零检测端接入 1~2 刻单稳态脉冲电路 (Monostable Circuit) 产生瞬态推破脉冲。"
+        elif has_box_open_clearance_blocked:
+            diag = "潜影盒开盖空间被实心方块遮挡，玩家或机械无法打开。"
+            adv = "将开盖正前方的方块替换为玻璃、半砖、楼梯或空气。"
+        elif has_uncollected_drop_hazard:
+            diag = "活塞推破落点周围缺乏漏斗或水流收集通道，潜影盒面临清除风险。"
+            adv = "在潜影盒落点下方铺设漏斗、漏斗矿车或导流水渠承接。"
+        else:
+            diag = "潜影盒装卸物流系统物理拓扑、发射时序与开盖通道健康。"
+            adv = "保持发射器备用盒供应，定期检查比较器信号线防外部串扰。"
+
+        return ShulkerReport(
+            is_healthy=is_healthy,
+            has_dropper_instead_of_dispenser=has_dropper_instead_of_dispenser,
+            has_unlocked_hopper_siphon=has_unlocked_hopper_siphon,
+            has_box_open_clearance_blocked=has_box_open_clearance_blocked,
+            has_uncollected_drop_hazard=has_uncollected_drop_hazard,
+            has_persistent_piston_lock=has_persistent_piston_lock,
+            target_pos=focus,
+            target_block_type=target.block_id,
+            system_type=system_type,
+            signal_strength=signal_strength,
+            conflict_nodes=conflict_nodes,
+            ghost_block_placements=ghost_block_placements,
+            system_components=system_components,
             issues=issues,
             warnings=warnings,
             primary_diagnosis=diag,

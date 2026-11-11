@@ -5,7 +5,7 @@ import json
 import re
 import time
 
-from .cluster import BlockPos, LocalMachineCluster, KineticReport, HopperReport
+from .cluster import BlockPos, LocalMachineCluster, KineticReport, HopperReport, ShulkerReport
 from .multiblock import MultiblockBlueprint
 
 
@@ -776,6 +776,65 @@ class SpatialDirectiveGenerator:
         return SpatialDirectivePacket(
             id=f"flying-machine-{int(time.time()*1000)}",
             category="FLYING_MACHINE",
+            primitives=primitives,
+            hud_title=report.primary_diagnosis,
+            hud_description=report.actionable_advice
+        )
+
+    @classmethod
+    def generate_shulker_overlay(cls, cluster: LocalMachineCluster, report: ShulkerReport) -> SpatialDirectivePacket:
+        if not report or report.system_type.value == "NONE":
+            return SpatialDirectivePacket.empty()
+
+        primitives: List[SpatialPrimitive] = []
+        duration = 600
+        t_pos = report.target_pos
+
+        if report.has_dropper_instead_of_dispenser:
+            for c_pos in report.conflict_nodes:
+                primitives.append(SpatialPrimitive.box_outline(c_pos, SpatialColor.RED, "DROPPER MISUSE", duration))
+                primitives.append(SpatialPrimitive.billboard(c_pos.offset("up"), "✖ 误用投掷器: 需换为发射器", SpatialColor.RED, duration))
+            for g_pos in report.ghost_block_placements:
+                primitives.append(SpatialPrimitive.ghost_block(g_pos, "minecraft:dispenser", color=SpatialColor.GREEN, duration_ticks=duration))
+                primitives.append(SpatialPrimitive.billboard(g_pos.offset("up"), "➕ 替换为发射器放置潜影盒", SpatialColor.GREEN, duration))
+
+        if report.has_unlocked_hopper_siphon:
+            for c_pos in report.conflict_nodes:
+                primitives.append(SpatialPrimitive.box_outline(c_pos, SpatialColor.RED, "UNLOCKED HOPPER SIPHON", duration))
+                primitives.append(SpatialPrimitive.billboard(c_pos.offset("up"), "✖ 漏斗未锁存: 空盒将被偷吸", SpatialColor.RED, duration))
+            for g_pos in report.ghost_block_placements:
+                primitives.append(SpatialPrimitive.ghost_block(g_pos, "minecraft:redstone_torch", color=SpatialColor.RED, duration_ticks=duration))
+                primitives.append(SpatialPrimitive.billboard(g_pos.offset("up"), "➕ 引入红石锁存信号", SpatialColor.RED, duration))
+
+        if report.has_box_open_clearance_blocked:
+            for c_pos in report.conflict_nodes:
+                primitives.append(SpatialPrimitive.box_outline(c_pos, SpatialColor.YELLOW, "OPEN CLEARANCE BLOCKED", duration))
+                primitives.append(SpatialPrimitive.billboard(c_pos.offset("up"), "⚠ 开盖受阻: 需净空1格", SpatialColor.YELLOW, duration))
+
+        if report.has_uncollected_drop_hazard:
+            for c_pos in report.conflict_nodes:
+                primitives.append(SpatialPrimitive.box_outline(c_pos, SpatialColor.PURPLE, "UNCOLLECTED DROP HAZARD", duration))
+                primitives.append(SpatialPrimitive.billboard(c_pos.offset("up"), "⚠ 缺乏收集: 5分钟清除风险", SpatialColor.PURPLE, duration))
+            for g_pos in report.ghost_block_placements:
+                primitives.append(SpatialPrimitive.ghost_block(g_pos, "minecraft:hopper", color=SpatialColor.CYAN, duration_ticks=duration))
+                primitives.append(SpatialPrimitive.billboard(g_pos.offset("down"), "➕ 布置收集漏斗/水流", SpatialColor.CYAN, duration))
+
+        if report.has_persistent_piston_lock:
+            for c_pos in report.conflict_nodes:
+                primitives.append(SpatialPrimitive.box_outline(c_pos, SpatialColor.RED, "PERSISTENT PISTON DEADLOCK", duration))
+                primitives.append(SpatialPrimitive.billboard(c_pos.offset("up"), "✖ 活塞死锁: 需单稳态短脉冲", SpatialColor.RED, duration))
+
+        if report.is_healthy:
+            primitives.append(SpatialPrimitive.box_outline(t_pos, SpatialColor.GREEN, "SHULKER LOGISTICS HEALTHY", duration))
+            primitives.append(SpatialPrimitive.billboard(t_pos.offset("up"), "✔ 潜影盒流水线拓扑健康", SpatialColor.GREEN, duration))
+
+        for s_pos in report.system_components:
+            if s_pos != t_pos and s_pos not in report.conflict_nodes:
+                primitives.append(SpatialPrimitive.box_outline(s_pos, SpatialColor.CYAN, "SHULKER COMPONENT", duration))
+
+        return SpatialDirectivePacket(
+            id=f"shulker-logistics-{int(time.time()*1000)}",
+            category="SHULKER_LOGISTICS",
             primitives=primitives,
             hud_title=report.primary_diagnosis,
             hud_description=report.actionable_advice
